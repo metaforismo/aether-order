@@ -16,8 +16,8 @@ thumb, and a transcript you can verify yourself the moment it ends.
 
 | | |
 | --- | --- |
-| [![CI](https://github.com/metaforismo/aether-order/actions/workflows/ci.yml/badge.svg)](https://github.com/metaforismo/aether-order/actions/workflows/ci.yml) | exhaustive enumeration + full test suite on every push |
-| ![stage](https://img.shields.io/badge/stage-specification-blue) | design, mathematics and protocol are complete; the client is not built |
+| [![CI](https://github.com/metaforismo/aether-order/actions/workflows/ci.yml/badge.svg)](https://github.com/metaforismo/aether-order/actions/workflows/ci.yml) | exhaustive enumeration + typecheck + full test suite on every push |
+| ![stage](https://img.shields.io/badge/stage-playable%20graybox-blue) | design, mathematics and protocol are complete; the game is playable at placeholder-art fidelity |
 | ![play](https://img.shields.io/badge/play-free%20only-informational) | free-play prototype work; no real-money integration |
 | ![rtp](https://img.shields.io/badge/RTP-96.000%25%20exact-brightgreen) | identical on every bet type, proved as exact fractions |
 | ![math](https://img.shields.io/badge/outcome%20space-fully%20enumerated-brightgreen) | 120 and 5,040 permutations; 27.6M instance × outcome pairs |
@@ -26,11 +26,13 @@ thumb, and a transcript you can verify yourself the moment it ends.
 
 **What is real today:** the complete game and art specification; the exact
 mathematical model with an exhaustive machine proof; the Reveal Engine
-permutation lifecycle specification; and a runnable reference implementation of
-its *derivation, commitment, verification, settlement, ticket-binding and
-receipt* core, plus the packaged conformance runner, with frozen wire-format
-fixtures and a test suite that asserts the published paytable against the
-enumeration on every commit.
+permutation lifecycle specification; a runnable reference implementation of its
+*derivation, commitment, verification, settlement, ticket-binding and receipt*
+core, plus the packaged conformance runner, with frozen wire-format fixtures and
+a test suite that asserts the published paytable against the enumeration on
+every commit — **and a playable graybox**: a Node service that runs the round
+lifecycle on the real engine and a portrait browser client that plays it.
+`npm run dev`, then [Run the graybox](#run-the-graybox).
 
 Four of the design document's load-bearing claims are code rather than prose,
 because a rule with no implementation is a rule that can be contradicted by the
@@ -42,14 +44,18 @@ the accessibility argument (`tools/lib/palette.mjs`). All four are asserted
 against the documents that quote them, and in every case the defect that put
 them there was a table that looked like arithmetic and had never been run.
 
-**What is specified but not implemented here:** the validating
-`definePermutationGame` factory, and the round-cycle floor and rolling-hour
-ceiling — both of which need session state this repository does not have.
+**What was specified but not implemented, and now is:** the validating
+`definePermutationGame` factory ships in the packaged engine, and the
+round-cycle floor and rolling-hour ceiling are enforced by the graybox service,
+which is the session state this repository previously did not have.
 `docs/ENGINE.md` §10 marks every surface as implemented, specified, or out of
-scope.
+scope, and says where the last two now live.
 
-**What is not built at all yet:** the client, the audio, and the RGS
-integration.
+**What is not built at all yet:** the final art and the WebGL chamber (§7's two
+render lanes — the graybox draws DOM and SVG), the audio, the clip export
+(§9.1), and the RGS and wallet integration. The graybox's wallet is an in-memory
+free-play float and its operator key is generated at process start: nothing here
+is custody, persistence or an audit trail.
 
 ---
 
@@ -171,6 +177,82 @@ operator's key being what it claims and on you keeping the receipt. It stops a
 settled bet being denied or rewritten; it does not, by itself, stop a receipt
 never being issued — that is a dispute process and a licence condition, not a
 hash. `docs/ENGINE.md` §11 states the boundary in full.
+
+## Run the graybox
+
+```sh
+npm install
+npm run dev            # http://localhost:5173
+```
+
+That one command builds the client and starts the service. Open the URL in a
+phone-sized window — the layout is portrait, 390 × 844 reference — and play. The
+wallet starts at 500.00 free-play credits, the shared chamber runs a draw every
+6 seconds, and nothing is persisted: restart the process and every session,
+round and receipt is gone.
+
+| | |
+| --- | --- |
+| `npm run dev` | build the client, serve it and the API on `PORT` (default 5173) |
+| `npm run build` | build the client bundle only, into `dist/client` |
+| `npm run typecheck` | `tsc --noEmit` over the service and the client |
+| `npm test` | the whole suite, including the API-level playthrough |
+| `AETHER_DEV=1 npm run dev` | additionally enables `POST /api/dev/skew`, a test hook that shifts *session elapsed time* so the reality-check schedule can be seen without waiting 30 minutes. It changes no policy and is off by default. |
+
+**The engine is consumed as a package, not copied.** `dependencies` carries
+`@axiom-games/reveal-engine` as a `file:` install of
+`vendor/axiom-games-reveal-engine-0.4.0.tgz`, which is `npm pack` run against the
+engine repository's `main`. There is no vendored source and no reimplementation:
+the element set, the bet catalogue, the multipliers, the risk policy and the play
+policy all come from the module's own AETHER ORDER adapter, which is why
+`src/server/engine.ts` can refuse to start when the fingerprint the engine
+computes differs from the one `docs/paytable.json` publishes. To refresh it,
+build the engine, `npm pack` it into `vendor/`, and reinstall.
+
+### What the service is
+
+A Node/TypeScript RGS-shaped service (`src/server`) that owns exactly what
+`docs/ENGINE.md` §3 says the engine does not: the wallet, session state, pacing,
+and the responsible-play controls. Everything else — derivation, commitment,
+settlement, receipts, snapshots, byte layouts — is the engine's, called and never
+reimplemented. The round lifecycle is §5's, in §5's order:
+
+| Route | What it does |
+| --- | --- |
+| `POST /api/session` | opens a free-play session |
+| `POST /api/session/:id/round/open` | draws the seed, fixes `(variant, roundId, nonce)`, publishes `seedCommitment` — **before any ticket exists** |
+| `POST /api/session/:id/ticket/quote` | validates a ticket through `openTicket` and returns the **best possible outcome**, a maximum over the `n!` settled orders |
+| `POST /api/session/:id/round/commit` | debits, derives, settles, credits, signs a receipt, builds the resolution track. Idempotent under the engine-derived key: a retry returns the same round and never debits twice |
+| `POST /api/session/:id/round/:roundId/reveal` | publishes the server seed, after re-verifying the transcript and the receipt server-side |
+| `GET /api/session/:id/history`, `/api/catalogue`, `/api/operator-key` | the record, the published catalogue, the signing key |
+| `GET /api/lobby/state`, `/api/lobby/stream`, `POST /api/session/:id/lobby/commit` | SHARED CHAMBER (§5 S10): one transcript, many tickets, an SSE stream, and `BETTING_CLOSED` on a late arrival |
+
+Pacing is server-side and hard: a COMMIT inside the 2,500 ms floor is rejected
+with `CYCLE_FLOOR` and the stake is unspent, never queued.
+
+### What the client is
+
+`src/client` — vanilla TypeScript, one esbuild call, no framework. It renders
+§5's screens: S1 TABLE, S2's five picker shapes, S3 ticket review, S4 the round
+with the ticket strip pinned so lines resolve lock by lock, S5 the gated result,
+S6 fairness, S7 history, S8 paytable, S9 limits and play controls, S10 the
+shared chamber.
+
+Two things it deliberately does *not* do: it computes no money — the stake, the
+payout, the best-outcome figure and the celebration gate all come from the
+service, which gets them from the engine — and it does **not** ask the server
+whether a round was fair. `src/client/verify.ts` re-derives the permutation from
+`(server seed, your seed, round id, nonce)` with WebCrypto and recomputes both
+hashes itself; `tests/verifier.test.ts` fails the build if that second
+implementation and the engine ever disagree on a single digest.
+
+**Graybox boundaries, stated rather than implied.** The chamber is DOM and SVG at
+the geometry §6.9 specifies, not the WebGL lane §7 budgets: no fluid shader, no
+bloom, no caustic, no bubble buffer, no sprite master, and therefore none of
+§7.4's acceptance test has been run. There is no audio and no clip export. Glyph
+areas are approximately, not provably, equal (§6.8), and §15's open question 4 —
+the deuteranopia pass — remains open. `docs/paytable.json` supplies the palette,
+the glyphs and every published probability, so none of that is retyped here.
 
 ## Run the proof yourself
 

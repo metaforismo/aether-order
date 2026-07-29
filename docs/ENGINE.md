@@ -1109,6 +1109,17 @@ export const PERMUTATION_LIMITS = Object.freeze({
 | Operator key custody, rotation and publication | **out of scope** — operator responsibility, §11 | — |
 | Round-cycle floor and rolling ceiling enforcement | **specified only** — RGS/session state, which this repository has none of | — |
 
+**Where the last two rows now live.** The table above describes
+`tools/lib/`, the reference implementation, and both remaining gaps in it are
+closed elsewhere in the repository rather than in `tools/lib`:
+`definePermutationGame` is implemented by the packaged module this game consumes
+(`@axiom-games/reveal-engine/modules/permutation/aether`), which validates,
+clones, deep-freezes and memoises the fingerprint at construction; the
+round-cycle floor and the rolling ceiling are enforced by the graybox service in
+`src/server/session.ts`, which is the session state the reference has none of.
+The reference is still the normative oracle for bytes, and `tools/lib` is still
+where a byte-level disagreement is adjudicated.
+
 **Naming.** The module types above are generic over minor units and use
 `stake` / `gross` / `credited`. The reference, being game-specific, names the
 unit: `stakeChips` / `grossChips` / `creditedChips`. Same fields, same
