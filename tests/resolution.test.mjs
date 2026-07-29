@@ -194,6 +194,98 @@ describe('docs/DESIGN.md §2.1 publishes the table the code computes', () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * 3b. §13.1's round-shape argument is read off the enumeration.        *
+ *                                                                      *
+ * Round 4 illustrated "the round's shape varies with the ticket" with  *
+ * "a FLOW-only ticket is decided in the first two locks and the rest    *
+ * of the settle is scenery". Three of the four FLOW chips resolve later *
+ * than that, and two of them run to lock n-1 — the LAST informative     *
+ * lock — so the tier chosen as the example is the one whose chips       *
+ * resolve latest. It was the section's only concrete illustration, in   *
+ * the argument the product's watch-value case rests on, and nothing     *
+ * tested it because it was prose.                                       *
+ * ------------------------------------------------------------------ */
+
+/** Parse the §13.1 round-shape table out of docs/DESIGN.md. */
+function documentedShape() {
+  const start = DESIGN.indexOf('<!-- shape:start -->');
+  const end = DESIGN.indexOf('<!-- shape:end -->');
+  expect(start, 'docs/DESIGN.md is missing the round-shape table markers').toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  const rows = [];
+  for (const line of DESIGN.slice(start, end).split('\n')) {
+    const match = line.match(/^\|\s*`([a-z-]+)`\s*\|([^|]*)\|\s*(FLOW|FORM|ORDER)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|/u);
+    if (match) {
+      rows.push({ code: match[1], chip: match[2].trim(), tier: match[3], earliest: Number(match[4]), latest: Number(match[5]) });
+    }
+  }
+  return rows;
+}
+
+describe('docs/DESIGN.md §13.1 reads its round-shape claims off the enumeration', () => {
+  const documented = documentedShape();
+  const byCode = (code) => CLASSIC.rows.find((row) => row.code === code);
+
+  it('covers every chip, with the tier the catalogue declares', () => {
+    expect(documented).toHaveLength(BET_FAMILIES.length);
+    for (const row of documented) {
+      const family = BET_FAMILIES.find((candidate) => candidate.code === row.code);
+      expect(family, row.code).toBeDefined();
+      expect(row.tier, row.code).toBe(family.tier);
+      expect(row.chip, row.code).toBe(family.name);
+    }
+  });
+
+  it.each(BET_FAMILIES.map((family) => [family.code]))('%s: both published locks are the enumerated ones', (code) => {
+    const row = documented.find((candidate) => candidate.code === code);
+    expect(row.earliest, `${code} earliest`).toBe(byCode(code).earliestLock);
+    expect(row.latest, `${code} latest`).toBe(byCode(code).latestLock);
+  });
+
+  it('is sorted by when the chip is guaranteed decided, so the shape is legible', () => {
+    const latest = documented.map((row) => row.latest);
+    expect([...latest].sort((a, b) => a - b)).toEqual(latest);
+  });
+
+  it('every bullet the section reads off the table is true of the table', () => {
+    // FIRST is the only chip whose lock is fixed.
+    const fixed = CLASSIC.rows.filter((row) => row.earliestLock === row.latestLock);
+    expect(fixed.map((row) => row.code)).toEqual(['first']);
+    // LINK · EITHER is the only chip that can never resolve at lock 1.
+    const neverFirstLock = CLASSIC.rows.filter((row) => row.earliestLock > 1);
+    expect(neverFirstLock.map((row) => row.code)).toEqual(['link-any']);
+    // The ORDER ladder is three separate moments: 2, 3, n-1.
+    expect(byCode('opening').latestLock).toBe(2);
+    expect(byCode('podium').latestLock).toBe(3);
+    expect(byCode('full').latestLock).toBe(CLASSIC.n - 1);
+    // LATE finishes by n-2, so a LATE-heavy round ends before the tube does.
+    expect(byCode('late').latestLock).toBe(CLASSIC.n - 2);
+    // Exactly six chips can run to the last informative lock.
+    const toTheEnd = CLASSIC.rows.filter((row) => row.latestLock === CLASSIC.n - 1).map((row) => row.code);
+    expect(toTheEnd.sort()).toEqual(['before', 'full', 'last', 'link', 'link-any', 'slot']);
+    expect(DESIGN).toMatch(/Six of the eleven chips can run to lock `n−1`/u);
+  });
+
+  it('no longer claims a FLOW-only ticket is decided in the first two locks', () => {
+    // The sentence may appear exactly once, inside the paragraph that withdraws
+    // it. It may not appear anywhere the document is still speaking in its own
+    // voice — which is where it was.
+    const claim = /FLOW-only ticket is decided in the first two\s+locks/gu;
+    expect(DESIGN.match(claim) ?? []).toHaveLength(1);
+    const withdrawal = DESIGN.indexOf('**The claim this replaces was false');
+    expect(withdrawal).toBeGreaterThan(-1);
+    expect(DESIGN.slice(0, withdrawal)).not.toMatch(claim);
+    // The three FLOW chips that make the old sentence false.
+    for (const code of ['before', 'link-any']) {
+      expect(byCode(code).latestLock, code).toBe(CLASSIC.n - 1);
+    }
+    expect(byCode('late').latestLock).toBeGreaterThan(2);
+    // And the correction is stated rather than the sentence quietly deleted.
+    expect(DESIGN).toMatch(/three of the tier's four chips resolve later than the\s+sentence claimed/u);
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * 4. The track a renderer consumes.                                    *
  * ------------------------------------------------------------------ */
 

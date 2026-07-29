@@ -1438,13 +1438,66 @@ of what the category reaches for first, and each is honestly rated:
 
 **13.1 The round's shape varies with the ticket, not with a trigger.**
 Early resolution (§2.1) is the cheapest variety in the product and it costs
-nothing mathematically. A FLOW-only ticket is decided in the first two locks and
-the rest of the settle is scenery. An ORDER ladder — OPENING, PODIUM, FULL ORDER
-— resolves upward in step with the tube, three separate moments at `1/20`,
-`1/60` and `1/120` rather than one at `1/120`. A LATE-heavy ticket has nothing
-happen until the top. The round the player watches is a consequence of the
-ticket they built, which is the only kind of variety a game with no post-commit
-decisions can honestly have.
+nothing mathematically. What varies is not *whether* a round resolves early —
+every round is fully decided by lock `n−1` — but **where in the tube it
+happens**, and that is a consequence of which chips are on the ticket.
+
+Here is the whole of it, in CLASSIC, computed exhaustively over all 295
+instances × 120 outcomes by `tools/lib/resolution.mjs` rather than described:
+
+<!-- shape:start -->
+| Code | Chip | Tier | Can resolve as early as | Decided no later than |
+| --- | --- | --- | --- | --- |
+| `first` | FIRST | FORM | 1 | 1 |
+| `early` | EARLY | FLOW | 1 | 2 |
+| `opening` | OPENING | ORDER | 1 | 2 |
+| `late` | LATE | FLOW | 1 | 3 |
+| `podium` | PODIUM | ORDER | 1 | 3 |
+| `before` | BEFORE | FLOW | 1 | 4 |
+| `last` | LAST | FORM | 1 | 4 |
+| `slot` | SLOT | FORM | 1 | 4 |
+| `link` | LINK | FORM | 1 | 4 |
+| `full` | FULL ORDER | ORDER | 1 | 4 |
+| `link-any` | LINK · EITHER | FLOW | 2 | 4 |
+<!-- shape:end -->
+
+Read off it, rather than asserted beside it:
+
+- **FIRST is the only chip in the game with a fixed lock.** It always resolves
+  as the bottom sphere seats — first row, and the only row where the two numbers
+  are equal. A FIRST-only ticket is a one-beat round and the other four falls
+  are scenery.
+- **LINK · EITHER is the only chip that can never resolve at lock 1.**
+  Adjacency needs two spheres seated before it can be settled either way, so its
+  earliest is 2. Every other chip can die — or win — on the very first fall.
+- **The ORDER tier is a ladder in time, not just in price.** OPENING is decided
+  by lock 2, PODIUM by lock 3, FULL ORDER by lock `n−1`: three separate moments
+  at `1/20`, `1/60` and `1/120` rather than one at `1/120`. A player holding all
+  three watches their ticket resolve upward with the tube.
+- **A LATE-heavy ticket finishes early, not late.** LATE is decided by lock
+  `n−2` at the latest — once `n−2` spheres are down, whether a colour is in the
+  top two is already settled — so the last two falls of such a round carry
+  nothing at all. The chip's name describes where it looks, not when it lands.
+- **Six of the eleven chips can run to lock `n−1`**: BEFORE, LAST, SLOT, LINK,
+  LINK · EITHER and FULL ORDER. A ticket carrying any of them can be live until
+  the last informative fall.
+
+The round the player watches is a consequence of the ticket they built, which is
+the only kind of variety a game with no post-commit decisions can honestly have.
+
+**The claim this replaces was false, and it was false in the flattering
+direction.** Round 4 wrote: *"A FLOW-only ticket is decided in the first two
+locks and the rest of the settle is scenery."* Only EARLY is decided by lock 2.
+LATE runs to lock `n−2`, and BEFORE and LINK · EITHER run to lock `n−1` — the
+last informative lock — so three of the tier's four chips resolve later than the
+sentence claimed, and the tier the sentence used as its example is the one whose
+chips resolve *latest* on average. It was the section's only concrete
+illustration, under a table rating 13.1 as carrying "most of" the answer to this
+document's own "pretty lottery" problem, and it made round-shape variety look
+sharper than it is inside the argument the watch-value case rests on. Nothing
+caught it because it was prose. The table above is generated, and
+`tests/resolution.test.mjs` fails the build if a single cell drifts from the
+enumeration — including the tier claims read off it.
 
 **13.2 SHARED CHAMBER — the social layer.** One transcript, many tickets: the
 cheapest multiplayer in gambling, because the draw is already a pure function of
