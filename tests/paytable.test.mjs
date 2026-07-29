@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import { enumerateVariant, render } from '../tools/lib/analysis.mjs';
 import { collectMultiplierTokens, readFencedTable, untick } from '../tools/lib/mdtable.mjs';
+import { seedCommitment } from '../tools/lib/derive.mjs';
 import { LIMITS, TARGET_RTP, VARIANT_IDS } from '../tools/lib/model.mjs';
 import { rational } from '../tools/lib/rational.mjs';
 
@@ -119,5 +120,41 @@ describe('docs/DESIGN.md quotes real multipliers', () => {
 
   it('states the single target RTP', () => {
     expect(design).toContain('96.000%');
+  });
+});
+
+/**
+ * Documentation drift guard.
+ *
+ * The seed commitment's field list is a security-critical claim repeated in
+ * three documents. When it was strengthened to bind the nonce and variant, one
+ * of the three was missed. These tests make that class of drift a build
+ * failure: every document must name every field, and every named field must
+ * demonstrably change the digest.
+ */
+describe('the seed commitment is described identically everywhere', () => {
+  const docs = {
+    'README.md': readFileSync(join(ROOT, 'README.md'), 'utf8'),
+    'docs/MATH.md': readFileSync(MATH_MD, 'utf8'),
+    'docs/ENGINE.md': readFileSync(join(ROOT, 'docs', 'ENGINE.md'), 'utf8'),
+  };
+  // One canonical rendering of the committed field list, in derivation order.
+  // Every document must quote it verbatim, so a change to what the commitment
+  // binds cannot land in one document and miss the others.
+  const CANONICAL_FIELD_LIST = 'serverSeed ‖ gameId ‖ variantId ‖ roundId ‖ nonce';
+
+  it.each(Object.keys(docs))('%s quotes the canonical committed field list', (name) => {
+    expect(docs[name].includes(CANONICAL_FIELD_LIST), `${name} does not quote "${CANONICAL_FIELD_LIST}"`).toBe(true);
+  });
+
+  it('every field named in the docs actually changes the digest', () => {
+    const base = { variantId: 'classic', roundId: 'r-1', nonce: 0 };
+    const seedA = 'a'.repeat(64);
+    const seedB = 'b'.repeat(64);
+    const reference = seedCommitment(seedA, base);
+    expect(seedCommitment(seedB, base)).not.toBe(reference);
+    expect(seedCommitment(seedA, { ...base, variantId: 'seven' })).not.toBe(reference);
+    expect(seedCommitment(seedA, { ...base, roundId: 'r-2' })).not.toBe(reference);
+    expect(seedCommitment(seedA, { ...base, nonce: 1 })).not.toBe(reference);
   });
 });

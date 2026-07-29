@@ -364,7 +364,7 @@ is presentational and provably outcome-free.
 | D0 | Client seed (optional string) | before commit | changes *which* permutation, never its distribution |
 | D1 | Variant (CLASSIC / SEVEN) | before commit | changes `n`, the outcome space and the variance; not the RTP |
 | D2 | Bet lines (which types, which parameters, up to 12) | before commit | changes the variance; not the RTP |
-| D3 | Stake per line | before commit | scales EV linearly |
+| D3 | Stake per line | before commit | scales EV and SD linearly, variance by the square; not the RTP |
 | D4 | Commit | the moment of commitment | none; the permutation is already determined by the committed seed |
 | — | SKIP / MUTE / REPLAY | after commit | none; not inputs to the derivation |
 
@@ -442,11 +442,18 @@ and elapsed time rather than a streak counter (see `docs/DESIGN.md` §9).
 
 ### 9.5 Why information cannot help
 
-The seed commitment `SHA-256(domain ‖ serverSeed ‖ roundId)` is published before
-the player commits. For a computationally bounded player, a commitment reveals
-nothing about the seed, so the ticket is chosen independently of `Π` — and
-Theorem 1 holds *pointwise for every fixed ticket* regardless, so only knowledge
-of `Π` itself could help.
+The seed commitment
+`SHA-256(domain ‖ serverSeed ‖ gameId ‖ variantId ‖ roundId ‖ nonce)` is
+published, together with the context it binds, before the player commits. For a
+computationally bounded player a commitment reveals nothing about the seed, so
+the ticket is chosen independently of `Π` — and Theorem 1 holds *pointwise for
+every fixed ticket* regardless, so only knowledge of `Π` itself could help.
+
+The commitment covers the whole derivation input set except the client seed.
+That matters in the other direction too: with the nonce and variant frozen by
+the published hash, an operator that has already seen the ticket has no free
+parameter left to search for a favourable permutation. Committing to the seed
+alone would have left that door open.
 
 The client seed (D0) deserves a specific statement, because "you can choose the
 seed" invites a strategy fallacy. For each fixed client seed, the permutation is

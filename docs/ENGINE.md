@@ -178,8 +178,12 @@ export function permutationCatalogueDigest(game: PermutationGameDefinition): str
 
 /**
  * Binds every replay-visible field: the declarative configuration above AND
- * `permutationCatalogueDigest(game)`. Memoised; computing it costs one pass
- * over the outcome space per variant.
+ * `permutationCatalogueDigest(game)`.
+ *
+ * `definePermutationGame` MUST compute and memoise this at construction, so the
+ * cost is paid once at startup and never inside a round. Measured on the
+ * reference implementation: 245 ms cold for n = 7 (26.5M predicate
+ * evaluations), 1 ms for n = 5, and 0.07 ms per transcript once warm.
  */
 export function permutationAdapterFingerprint(game: PermutationGameDefinition): string;
 ```
@@ -366,9 +370,9 @@ seedCommitment = SHA-256( encodeFields([
 ]) )
 ```
 
-Everything the derivation consumes except `clientSeed` appears here. Publishing
-this hash together with `(variantId, roundId, nonce)` is what makes the round
-non-grindable; see §5.
+Committed fields, in order: `serverSeed ‖ gameId ‖ variantId ‖ roundId ‖ nonce`. That is everything the derivation consumes
+except `clientSeed`. Publishing this hash together with the plaintext
+`(variantId, roundId, nonce)` is what makes the round non-grindable; see §5.
 
 ### 7.3 Uniform sampler
 

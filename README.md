@@ -86,7 +86,7 @@ check its outcome yourself instead of taking the operator's word for it. (Seed
 generation and custody still sit with the operator — see the boundary below.)
 
 - **Commit first, and commit everything.** The server publishes
-  `SHA-256(domain ‖ serverSeed ‖ gameId ‖ variant ‖ roundId ‖ nonce)` *before*
+  `SHA-256(domain ‖ serverSeed ‖ gameId ‖ variantId ‖ roundId ‖ nonce)` *before*
   your ticket exists. Every input to the draw except your own client seed is
   frozen by that hash, so an operator that has seen your ticket has nothing
   left to search.
