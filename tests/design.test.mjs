@@ -22,6 +22,7 @@ import { describe, expect, it } from 'vitest';
 
 import * as derive from '../tools/lib/derive.mjs';
 import * as conform from '../tools/lib/conform.mjs';
+import { CHROME_CSS } from '../tools/lib/framebudget.mjs';
 import {
   AUTOPLAY_MODES,
   ELEMENTS,
@@ -443,6 +444,93 @@ describe('the repudiation boundary is stated wherever fairness is claimed', () =
     expect(ENGINE_TABLE).toContain('`SIGNATURE_UNCHECKED`');
     expect(ENGINE).toContain('bindingsVerified');
     expect(ENGINE).toMatch(/A verifier given no public key must return `ok: false`/u);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 2b. The art direction covers the app, not only the chamber.          *
+ *                                                                      *
+ * §6.1–§6.6 were exact about glass, light, motion and type and silent   *
+ * about everything outside the chamber: no wordmark for a title         *
+ * positioned as premium, no icon system beyond seven sphere glyphs, no  *
+ * splash, no chamber geometry past the S1 wireframe, no impeller, and   *
+ * no state treatments — including the at-the-ceiling lockout §10        *
+ * REQUIRES the UI to present. A required screen with no design is a     *
+ * requirement that does not ship.                                       *
+ * ------------------------------------------------------------------ */
+
+describe('the identity, icon and state specifications exist and stay closed', () => {
+  const art = DESIGN.slice(DESIGN.indexOf('### 6.7 Identity'), DESIGN.indexOf('## 7. Rendering'));
+
+  it('specifies a wordmark as a construction rather than an unbuilt asset', () => {
+    expect(art).toContain('### 6.7 Identity: the wordmark');
+    // The things a store listing, a splash and a share card each need.
+    for (const rule of ['Minimum width', 'Clear space', 'Stacked lockup', 'Monogram', 'Never']) {
+      expect(art, rule).toContain(rule);
+    }
+    // It must render from a font already in the payload budget, not from an
+    // asset nobody has drawn.
+    expect(art).toMatch(/Neue Haas Grotesk Display Pro 65\s+Medium/u);
+    expect(DESIGN.slice(DESIGN.indexOf('### 7.3 Payload budget'))).toContain('Subset fonts');
+  });
+
+  it('the SEVEN lockup agrees with §12 that SEVEN is a toggle, not a product', () => {
+    expect(art).toMatch(/It is a suffix, never a second\s+wordmark/u);
+    expect(DESIGN).toContain('**toggle in the top rail, not a separate product**');
+  });
+
+  it('the sphere glyph set is the model’s, and every glyph is distinct', () => {
+    const glyphs = ELEMENTS.map((element) => element.glyph);
+    expect(new Set(glyphs).size).toBe(glyphs.length);
+    for (const glyph of glyphs) expect(art, glyph).toContain(`\`${glyph}\``);
+    // One construction, so a glyph cannot read as lighter than its neighbour.
+    expect(art).toMatch(/24 × 24 grid/u);
+    expect(art).toMatch(/within 15% of every other/u);
+  });
+
+  it('the UI icon set is closed and carries no gold', () => {
+    const iconRows = art
+      .split('\n')
+      .filter((line) => /^\| `[⌂◈←×⧉↻]/u.test(line));
+    expect(iconRows).toHaveLength(6);
+    expect(art).toMatch(/No icon is ever gold/u);
+    // And gold is still exactly the six uses §6.1 enumerates: the new sections
+    // must not have quietly added a seventh.
+    const goldList = DESIGN.slice(DESIGN.indexOf('appears in exactly six places'), DESIGN.indexOf('Nowhere else.'));
+    expect(goldList.match(/^\d\. /gmu)).toHaveLength(6);
+  });
+
+  it('the chamber geometry is stated in the same numbers the budget uses', () => {
+    const geometry = DESIGN.slice(DESIGN.indexOf('### 6.9 Chamber geometry'), DESIGN.indexOf('### 6.10 First run'));
+    expect(geometry).toContain(`${CHROME_CSS.tube.width} wide`);
+    expect(geometry).toContain(`| Slot pitch | ${CHROME_CSS.slotHeight.classic} | ${CHROME_CSS.slotHeight.seven} |`);
+    // The impeller is the only rotating element, and §6.4 must still say so.
+    expect(geometry).toMatch(/only thing on screen that rotates/u);
+    expect(DESIGN).toContain('Nothing rotates on screen except');
+    // It lives in the WebGL layer, because a rotating chrome element would
+    // break §7.1.1's transform-only rule.
+    expect(geometry).toMatch(/drawn \*\*in the WebGL layer\*\*/u);
+  });
+
+  it('specifies the states §10 requires, and none of them sells anything', () => {
+    const states = DESIGN.slice(DESIGN.indexOf('### 6.10 First run'), DESIGN.indexOf('## 7. Rendering'));
+    for (const state of ['Network lost, pre-commit', 'Network lost, post-commit', 'Wallet declined', 'At the rolling ceiling']) {
+      expect(states, state).toContain(state);
+    }
+    // §10 bans a prompt triggered by a money event, so a declined wallet may
+    // not become a deposit funnel, and the ceiling may not become a countdown.
+    expect(states).toMatch(/Never \*"add funds"\*, never a deposit link/u);
+    expect(states).toMatch(/absolute time, never a countdown/u);
+    expect(states).toContain(`${PLAY_POLICY.maxRoundsPerRollingHour} rounds this hour`);
+    // A player is never told their device is worse than someone else's.
+    expect(states).toMatch(/never told their device is worse/u);
+  });
+
+  it('the splash is a load screen, and nothing rotates in it', () => {
+    const states = DESIGN.slice(DESIGN.indexOf('### 6.10 First run'), DESIGN.indexOf('## 7. Rendering'));
+    expect(states).toMatch(/skipped entirely rather than held for effect/u);
+    expect(states).toMatch(/Loading, in-app\*\*, is never a spinner/u);
+    expect(states).toMatch(/that includes throbbers/u);
   });
 });
 

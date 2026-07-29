@@ -209,7 +209,17 @@ export function frameBudget({
  * `naiveRasterPixelsPerFrame` is the counterfactual that rule buys back. *
  * ==================================================================== */
 
-/** Chrome geometry in CSS pixels. docs/DESIGN.md §5 S1 and S4 declare these. */
+/**
+ * Chrome geometry in CSS pixels. docs/DESIGN.md §5 S1, §5 S4 and §6.9 declare
+ * these.
+ *
+ * `tube.height` is the CLASSIC chamber column; SEVEN's chamber crops 40 px
+ * tighter (§12), and `SPHERE_DIAMETER_CSS` is likewise CLASSIC's 64 where
+ * SEVEN's is 44. Both are deliberately left at the larger value, so every
+ * figure this module publishes is an **upper bound over both variants**. A
+ * budget that has to be recomputed per variant is a budget somebody will quote
+ * the wrong half of.
+ */
 export const CHROME_CSS = Object.freeze({
   /** The tube outline group: the 2 px chamber flex transforms this. */
   tube: Object.freeze({ width: 96, height: 430 }),

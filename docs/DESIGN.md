@@ -927,6 +927,149 @@ Described, not copied — these are qualities to hit, not images to reproduce.
    liquid, never objects lit from outside. On an OLED phone in a dark room this
    is what makes the game look expensive.
 
+### 6.7 Identity: the wordmark
+
+§6.1 to §6.6 were production-ready for **the chamber** and silent on the rest of
+the app: a title positioned as premium had no wordmark, no icon system beyond
+seven sphere glyphs, no splash, and no state treatments. Those are not details
+deferred to build — a wordmark is the first thing a store listing, a splash and
+a share card all need, and "we will design it later" is how a premium title
+ships a default typeface at 200% letter-spacing.
+
+**Construction.** `AETHER ORDER`, set in Neue Haas Grotesk Display Pro 65
+Medium, all caps, tracking `+0.14em`, on one line. The two words are separated
+by **one em space plus a 2 px `--gold` lozenge**, 2 × 8 px, vertically centred
+on the cap height — the only mark in the identity, and it is the same semantic
+gold carries everywhere else (§6.1 use 2, the stamp): *this is the fixed thing*.
+Colour is `--ink` on dark; on the single permitted light surface (a print or a
+press sheet) it is `--void` on white with the lozenge unchanged.
+
+| Rule | Value |
+| --- | --- |
+| Minimum width | 96 px. Below that the lozenge is dropped and the two words stack, tracking `+0.10em`, still one weight. |
+| Clear space | The cap height of the `A`, on all four sides. Nothing enters it, including the safe-area inset. |
+| Stacked lockup | Two lines, `AETHER` over `ORDER`, optically centred, leading 0.92. For square crops and app icons only. |
+| Monogram | The lozenge alone, 1:1, centred in a `--void` field. App icon, favicon, share-card corner. It is not a letterform and never becomes one. |
+| Never | No outline, no gradient, no bevel, no drop shadow, no italic, no second weight, no colour other than `--ink`/`--void`, no sphere used as a letter, no `O` replaced by a circle. |
+
+**The SEVEN lockup** is the wordmark plus ` · SEVEN` at 0.62× the size, same
+tracking, `--ink-dim`, on the same baseline. It is a suffix, never a second
+wordmark, because §12 says SEVEN is a toggle and not a separate product and the
+identity has to agree with that.
+
+**What is deliberately not specified here** is a logotype drawn as custom
+outlines. The mark is a typesetting instruction because that is what survives a
+build: it renders correctly from the subset font already in the payload budget
+(§7.3), at any size, with no asset and no export pipeline. If a custom drawing
+is commissioned later it must reproduce this construction, not replace it.
+
+### 6.8 The icon system
+
+Two closed sets. Nothing outside them ships, and nothing in them is decorative.
+
+**Sphere glyphs (7).** `disc`, `ring`, `triangle`, `square`, `diamond`,
+`chevron`, `hexagon` — §6.1's table. They are the colour-blind channel, not a
+backup for it, so they are drawn to one construction: a **24 × 24 grid, 2.5 px
+stroke or solid fill, no stroke-and-fill mixing, no rounded joins**, sized so
+that every glyph's *filled area* is within 15% of every other's. That last rule
+is what stops `triangle` reading as lighter than `square` at 24 px, and it is
+checked in §15's open question 4 alongside the deuteranopia pass. Glyphs are
+etched into the sphere at 46% of its diameter in `--void` at 24% opacity — they
+subtract light, exactly like the interior fresnel (§6.3), and never sit on top
+as a bright mark.
+
+**UI icons (6).** One stroke weight, 1.5 px on a 24 × 24 grid, square caps,
+`--ink-dim` at rest and `--ink` when active. That is the whole set:
+
+| Icon | Where | Form |
+| --- | --- | --- |
+| `⌂` menu | top rail left | A 14 × 12 house outline. Opens S8/S9 in two taps. |
+| `◈` fairness | top rail right | A 14 × 14 rotated square with a 6 × 6 rotated square inside it. Amber when committed, gold when verified locally (§6.1 use 3). |
+| `←` back | lobby, sheets | A 14 px chevron plus a 6 px tail. Never a chevron alone. |
+| `×` close | every sheet | Two 14 px strokes at 45°. Always paired with drag-to-dismiss. |
+| `⧉` copy | transcript, receipt | Two 12 × 12 offset squares, 3 px apart. |
+| `↻` replay | result | A 270° arc, 14 px diameter, with a 5 px arrowhead. The **only** arc in the set. |
+
+Six icons is a constraint, not a coincidence: every screen in §5 is reachable
+with these, and an app that needs a seventh has grown a feature that §10 has not
+been asked about. No icon is ever gold — gold has six uses (§6.1) and none of
+them is a control.
+
+### 6.9 Chamber geometry, and the impeller
+
+S1's wireframe gives the tube 96 wide and slots 78 tall. The rest, so the
+chamber can be built rather than approximated:
+
+| Element | CLASSIC (`n = 5`) | SEVEN (`n = 7`) |
+| --- | --- | --- |
+| Chamber rect | 390 × 430 | 390 × 390 (§12 crops 40 px) |
+| Glass body | 358 × 374, inset 16 px, corner radius 24 | 358 × 334 |
+| Collar rings | 28 px tall, top and bottom, `--chrome` → `--chrome-dark` vertical | same |
+| Tube, outer | 96 wide, centred at x = 195 | same |
+| Tube wall | 6 px each side, `--glass-edge` at 40% | same |
+| Slot pitch | 78 | 58 |
+| Tube height | `n` × pitch + 24 (12 px rim top and bottom) = 414 | 430 |
+| Sphere diameter | 64 (pitch − 14) | 44 (pitch − 14) |
+| Specular line | 1 px `--specular`, x = 135, from the top collar to 60% depth | same |
+
+**The frame budget sizes the sprite at 64 px for both variants** (§7.1), which
+over-counts SEVEN by a factor of two in the sphere pass. That is deliberate and
+it is stated rather than corrected: the published figure is then an upper bound
+over both variants, and a budget that has to be recomputed per variant is a
+budget somebody will quote the wrong half of.
+
+**The impeller.** Two of them, one behind the tube at each end of the chamber,
+visible only as silhouette and motion:
+
+- A **96 px outer ring**, 3 px stroke, `--chrome-mid` at 30% opacity, with
+  **five 18 px vanes** at 72°, tapering from 6 px at the hub to 2 px at the rim.
+  Five, not seven, in both variants: it is machinery, not a counter, and a
+  five-vane wheel at 3.2 Hz never appears to stand still under the settle
+  cadence the way a seven-vane one does at 360 ms.
+- Centred at `(72, 88)` and `(318, 342)` relative to the chamber rect —
+  diagonally opposed, off the tube's axis, so neither ever sits behind a sphere
+  at rest.
+- It is the **only thing on screen that rotates** (§6.4). It spins up over the
+  260 ms CHARGE, holds through AGITATE, and decelerates to a stop across the
+  first two locks. It never reverses, never pulses, and never reacts to the
+  outcome — a reacting impeller is agency the player does not have (§3).
+- It is drawn **in the WebGL layer**, behind the liquid, because it has no hard
+  edge that matters at DPR 2 and because putting a rotating element in the
+  chrome layer would break §7.1.1's transform-only rule for the settle.
+
+### 6.10 First run, and the states nothing else specifies
+
+**Splash.** 900 ms maximum, and it is a load screen rather than a title card:
+the `--void` field, the monogram (§6.7) centred, and a 1 px `--ink-dim` hairline
+that fills to the monogram's width as the payload arrives. No animation on the
+mark itself, no sound, no tagline. If the payload is already cached the splash
+is skipped entirely rather than held for effect — a splash that waits when it
+does not have to is a loading screen pretending to be branding.
+
+**Loading, in-app**, is never a spinner. Three cases, three treatments: a sheet
+that is fetching shows its own layout with `--chrome-dark` blocks at the text
+positions; the chamber shows the idle drift with the tube empty; the verifier
+shows the hash it is checking, greyed, with the check mark absent. Nothing
+rotates except the impeller (§6.4), and that includes throbbers.
+
+**State treatments** are specified because §10 *requires* the UI to present at
+least one of them, and a required screen with no design is a requirement that
+does not ship. All four share one shape — a 1.5 px `--chrome-dark` rule, the
+message in `--ink` at 17 px, the detail in `--ink-dim` at 15 px, one full-width
+action — and none of them uses `--win`, gold, or a face:
+
+| State | Message | Action | Rule |
+| --- | --- | --- | --- |
+| Network lost, pre-commit | *"No connection. Nothing has been staked."* | `TRY AGAIN` | The ticket stays on screen exactly as built. |
+| Network lost, post-commit | *"Your round is settling on the server. It will be here when you reconnect."* | `RETRY` (auto every 3 s) | The result is restored from the round snapshot (§7.9); it is never re-derived on the client. |
+| Wallet declined | *"That bet was not placed — your balance did not cover it."* | `EDIT TICKET` | Never *"add funds"*, never a deposit link. §10 bans a prompt triggered by a money event. |
+| At the rolling ceiling | *"You have played 900 rounds this hour. Betting opens again at 14:32."* | `SEE MY LIMITS` → S9 | An absolute time, never a countdown — a countdown is a thing to wait out. No *"come back soon"*, no notification offer. |
+| WebGL unavailable | not a state | — | The Canvas2D lane takes over silently (§7 technique 6). A player is never told their device is worse. |
+
+The rolling-ceiling copy is the one to get right, and the rule behind it is: the
+screen states a fact and offers the limits tool. It does not apologise, does not
+promise, and does not give the player anything to do until the window frees.
+
 ---
 
 ## 7. Rendering: premium fluid, no fluid simulation
