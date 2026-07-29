@@ -1,0 +1,24 @@
+{
+  "name": "@axiom-games/aether-order",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AETHER ORDER — a premium permutation draw built on Reveal Engine. Specification, exact enumeration and proofs.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "enumerate": "node tools/enumerate.mjs",
+    "enumerate:json": "node tools/enumerate.mjs --json",
+    "enumerate:markdown": "node tools/enumerate.mjs --markdown",
+    "enumerate:write": "node tools/enumerate.mjs --write",
+    "enumerate:montecarlo": "node tools/enumerate.mjs --monte-carlo=200000",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "npm run enumerate && npm test"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
+}
