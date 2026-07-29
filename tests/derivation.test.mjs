@@ -387,7 +387,7 @@ describe('commitments', () => {
     // another for the predicate must not desync them. Both now read the
     // adapter's own frozen instance.
     let reads = 0;
-    claimSignature('classic', 'first', {
+    const shifty = claimSignature('classic', 'first', {
       code: 'first',
       label: 'f0',
       get params() {
@@ -395,6 +395,10 @@ describe('commitments', () => {
         return reads === 1 ? { c: 0 } : { c: 1 };
       },
     });
+    // Exactly one read, so the getter cannot answer the key and the predicate
+    // differently, and the result is the claim the first read named.
+    expect(reads).toBe(1);
+    expect(shifty).toBe(honest);
     expect(claimSignature('classic', first, { code: 'first', params: { c: 0 }, label: 'f0' })).toBe(honest);
     expect(claimSignature('classic', first, { code: 'first', params: { c: 1 }, label: 'f1' })).not.toBe(honest);
 

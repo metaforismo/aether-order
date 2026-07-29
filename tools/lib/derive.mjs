@@ -195,10 +195,17 @@ export function claimSignature(variantId, family, instance) {
   // a signature for a claim it does not name. The caller's `params` is read
   // exactly once, and only to find the real instance.
   const canonical = assertBetFamily(typeof family === 'string' ? family : family?.code);
-  if (typeof instance !== 'object' || instance === null || typeof instance.params !== 'object' || instance.params === null) {
+  if (typeof instance !== 'object' || instance === null) {
+    fail('UNKNOWN_INSTANCE', 'Bet instance must be an object', '$.instance');
+  }
+  // One read, into a local. Validating `instance.params` and then spreading it
+  // would touch the property three times, which a stateful getter can answer
+  // differently each time.
+  const supplied = instance.params;
+  if (typeof supplied !== 'object' || supplied === null) {
     fail('UNKNOWN_INSTANCE', 'Bet instance must carry a params object', '$.params');
   }
-  const requested = { ...instance.params };
+  const requested = { ...supplied };
   const legal = canonical.instances(variant.n, { permutationCount: factorialNumber(variant.n) });
   const canonicalInstance = legal.find((candidate) => sameParams(candidate.params, requested));
   if (!canonicalInstance) fail('UNKNOWN_INSTANCE', 'Bet parameters are not a legal instance', '$.params');
