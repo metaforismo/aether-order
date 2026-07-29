@@ -279,27 +279,55 @@ export function proveStakeQuantum(analysis) {
  * line; covering every permutation on FULL ORDER does the same.
  */
 export function proveCoverTickets(analysis) {
+  const { n } = getVariant(analysis.variantId);
+  const permutations = allPermutations(n);
+  const views = permutations.map((perm) =>
+    Object.freeze({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n }),
+  );
+  const stake = STAKE_QUANTUM;
   const covers = [];
+
+  // A cover is a set of instances whose union is certain. For `first`, `last`
+  // and `full` that is every instance; `slot` is covered by fixing one colour
+  // and buying every slot for it. Nothing here assumes exactly one line wins —
+  // the payout is resolved against every outcome, so a broken predicate shows
+  // up as a non-constant payout rather than passing silently.
   for (const code of ['first', 'last', 'slot', 'full']) {
     const row = analysis.rows.find((candidate) => candidate.code === code);
     if (!row) continue;
-    // A cover is a set of mutually exclusive instances whose union is certain.
-    // For `first`, `last` and `full` that is simply every instance. `slot` is
-    // covered by fixing one colour and buying every slot for it.
-    const lines = code === 'slot' ? analysis.n : row.instances;
-    const stake = STAKE_QUANTUM;
-    const totalStake = stake * BigInt(lines);
-    const winningLines = 1n; // exactly one, by construction
-    const grossChips = winningLines * exactChips(stake, row.multiplier, `$.${code}`);
-    const ratio = rational(grossChips, totalStake);
+    const family = BET_FAMILIES.find((candidate) => candidate.code === code);
+    const all = family.instances(n, { permutationCount: permutations.length });
+    const lines = code === 'slot' ? all.filter((instance) => instance.params.c === 0) : all;
+
+    const payouts = new Set();
+    let winCounts = new Set();
+    for (const view of views) {
+      let payout = 0n;
+      let wins = 0;
+      for (const instance of lines) {
+        if (family.resolve(instance, view) === true) {
+          wins += 1;
+          payout += exactChips(stake, row.multiplier, `$.${code}`);
+        }
+      }
+      payouts.add(payout);
+      winCounts.add(wins);
+    }
+
+    const totalStake = stake * BigInt(lines.length);
+    const constant = payouts.size === 1;
+    const guaranteedReturnChips = constant ? [...payouts][0] : 0n;
+    const ratio = rational(guaranteedReturnChips, totalStake);
     covers.push(
       Object.freeze({
         code,
-        lines,
+        lines: lines.length,
         totalStakeChips: totalStake,
-        guaranteedReturnChips: grossChips,
+        guaranteedReturnChips,
+        winningLinesPerOutcome: [...winCounts],
+        zeroVariance: constant,
         ratio,
-        matchesTargetRtp: eq(ratio, TARGET_RTP),
+        matchesTargetRtp: constant && eq(ratio, TARGET_RTP),
       }),
     );
   }
@@ -316,9 +344,15 @@ export function proveCoverTickets(analysis) {
  * permutation, collect every bet instance that wins under it, sort by
  * multiplier, then spend the ticket budget greedily at the maximum line stake.
  * Because the objective is linear in the stakes and the constraints are a
- * budget plus a per-line ceiling, greedy-by-multiplier is optimal. The ticket is
- * then settled through the real settlement path, so the number is produced by
- * the same code that would pay a player.
+ * budget plus a per-line ceiling — and because a ticket may not repeat a claim
+ * (`LIMITS.requireDistinctLines`) — greedy-by-multiplier is optimal: any other
+ * selection can be improved by exchanging a chosen line for an unchosen one
+ * with a larger multiplier. Without the distinct-line rule the maximum would
+ * instead be `maxTicketStake x max multiplier`, since the budget could be piled
+ * onto repeats of the single best line. The chosen ticket is settled through
+ * the real settlement path, so the number is produced by the code that would
+ * pay a player, and the returned `optimal` flag records that the selected
+ * multipliers really are the largest available.
  */
 export function proveMaxRoundCredit(variantId) {
   const variant = getVariant(variantId);
@@ -348,6 +382,16 @@ export function proveMaxRoundCredit(variantId) {
 
   const settlement = settleTicket({ permutation: perm, variantId }, { lines });
   const roundMultiple = rational(settlement.creditedChips, settlement.totalStakeChips);
+
+  // Optimality witness: the multipliers actually bought must be the largest
+  // available, and the budget must be fully spent (or the line limit reached).
+  const chosen = lines.map((line) => variant.multipliers[line.code]);
+  const bestAvailable = winners.slice(0, lines.length).map((winner) => winner.multiplier);
+  const optimal =
+    chosen.length === bestAvailable.length &&
+    chosen.every((multiplier, index) => eq(multiplier, bestAvailable[index])) &&
+    (settlement.totalStakeChips === LIMITS.maxTicketStakeChips || lines.length === LIMITS.maxLinesPerTicket);
+
   return Object.freeze({
     lines: lines.length,
     winningInstancesAvailable: winners.length,
@@ -357,6 +401,7 @@ export function proveMaxRoundCredit(variantId) {
     roundMultiple,
     capped: settlement.capped,
     allLinesWon: settlement.lines.every((line) => line.won),
+    optimal,
   });
 }
 

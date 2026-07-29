@@ -37,8 +37,16 @@ export const LIMITS = Object.freeze({
   maxTicketStakeChips: 20000n,
   /** Round credit ceiling as a multiple of the ticket's total stake. */
   maxWinMultiple: 5000n,
+  /**
+   * A ticket is a set of distinct claims. Without this, repeating a line would
+   * defeat the per-line stake ceiling; the client merges repeats by raising the
+   * stake. It is also what makes the maximum-credit figure in docs/MATH.md §8 a
+   * true maximum rather than a lower bound.
+   */
+  requireDistinctLines: true,
   maxClientSeedBytes: 64,
   maxRoundIdBytes: 128,
+  maxLabelBytes: 128,
 });
 
 /** Element identity is shared across variants; SEVEN appends two elements. */

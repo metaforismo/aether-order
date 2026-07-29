@@ -121,8 +121,8 @@ describe('published limits', () => {
     expect(() => settleTicket(t, { lines })).toThrow(AetherOrderError);
   });
 
-  it('rejects an unknown bet code and illegal parameters', () => {
-    expect(() => settleTicket(t, { lines: [line({ code: 'jackpot' })] })).toThrow(RangeError);
+  it('rejects an unknown bet code and illegal parameters with coded errors', () => {
+    expect(() => settleTicket(t, { lines: [line({ code: 'jackpot' })] })).toThrow(AetherOrderError);
     expect(() => settleTicket(t, { lines: [line({ params: { c: 99 } })] })).toThrow(AetherOrderError);
     expect(() => settleTicket(t, { lines: [line({ code: 'slot', params: { c: 0 } })] })).toThrow(AetherOrderError);
     expect(() => settleTicket(t, { lines: [line({ code: 'before', params: { a: 2, b: 2 } })] })).toThrow(
@@ -132,6 +132,36 @@ describe('published limits', () => {
 
   it.each([null, undefined, 42, 'ticket', {}])('rejects hostile ticket %p', (ticket) => {
     expect(() => settleTicket(t, ticket)).toThrow(AetherOrderError);
+  });
+
+  it.each([null, undefined, 42, 'line', []])('rejects hostile ticket line %p', (bad) => {
+    expect(() => settleTicket(t, { lines: [bad] })).toThrow(AetherOrderError);
+  });
+
+  it('rejects an unknown variant with a coded error', () => {
+    expect(() => settleTicket(at('nine', identity(5)), { lines: [line()] })).toThrow(AetherOrderError);
+  });
+
+  it('rejects a duplicated claim — the stake ceiling is per claim, not per row', () => {
+    const duplicate = () => settleTicket(t, { lines: [line(), line()] });
+    expect(duplicate).toThrow(AetherOrderError);
+    try {
+      duplicate();
+    } catch (error) {
+      expect(error.code).toBe('DUPLICATE_LINE');
+    }
+    // The same family with different parameters is fine.
+    expect(() =>
+      settleTicket(t, { lines: [line(), line({ params: { c: 1 } })] }),
+    ).not.toThrow();
+  });
+
+  it('caps the biggest possible round well below the ceiling', () => {
+    // Without the distinct-line rule, four maximum-stake copies of the winning
+    // FULL ORDER line would pay 200.00 x 115.20 = 23,040.00 credits. The rule
+    // makes that ticket illegal, which is what pins the documented maximum.
+    const fullLine = { code: 'full', params: { rank: 0 }, stakeChips: LIMITS.maxLineStakeChips };
+    expect(() => settleTicket(t, { lines: [fullLine, { ...fullLine }] })).toThrow(AetherOrderError);
   });
 
   it.each([

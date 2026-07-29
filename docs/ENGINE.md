@@ -5,11 +5,15 @@ arithmetic. It consumes a Reveal Engine lifecycle module and supplies an
 adapter. This document specifies the module the game expects, the exact adapter
 surface it implements against, and the byte layouts both sides must agree on.
 
-The normative reference implementation of everything described here lives in
-`tools/lib/` as plain ESM so that the enumerator, the tests and an independent
-verifier can execute it without a build step. The TypeScript module inside
-Reveal Engine must produce **byte-identical** commitments;
-`tests/fixtures/transcripts.json` freezes the vectors that prove it.
+`tools/lib/` carries a runnable reference implementation of the module's
+**derivation, commitment, verification and settlement core**, written in plain
+ESM so that the enumerator, the tests and an independent verifier can execute it
+without a build step. The protocol layer — receipts, idempotency, snapshots,
+serialisation and the packaged conformance runner — is specified here but not
+implemented in this repository; §10 marks each surface. Where the reference does
+exist it is normative: the TypeScript module inside Reveal Engine must produce
+**byte-identical** commitments, and `tests/fixtures/transcripts.json` freezes the
+vectors that prove it.
 
 ---
 
@@ -137,6 +141,13 @@ export interface PermutationRiskPolicy {
   readonly minLineStake: bigint;
   readonly maxLineStake: bigint;
   readonly maxTicketStake: bigint;
+  /**
+   * A ticket may not repeat a claim. Without this the per-line ceiling is
+   * meaningless — the budget could be piled onto copies of the single best
+   * line — and the maximum-credit figure in docs/MATH.md would be a lower
+   * bound rather than a maximum.
+   */
+  readonly requireDistinctLines: boolean;
 }
 
 export interface PermutationGameDefinition {
@@ -156,7 +167,20 @@ export interface PermutationGameDefinition {
 /** The only supported construction path: validates, clones, deep-freezes. */
 export function definePermutationGame(input: PermutationGameDefinition): PermutationGameDefinition;
 
-/** Binds every replay-visible declarative field above. */
+/**
+ * Behavioural digest of the catalogue: for every family, in canonical order,
+ * every instance's complete win/lose bitmap over all n! permutations.
+ * Declaring codes and multipliers is not enough — reversing a predicate would
+ * leave a purely declarative fingerprint untouched while changing how an open
+ * liability settles.
+ */
+export function permutationCatalogueDigest(game: PermutationGameDefinition): string;
+
+/**
+ * Binds every replay-visible field: the declarative configuration above AND
+ * `permutationCatalogueDigest(game)`. Memoised; computing it costs one pass
+ * over the outcome space per variant.
+ */
 export function permutationAdapterFingerprint(game: PermutationGameDefinition): string;
 ```
 
@@ -183,11 +207,31 @@ action-bound idempotency key, exactly as in `RoundBook`.
 
 Ordering is load-bearing and must be enforced by the RGS:
 
-1. Draw a 32-byte server seed from a CSPRNG. Publish `seedCommitment`.
+1. Draw a 32-byte server seed from a CSPRNG. Fix the **seed context** —
+   `(variantId, roundId, nonce)` — and publish it together with
+   `seedCommitment`, which binds the seed *and* that whole context.
 2. Accept the player's client seed and ticket. Debit the wallet.
 3. Derive the permutation. Settle. Credit the wallet.
-4. Reveal the server seed. The transcript becomes independently verifiable.
+4. Reveal the server seed. The transcript plus that seed becomes independently
+   verifiable.
 5. Chain: the next round's transcript binds this round's `commitment`.
+
+**Why the context, not just the seed.** The permutation is a function of
+`(serverSeed, variantId, roundId, clientSeed, nonce)`. A commitment over the
+seed alone would leave `nonce` and `variantId` free: an operator that had
+already seen the ticket could search them for a favourable permutation and
+still open the published hash honestly. Binding the full seed context means the
+only degree of freedom left after publication belongs to the player. The client
+must check that the settled transcript's context is the one that was published.
+
+**What the chain does and does not prove.** Binding `previousCommitment` makes a
+retroactive edit to a round's ancestry detectable to anyone holding a later
+commitment. It is tamper-evidence, not proof of completeness or chronology: the
+format carries no sequence number, timestamp or signature, so a dropped tail or
+a chain built after the fact is not detectable from the chain alone. Production
+deployments must anchor the chain head externally — an operator signature over
+`(chain head, sequence, time)`, or publication to a medium the operator cannot
+rewrite.
 
 Revealing the seed *per round* (rather than per seed-pair rotation) is
 deliberate: it gives immediate one-tap verification and removes the class of bug
@@ -302,8 +346,15 @@ programming or protocol error, not a game state.
 Identical to the engine's `encodeFields`: a uint32 big-endian field count,
 then, per field, a uint32 big-endian byte length followed by the bytes.
 `bigint` and `number` fields encode as their base-10 ASCII decimal; `number`
-must be a safe integer. The framing is unambiguous, so no field can smuggle a
-separator and no two distinct field vectors can collide.
+must be a safe integer.
+
+The property this provides is **recoverable field boundaries**: no field can
+smuggle a separator, and `['ab','c']` can never collide with `['a','bc']`. It is
+deliberately *not* type-tagged — `7`, `7n` and `'7'` share an encoding. That is
+safe here only because every field position in every payload below has a fixed
+declared type, so a value cannot migrate between types at the same position. A
+future payload that needs two types at one position must add an explicit type
+tag; do not assume typed injectivity.
 
 ### 7.2 Seed commitment (published before the ticket)
 
@@ -311,9 +362,13 @@ separator and no two distinct field vectors can collide.
 seedCommitment = SHA-256( encodeFields([
   'aether-order/seed-commit-v1',
   serverSeed as 32 raw bytes,
-  roundId,
+  gameId, variantId, roundId, nonce,
 ]) )
 ```
+
+Everything the derivation consumes except `clientSeed` appears here. Publishing
+this hash together with `(variantId, roundId, nonce)` is what makes the round
+non-grindable; see §5.
 
 ### 7.3 Uniform sampler
 
@@ -388,7 +443,11 @@ A verifier holding `(serverSeed, transcript)` and the adapter must:
 2. reject a mismatched `gameId`, `adapterVersion` or `adapterFingerprint`;
 3. validate `permutation` is a genuine permutation of `[0, n)`;
 4. re-derive the permutation and compare element by element;
-5. recompute `seedCommitment` and compare in constant time;
+5. **require** `seedCommitment`, validate it as 64 lowercase hex characters,
+   recompute it and compare in constant time. A missing or wrongly-typed field
+   is a rejection, never a skipped check — treating "absent" as "nothing to
+   verify" would let a round that was never committed to in advance verify as
+   honest;
 6. recompute `commitment` and compare in constant time.
 
 `tools/enumerate.mjs` §9 exercises the happy path plus a tampered permutation
@@ -400,7 +459,9 @@ and a wrong revealed seed. `tests/derivation.test.mjs` extends that to mutated
 ## 8. Adapter conformance
 
 The module must expose `assertPermutationAdapterConforms(game)` and run it in
-CI. It is mechanical evidence, not certification. It checks:
+CI. It is mechanical evidence, not certification. In this repository the checks
+below are implemented as `tools/enumerate.mjs` plus the test suite rather than as
+a packaged function; a port must fold them into the module. It checks:
 
 1. **Structure** — `apiVersion` / `moduleVersion` are current; `id`, `variantId`
    and `adapterVersion` are non-empty printable ASCII within
@@ -421,6 +482,8 @@ CI. It is mechanical evidence, not certification. It checks:
    `stake × multiplier` is always an exact integer and `floor` is a no-op.
 9. **Cap headroom** — `max multiplier < maxWinMultiple`, so the cap is inert.
 10. **Shuffle bijection** — all `n!` draw vectors map onto `S_n` exactly once.
+11. **Behavioural fingerprint** — the catalogue digest is recomputed and must
+    equal the one bound into the adapter fingerprint.
 
 Checks 5–10 are enumerable in milliseconds for `n <= 8` and are exactly what
 `tools/enumerate.mjs` performs today. For larger `n` the module must refuse to
@@ -444,8 +507,10 @@ Integrations branch on `code`, never on message text.
 | `ADAPTER_MISMATCH` | transcript belongs to another adapter or fingerprint |
 | `TRANSCRIPT_MISMATCH` | re-derivation disagrees with the transcript |
 | `COMMITMENT_MISMATCH` | commitment does not open to the revealed seed |
-| `INVALID_TICKET` | line count, stake, quantum or total breaches the risk policy |
+| `INVALID_TICKET` | line count, stake, quantum, total or line shape breaches the risk policy |
+| `UNKNOWN_BET` | ticket references a bet code the adapter does not define |
 | `UNKNOWN_INSTANCE` | ticket parameters are not a legal instance of the family |
+| `DUPLICATE_LINE` | the ticket repeats a claim; raise the stake instead |
 | `INEXACT_PAYOUT` | `stake × multiplier` is not an integer — never rounds, always throws |
 | `IDEMPOTENCY_CONFLICT` | same key, different payload or action |
 
@@ -454,9 +519,11 @@ Module additions to `ENGINE_LIMITS`:
 ```ts
 export const PERMUTATION_LIMITS = Object.freeze({
   maxElements: 12,              // definition ceiling
-  maxExhaustiveElements: 8,     // conformance ceiling
+  maxExhaustiveElements: 8,     // conformance and catalogue-digest ceiling
   maxLinesPerTicket: 32,        // protocol ceiling; the adapter sets 12
   maxClientSeedBytes: 64,
+  maxRoundIdBytes: 128,
+  maxLabelBytes: 128,           // sampler labels: printable ASCII, bounded
   maxTranscriptBytes: 64 * 1024,
 });
 ```
@@ -465,16 +532,26 @@ export const PERMUTATION_LIMITS = Object.freeze({
 
 ## 10. Reference implementation map
 
-| Concern | File |
-| --- | --- |
-| Exact BigInt rationals | `tools/lib/rational.mjs` |
-| Canonical encoding, SHA-256, HMAC, canonical JSON | `tools/lib/canonical.mjs` |
-| Permutation enumeration, rank, Fisher–Yates, draw vectors | `tools/lib/permutations.mjs` |
-| Bet families: instances and pure resolve predicates | `tools/lib/bets.mjs` |
-| Elements, multipliers, limits, quantum, target RTP | `tools/lib/model.mjs` |
-| Sampler, shuffle, commitments, transcript, settlement | `tools/lib/derive.mjs` |
-| Exhaustive proofs used by both the CLI and the tests | `tools/lib/analysis.mjs` |
-| Frozen wire-format vectors | `tests/fixtures/transcripts.json` |
+| Surface | Status | Where |
+| --- | --- | --- |
+| Exact BigInt rationals | implemented | `tools/lib/rational.mjs` |
+| Canonical encoding, SHA-256, HMAC, canonical JSON | implemented | `tools/lib/canonical.mjs` |
+| Permutation enumeration, rank, Fisher–Yates, draw vectors | implemented | `tools/lib/permutations.mjs` |
+| Bet families: instances and pure resolve predicates | implemented | `tools/lib/bets.mjs` |
+| Elements, multipliers, limits, quantum, target RTP | implemented | `tools/lib/model.mjs` |
+| Sampler, shuffle, seed commitment, transcript, verification, settlement | implemented | `tools/lib/derive.mjs` |
+| Catalogue digest and adapter fingerprint | implemented | `tools/lib/derive.mjs` |
+| Exhaustive proofs used by the CLI and the tests | implemented | `tools/lib/analysis.mjs` |
+| Frozen wire-format vectors | implemented | `tests/fixtures/transcripts.json` |
+| Conformance checks 1–10 of §8 | implemented as the enumerator + test suite, **not** as a packaged `assertPermutationAdapterConforms` | `tools/enumerate.mjs`, `tests/` |
+| `openTicket`, receipts, idempotency keys, snapshots | **specified only** | — |
+| `serializeTranscript` / `deserializeTranscript` and size bounds | **specified only** (the reference uses `canonicalJson`) | — |
+| `definePermutationGame` validating factory | **specified only** (the reference freezes literals in `model.mjs`) | — |
+
+**Naming.** The module types above are generic over minor units and use
+`stake` / `gross` / `credited`. The reference, being game-specific, names the
+unit: `stakeChips` / `grossChips` / `creditedChips`. Same fields, same
+semantics; a port should use the module names.
 
 Porting checklist for the TypeScript module: reproduce `encodeFields` byte for
 byte, keep the domain tags and field order in §7 identical, then run

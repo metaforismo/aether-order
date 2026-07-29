@@ -60,14 +60,27 @@ describe.each(VARIANT_IDS)('variant %s', (variantId) => {
   });
 
   it('resolves every bet as a pure function of (instance, permutation)', () => {
-    const perm = Array.from({ length: variant.n }, (_, i) => i);
-    const ctx = Object.freeze({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n: variant.n });
+    // Every instance against every outcome, evaluated twice, with deeply frozen
+    // arguments so a predicate that mutated its inputs would throw in strict
+    // mode rather than pass. This is the claim docs/ENGINE.md section 8 makes.
+    const views = allPermutations(variant.n).map((perm) =>
+      Object.freeze({
+        perm: Object.freeze(perm),
+        pos: Object.freeze(positionsOf(perm)),
+        rank: permutationRank(perm),
+        n: variant.n,
+      }),
+    );
     for (const family of BET_FAMILIES) {
       for (const instance of family.instances(variant.n, { permutationCount: analysis.permutationCount })) {
-        const first = family.resolve(instance, ctx);
-        const second = family.resolve(instance, ctx);
-        expect(typeof first).toBe('boolean');
-        expect(second).toBe(first);
+        expect(Object.isFrozen(instance.params)).toBe(true);
+        for (const view of views) {
+          const first = family.resolve(instance, view);
+          if (typeof first !== 'boolean') throw new TypeError(`${family.code} returned a non-boolean`);
+          if (family.resolve(instance, view) !== first) {
+            throw new Error(`${family.code} is non-deterministic on ${instance.label}`);
+          }
+        }
       }
       // enumerateInstances must be deterministic
       const a = family.instances(variant.n, { permutationCount: analysis.permutationCount }).map((i) => i.label);
@@ -112,14 +125,21 @@ describe.each(VARIANT_IDS)('variant %s', (variantId) => {
   it('returns exactly 24/25 on complete covers, with zero variance', () => {
     const covers = proveCoverTickets(analysis);
     expect(covers.allMatch).toBe(true);
-    for (const cover of covers.covers) expect(render.fraction(cover.ratio)).toBe('24/25');
+    for (const cover of covers.covers) {
+      // Resolved against every outcome: constant payout, exactly one winner.
+      expect(cover.zeroVariance).toBe(true);
+      expect(cover.winningLinesPerOutcome).toEqual([1]);
+      expect(render.fraction(cover.ratio)).toBe('24/25');
+    }
   });
 
-  it('settles the best possible round below the cap', () => {
+  it('settles the best possible round below the cap, and it is a true maximum', () => {
     const best = proveMaxRoundCredit(variantId);
     expect(best.capped).toBe(false);
     expect(best.allLinesWon).toBe(true);
+    expect(best.optimal).toBe(true);
     expect(best.totalStakeChips).toBeLessThanOrEqual(LIMITS.maxTicketStakeChips);
+    expect(best.totalStakeChips).toBe(LIMITS.maxTicketStakeChips);
     expect(cmp(best.roundMultiple, rational(LIMITS.maxWinMultiple))).toBe(-1);
   });
 

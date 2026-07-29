@@ -12,9 +12,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { canonicalJson, encodeFields, sha256Hex } from '../tools/lib/canonical.mjs';
+import { BET_FAMILIES } from '../tools/lib/bets.mjs';
+import { allPermutations, permutationRank, positionsOf } from '../tools/lib/permutations.mjs';
 import {
   AetherOrderError,
   adapterFingerprint,
+  catalogueDigest,
   derivePermutation,
   makeTranscript,
   normalizeServerSeed,
@@ -85,7 +88,7 @@ describe('frozen wire-format fixtures', () => {
 });
 
 describe('canonical encoding', () => {
-  it('is unambiguous — no two distinct field vectors collide', () => {
+  it('recovers field boundaries — no separator can be smuggled inside a field', () => {
     const a = encodeFields(['ab', 'c']);
     const b = encodeFields(['a', 'bc']);
     const c = encodeFields(['abc']);
@@ -94,8 +97,13 @@ describe('canonical encoding', () => {
     expect(b.equals(c)).toBe(false);
   });
 
-  it('distinguishes a number field from the same digits as a string', () => {
-    expect(encodeFields([7]).equals(encodeFields(['7']))).toBe(true); // same bytes by design
+  it('is not type-tagged, which is why every field position has a fixed type', () => {
+    // Documented limitation, asserted so it cannot change silently: numbers,
+    // BigInts and their decimal strings share an encoding. Safe only because no
+    // commitment payload ever varies the type at a given field position.
+    expect(encodeFields([7]).equals(encodeFields(['7']))).toBe(true);
+    expect(encodeFields([7n]).equals(encodeFields(['7']))).toBe(true);
+    // Field boundaries still hold, which is the property commitments rely on.
     expect(encodeFields([7, 'x']).equals(encodeFields(['7x']))).toBe(false);
   });
 
@@ -157,15 +165,26 @@ describe('permutation derivation', () => {
     expect(a).toEqual(b);
   });
 
-  it('changes when any declared input changes', () => {
-    const base = derivePermutation(SEED_A, ctx({ variantId: 'seven' })).join(',');
-    const variants = [
-      derivePermutation(SEED_B, ctx({ variantId: 'seven' })).join(','),
-      derivePermutation(SEED_A, ctx({ variantId: 'seven', roundId: 'r-2' })).join(','),
-      derivePermutation(SEED_A, ctx({ variantId: 'seven', clientSeed: 'other' })).join(','),
-      derivePermutation(SEED_A, ctx({ variantId: 'seven', nonce: 1 })).join(','),
+  it('re-randomises on every declared input change', () => {
+    // Two different inputs CAN legitimately land on the same permutation — the
+    // input space is astronomically larger than 120 or 5040 outcomes, so
+    // collisions are expected, not a defect. The invariant that must hold is
+    // that the *commitment* changes, which is collision resistance of SHA-256,
+    // and that the permutation is genuinely re-derived rather than carried over.
+    const base = makeTranscript(SEED_A, ctx({ variantId: 'seven' }));
+    const changed = [
+      makeTranscript(SEED_B, ctx({ variantId: 'seven' })),
+      makeTranscript(SEED_A, ctx({ variantId: 'seven', roundId: 'r-2' })),
+      makeTranscript(SEED_A, ctx({ variantId: 'seven', clientSeed: 'other' })),
+      makeTranscript(SEED_A, ctx({ variantId: 'seven', nonce: 1 })),
+      makeTranscript(SEED_A, ctx({ variantId: 'classic' })),
     ];
-    for (const candidate of variants) expect(candidate).not.toBe(base);
+    for (const candidate of changed) expect(candidate.commitment).not.toBe(base.commitment);
+    // On these specific inputs the permutations also differ; asserted as a
+    // regression guard on the sampler's domain separation, not as a theorem.
+    for (const candidate of changed.slice(0, 4)) {
+      expect(candidate.permutation.join(',')).not.toBe(base.permutation.join(','));
+    }
   });
 });
 
@@ -184,6 +203,7 @@ describe('transcript verification', () => {
     ['previousCommitment', { previousCommitment: 'f'.repeat(64) }, 'COMMITMENT_MISMATCH'],
     ['commitment', { commitment: '0'.repeat(64) }, 'COMMITMENT_MISMATCH'],
     ['seedCommitment', { seedCommitment: '1'.repeat(64) }, 'COMMITMENT_MISMATCH'],
+    ['variantId', { variantId: 'nonexistent' }, 'ADAPTER_MISMATCH'],
     ['adapterFingerprint', { adapterFingerprint: 'b'.repeat(64) }, 'ADAPTER_MISMATCH'],
     ['adapterVersion', { adapterVersion: '9.9.9' }, 'ADAPTER_MISMATCH'],
     ['schema', { schema: 'reveal-engine/transcript-v2' }, 'UNSUPPORTED_VERSION'],
@@ -249,8 +269,14 @@ describe('hostile input handling', () => {
     expect(() => makeTranscript(SEED_A, ctx({ roundId: '' }))).toThrow(AetherOrderError);
   });
 
-  it('rejects an unknown variant', () => {
-    expect(() => makeTranscript(SEED_A, ctx({ variantId: 'nine' }))).toThrow(RangeError);
+  it('rejects an unknown variant with a coded error, not a bare RangeError', () => {
+    expect(() => makeTranscript(SEED_A, ctx({ variantId: 'nine' }))).toThrow(AetherOrderError);
+    try {
+      makeTranscript(SEED_A, ctx({ variantId: 'nine' }));
+    } catch (error) {
+      expect(error.code).toBe('ADAPTER_MISMATCH');
+      expect(error.path).toBe('$.variantId');
+    }
   });
 
   it('rejects a malformed previous commitment', () => {
@@ -259,14 +285,65 @@ describe('hostile input handling', () => {
 });
 
 describe('commitments', () => {
-  it('the seed commitment hides the seed and binds the round', () => {
-    expect(seedCommitment(SEED_A, 'r-1')).not.toBe(seedCommitment(SEED_A, 'r-2'));
-    expect(seedCommitment(SEED_A, 'r-1')).not.toBe(seedCommitment(SEED_B, 'r-1'));
-    expect(seedCommitment(SEED_A, 'r-1')).toMatch(/^[0-9a-f]{64}$/u);
+  const seedCtx = (over = {}) => ({ variantId: 'classic', roundId: 'r-1', nonce: 0, ...over });
+
+  it('the seed commitment hides the seed and binds the whole pre-bet context', () => {
+    const base = seedCommitment(SEED_A, seedCtx());
+    expect(base).toMatch(/^[0-9a-f]{64}$/u);
+    expect(seedCommitment(SEED_B, seedCtx())).not.toBe(base);
+    expect(seedCommitment(SEED_A, seedCtx({ roundId: 'r-2' }))).not.toBe(base);
+    // The nonce and variant MUST be bound. If they were not, an operator that
+    // had already seen the ticket could search them for a favourable outcome
+    // while still opening the published hash honestly.
+    expect(seedCommitment(SEED_A, seedCtx({ nonce: 1 }))).not.toBe(base);
+    expect(seedCommitment(SEED_A, seedCtx({ variantId: 'seven' }))).not.toBe(base);
   });
 
-  it('the adapter fingerprint separates variants', () => {
+  it('the seed commitment validates its context', () => {
+    expect(() => seedCommitment(SEED_A, seedCtx({ roundId: 'r'.repeat(129) }))).toThrow(AetherOrderError);
+    expect(() => seedCommitment(SEED_A, seedCtx({ roundId: 'bad\u0000id' }))).toThrow(AetherOrderError);
+    expect(() => seedCommitment(SEED_A, seedCtx({ nonce: -1 }))).toThrow(AetherOrderError);
+    expect(() => seedCommitment(SEED_A, seedCtx({ variantId: 'nope' }))).toThrow(AetherOrderError);
+  });
+
+  it('a transcript with no pre-round commitment fails closed', () => {
+    const transcript = makeTranscript(SEED_A, ctx());
+    for (const broken of [undefined, null, 42, '', 'not-hex', 'A'.repeat(64)]) {
+      const patched = { ...transcript, seedCommitment: broken };
+      if (broken === undefined) delete patched.seedCommitment;
+      const result = verifyTranscript(SEED_A, patched);
+      expect(result.ok, `seedCommitment ${String(broken)} must not verify`).toBe(false);
+      expect(result.code).toBe('INVALID_TRANSCRIPT');
+    }
+  });
+
+  it('the adapter fingerprint separates variants and is stable', () => {
     expect(adapterFingerprint('classic')).not.toBe(adapterFingerprint('seven'));
     expect(adapterFingerprint('classic')).toBe(adapterFingerprint('classic'));
+  });
+
+  it('the adapter fingerprint binds catalogue BEHAVIOUR, not just its declaration', () => {
+    // A predicate change with identical codes and multipliers must still move
+    // the fingerprint, otherwise an open liability could be re-resolved.
+    const honest = catalogueDigest('classic');
+    const tampered = BET_FAMILIES.map((family) =>
+      family.code === 'first'
+        ? { ...family, resolve: (instance, view) => view.pos[instance.params.c] === view.n - 1 }
+        : family,
+    );
+    const digestOf = (families) => {
+      const perms = allPermutations(5);
+      const views = perms.map((perm) => ({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n: 5 }));
+      return families
+        .map((family) =>
+          family
+            .instances(5, { permutationCount: perms.length })
+            .map((instance) => views.map((view) => (family.resolve(instance, view) ? '1' : '0')).join(''))
+            .join('|'),
+        )
+        .join('#');
+    };
+    expect(digestOf(tampered)).not.toBe(digestOf([...BET_FAMILIES]));
+    expect(honest).toMatch(/^[0-9a-f]{64}$/u);
   });
 });

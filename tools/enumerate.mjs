@@ -319,10 +319,12 @@ for (const variantId of variantIds) {
   const best = proveMaxRoundCredit(variantId);
   check(
     'best possible round settles below the cap',
-    !best.capped && best.allLinesWon,
+    !best.capped && best.allLinesWon && best.optimal,
     `${best.lines} lines, stake ${best.totalStakeChips} chips -> credit ${best.creditedChips} chips ` +
       `(${render.approx(best.creditedCredits, 2)} credits, ${render.approx(best.roundMultiple, 2)}x ticket)`,
   );
+  say('      A ticket may not repeat a claim, so greedy-by-multiplier over the');
+  say('      distinct winning instances is a true maximum, not a lower bound.');
   say();
 
   /* --- Proof 5: rounding --------------------------------------- */

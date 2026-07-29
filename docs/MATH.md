@@ -239,6 +239,7 @@ Stakes and credits are integer **chips**. One display credit is 100 chips.
 | Parameter | Value |
 | --- | --- |
 | Stake quantum | 25 chips (0.25 credits) |
+| Distinct claims per ticket | required — a claim may not be repeated |
 | Minimum line stake | 25 chips (0.25 credits) |
 | Maximum line stake | 5,000 chips (50.00 credits) |
 | Maximum ticket stake | 20,000 chips (200.00 credits) |
@@ -327,10 +328,15 @@ wallet integration under *any* future paytable edit or adapter bug. CI asserts
 the build and forces an explicit decision instead of an invisible RTP cut.
 Headroom today: `4,884.80×` (CLASSIC), `161.60×` (SEVEN).
 
-**Largest credit a round can actually produce** — computed by building the best
-ticket the limits allow, sorting the winning instances by multiplier and
-spending the budget greedily, then settling it through the production settlement
-path:
+**Largest credit a round can actually produce.** A ticket carries *distinct*
+claims: repeating a line is rejected, and the client merges repeats by raising
+that line's stake. That rule is what makes the per-line ceiling bite — without
+it the whole 200.00 budget could be piled onto four copies of the same winning
+FULL ORDER line, and the maximum would simply be
+`maxTicketStake × max multiplier` (23,040.00 credits in CLASSIC, 967,680.00 in
+SEVEN). With it, the maximum is found by taking the best *distinct* winning
+instances, and is computed by settling that ticket through the production
+settlement path:
 
 | Variant | Best ticket | Stake | Credit | Ticket multiple |
 | --- | --- | --- | --- | --- |
@@ -338,7 +344,11 @@ path:
 | SEVEN | 4 lines (`full`, `opening`, 2 × `slot`) at 50.00 each | 200.00 credits | 244,608.00 credits | 1,223.04× |
 
 Because the objective is linear in the stakes under a budget plus a per-line
-ceiling, greedy-by-multiplier is optimal, so these are true maxima.
+ceiling, and lines must be distinct, greedy-by-multiplier is optimal — any other
+selection improves by exchanging a chosen line for an unchosen one with a larger
+multiplier. These are therefore true maxima, and the enumerator asserts the
+optimality witness (the chosen multipliers are the largest available and the
+budget is fully spent) rather than merely reporting a legal ticket.
 
 ---
 
@@ -405,11 +415,14 @@ sharpest possible statement that there is no edge to find.
 
 ### 9.4 Sequential play, staking systems and stopping rules
 
-**Theorem 3.** Let `(Π_t)` be the permutations of successive rounds, i.i.d.
-uniform on `S_n`. Let `F_t` be everything the player can observe through the end
-of round `t`, and let the round-`t+1` ticket be `F_t`-measurable — which it is,
-because the ticket is committed before the seed for that round is revealed. Then
-for any stopping time `τ` with `E[Σ_{u≤τ} S_u] < ∞`,
+**Theorem 3.** Let `(Π_t)` be the permutations of successive rounds. Each round
+draws a fresh server seed independently of every earlier round, so `(Π_t)` is
+i.i.d. uniform on `S_n` and `Π_{t+1}` is independent of `F_t`, the sigma-algebra
+of everything the player can observe through the end of round `t` (including any
+private randomisation of their own). Let the round-`t+1` ticket be
+`F_t`-measurable — which it is, because the ticket is committed before that
+round's seed exists in the player's view. Then for any stopping time `τ` with
+`E[Σ_{u≤τ} S_u] < ∞`,
 
 ```
 E[ Σ_{u≤τ} C_u ] = ρ · E[ Σ_{u≤τ} S_u ].
@@ -487,4 +500,8 @@ evidence, and any laboratory or regulatory process the target market requires.
 
 Changes to the paytable, the stake quantum, the cap, the limits, or the
 derivation invalidate the figures above. They are bound into the adapter
-fingerprint precisely so that such a change cannot pass unnoticed.
+fingerprint precisely so that such a change cannot pass unnoticed — and the
+fingerprint includes a digest of the catalogue's *behaviour*, every instance's
+win/lose bitmap over the whole outcome space, so reversing a bet rule without
+touching its declaration still invalidates every commitment it would have
+re-settled.

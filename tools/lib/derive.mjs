@@ -8,19 +8,28 @@
  * commitments; tests/fixtures/transcripts.json freezes the vectors that prove it.
  *
  * Fairness model: commit-reveal.
- *   1. The operator draws a 32-byte server seed and publishes
- *      seedCommitment = SHA-256(canonical(domain, serverSeed, roundId)) BEFORE
- *      the player commits a ticket.
- *   2. The player may supply a client seed. It is mixed into every sampler call.
+ *   1. The operator draws a 32-byte server seed and publishes, BEFORE the
+ *      player commits a ticket, both the seed context (variant, round id,
+ *      nonce) and
+ *        seedCommitment = SHA-256(canonical(domain, serverSeed, seed context)).
+ *      Binding the whole context matters: a commitment over the seed alone
+ *      would leave the nonce free for an operator that has already seen the
+ *      ticket to search.
+ *   2. The player may supply a client seed. It is mixed into every sampler call
+ *      and is the only derivation input left free once the hash is published.
  *   3. The permutation is derived by rejection-sampled Fisher-Yates.
  *   4. After settlement the server seed is revealed; anyone re-derives the
- *      permutation and both hashes from (serverSeed, clientSeed, nonce, roundId).
- *   5. Each transcript binds the previous round's commitment, so a chain of
- *      rounds cannot be reordered, dropped or back-dated.
+ *      permutation and both hashes from the transcript plus the revealed seed.
+ *   5. Each transcript binds the previous round's commitment, which makes
+ *      retroactive edits to a round's ancestry detectable to anyone holding a
+ *      later commitment. It is tamper-evidence, not a proof of completeness or
+ *      chronology; see docs/ENGINE.md section 5.
  */
 
+import { createHash } from 'node:crypto';
+
 import { encodeFields, hmacSha256, sha256Hex, constantTimeHexEqual } from './canonical.mjs';
-import { fisherYates, permutationRank, positionsOf } from './permutations.mjs';
+import { allPermutations, fisherYates, permutationRank, positionsOf } from './permutations.mjs';
 import { rational, mul as rmul, cmp as rcmp } from './rational.mjs';
 import {
   ADAPTER_VERSION,
@@ -76,18 +85,57 @@ export function assertClientSeed(clientSeed) {
   return clientSeed;
 }
 
-export function assertRoundContext(context) {
-  if (typeof context !== 'object' || context === null) fail('INVALID_CONTEXT', 'Round context must be an object');
-  const { variantId, roundId, clientSeed, nonce } = context;
-  getVariant(variantId);
+/** Every unknown identifier fails with a coded error, never a bare RangeError. */
+export function assertVariant(variantId) {
+  try {
+    return getVariant(variantId);
+  } catch {
+    return fail('ADAPTER_MISMATCH', 'Unknown variant', '$.variantId');
+  }
+}
+
+export function assertBetFamily(code) {
+  try {
+    return getFamily(code);
+  } catch {
+    return fail('UNKNOWN_BET', 'Unknown bet code', '$.code');
+  }
+}
+
+export function assertRoundId(roundId) {
   if (typeof roundId !== 'string' || roundId.length === 0) fail('INVALID_CONTEXT', 'Round id is required', '$.roundId');
   if (Buffer.byteLength(roundId, 'utf8') > LIMITS.maxRoundIdBytes) {
     fail('INVALID_CONTEXT', 'Round id exceeds the published byte limit', '$.roundId');
   }
   if (!/^[\x20-\x7E]+$/u.test(roundId)) fail('INVALID_CONTEXT', 'Round id must be printable ASCII', '$.roundId');
-  assertClientSeed(clientSeed);
-  if (!Number.isSafeInteger(nonce) || nonce < 0) fail('INVALID_CONTEXT', 'Nonce must be a non-negative safe integer', '$.nonce');
-  return Object.freeze({ variantId, roundId, clientSeed, nonce });
+  return roundId;
+}
+
+export function assertNonce(nonce) {
+  if (!Number.isSafeInteger(nonce) || nonce < 0) {
+    fail('INVALID_CONTEXT', 'Nonce must be a non-negative safe integer', '$.nonce');
+  }
+  return nonce;
+}
+
+/**
+ * The part of the round context that must be frozen and published *before* the
+ * player commits a ticket. It is exactly the derivation's input set minus the
+ * client seed, which the player supplies afterwards.
+ */
+export function assertSeedContext(context) {
+  if (typeof context !== 'object' || context === null) fail('INVALID_CONTEXT', 'Round context must be an object');
+  const variant = assertVariant(context.variantId);
+  return Object.freeze({
+    variantId: variant.id,
+    roundId: assertRoundId(context.roundId),
+    nonce: assertNonce(context.nonce),
+  });
+}
+
+export function assertRoundContext(context) {
+  const seedContext = assertSeedContext(context);
+  return Object.freeze({ ...seedContext, clientSeed: assertClientSeed(context.clientSeed) });
 }
 
 function assertCommitmentHex(value, path) {
@@ -101,14 +149,64 @@ function assertCommitmentHex(value, path) {
  * Adapter fingerprint and seed commitment. *
  * ---------------------------------------- */
 
+const catalogueDigestCache = new Map();
+const fingerprintCache = new Map();
+
 /**
- * Binds every replay-visible declarative field. Any change to elements,
- * multipliers, the target RTP, the cap or the stake quantum changes this
- * digest, which in turn changes every commitment — an integration cannot
- * silently re-price an open liability.
+ * Behavioural digest of the bet catalogue.
+ *
+ * Declaring the codes and multipliers is not enough: a change that *reverses a
+ * predicate* would leave a declarative fingerprint untouched while changing how
+ * an open liability settles. So this hashes the catalogue's actual behaviour —
+ * for every family, in canonical order, every instance's complete win/lose
+ * bitmap over all n! permutations. Flip one bit of one predicate and the digest
+ * moves, and with it every commitment.
+ *
+ * Cost is one pass over the full outcome space per variant, memoised.
+ */
+export function catalogueDigest(variantId) {
+  const variant = assertVariant(variantId);
+  const cached = catalogueDigestCache.get(variant.id);
+  if (cached) return cached;
+
+  const { n } = variant;
+  const permutations = allPermutations(n);
+  const views = permutations.map((perm) =>
+    Object.freeze({ perm: Object.freeze(perm), pos: Object.freeze(positionsOf(perm)), rank: permutationRank(perm), n }),
+  );
+  const hash = createHash('sha256');
+  hash.update(
+    encodeFields(['catalogue', MODULE_VERSION, GAME_ID, variant.id, n, permutations.length, BET_FAMILIES.length]),
+  );
+  const bitmap = Buffer.alloc(Math.ceil(permutations.length / 8));
+  for (const family of BET_FAMILIES) {
+    const instances = family.instances(n, { permutationCount: permutations.length });
+    hash.update(encodeFields(['family', family.code, family.tier, instances.length]));
+    for (const instance of instances) {
+      bitmap.fill(0);
+      for (let p = 0; p < views.length; p += 1) {
+        if (family.resolve(instance, views[p]) === true) bitmap[p >> 3] |= 1 << (p & 7);
+      }
+      hash.update(encodeFields([instance.label, bitmap]));
+    }
+  }
+  const digest = hash.digest('hex');
+  catalogueDigestCache.set(variant.id, digest);
+  return digest;
+}
+
+/**
+ * Binds every replay-visible field: declarative configuration *and* the
+ * catalogue's behaviour. Any change to elements, predicates, multipliers, the
+ * target RTP, the cap, the quantum or the published limits changes this digest,
+ * which in turn changes every commitment — an integration cannot silently
+ * re-price or re-resolve an open liability.
  */
 export function adapterFingerprint(variantId) {
-  const variant = getVariant(variantId);
+  const variant = assertVariant(variantId);
+  const cached = fingerprintCache.get(variant.id);
+  if (cached) return cached;
+
   const fields = [
     'adapter',
     MODULE_VERSION,
@@ -126,6 +224,8 @@ export function adapterFingerprint(variantId) {
     fields.push(family.code, multiplier.n, multiplier.d);
   }
   fields.push(
+    'catalogue-behaviour',
+    catalogueDigest(variant.id),
     TARGET_RTP.n,
     TARGET_RTP.d,
     'floor',
@@ -135,15 +235,38 @@ export function adapterFingerprint(variantId) {
     LIMITS.minLineStakeChips,
     LIMITS.maxLineStakeChips,
     LIMITS.maxTicketStakeChips,
+    LIMITS.maxClientSeedBytes,
+    LIMITS.maxRoundIdBytes,
+    LIMITS.requireDistinctLines ? 1 : 0,
   );
-  return sha256Hex(encodeFields(fields));
+  const digest = sha256Hex(encodeFields(fields));
+  fingerprintCache.set(variant.id, digest);
+  return digest;
 }
 
-/** Published before the player commits a ticket. Hides the seed, binds the round. */
-export function seedCommitment(serverSeedHex, roundId) {
+/**
+ * The pre-round publication. Published *before* the player commits a ticket.
+ *
+ * It must bind the entire derivation input set except the client seed, which
+ * the player supplies afterwards. Committing only to `(serverSeed, roundId)`
+ * would leave `nonce` and `variantId` free, letting an operator that has seen
+ * the ticket search those for a favourable permutation while still opening the
+ * published hash honestly. Binding them here closes that door: once the hash is
+ * out, the only remaining degree of freedom belongs to the player.
+ */
+export function seedCommitment(serverSeedHex, context) {
   const seed = normalizeServerSeed(serverSeedHex);
-  if (typeof roundId !== 'string' || roundId.length === 0) fail('INVALID_CONTEXT', 'Round id is required', '$.roundId');
-  return sha256Hex(encodeFields([SEED_COMMIT_DOMAIN, Buffer.from(seed, 'hex'), roundId]));
+  const seedContext = assertSeedContext(context);
+  return sha256Hex(
+    encodeFields([
+      SEED_COMMIT_DOMAIN,
+      Buffer.from(seed, 'hex'),
+      GAME_ID,
+      seedContext.variantId,
+      seedContext.roundId,
+      seedContext.nonce,
+    ]),
+  );
 }
 
 /* --------------------------------- *
@@ -160,7 +283,14 @@ export function seedCommitment(serverSeedHex, roundId) {
 export function uniformBelow(serverSeedHex, context, label, counter, modulus) {
   const seed = normalizeServerSeed(serverSeedHex);
   const ctx = assertRoundContext(context);
-  if (typeof label !== 'string' || label.length === 0) fail('INVALID_CONTEXT', 'Sampler label is required', '$.label');
+  if (
+    typeof label !== 'string' ||
+    label.length === 0 ||
+    Buffer.byteLength(label, 'utf8') > LIMITS.maxLabelBytes ||
+    !/^[\x20-\x7E]+$/u.test(label)
+  ) {
+    fail('INVALID_CONTEXT', 'Sampler label must be 1-128 bytes of printable ASCII', '$.label');
+  }
   if (!Number.isSafeInteger(counter) || counter < 0) fail('INVALID_CONTEXT', 'Sampler counter is invalid', '$.counter');
   if (typeof modulus !== 'bigint' || modulus <= 0n || modulus >= RANGE) {
     fail('INVALID_CONTEXT', 'Sampler modulus must be in [1, 2^256)', '$.modulus');
@@ -261,7 +391,7 @@ export function makeTranscript(serverSeedHex, context, previousCommitment = ZERO
     n: variant.n,
     permutation: Object.freeze([...permutation]),
     previousCommitment,
-    seedCommitment: seedCommitment(seed, ctx.roundId),
+    seedCommitment: seedCommitment(seed, ctx),
     commitment: transcriptCommitment(seed, variant.id, ctx, permutation, previousCommitment),
   });
 }
@@ -280,7 +410,7 @@ export function verifyTranscript(serverSeedHex, input) {
     if (input.gameId !== GAME_ID || input.adapterVersion !== ADAPTER_VERSION) {
       return reject('ADAPTER_MISMATCH', 'Transcript belongs to another adapter', '$.adapterVersion');
     }
-    const variant = getVariant(input.variantId);
+    const variant = assertVariant(input.variantId);
     if (input.adapterFingerprint !== adapterFingerprint(variant.id)) {
       return reject('ADAPTER_MISMATCH', 'Adapter fingerprint does not match this build', '$.adapterFingerprint');
     }
@@ -306,10 +436,13 @@ export function verifyTranscript(serverSeedHex, input) {
     if (expected.some((element, slot) => element !== input.permutation[slot])) {
       return reject('TRANSCRIPT_MISMATCH', 'Permutation does not match the deterministic derivation', '$.permutation');
     }
-    if (
-      typeof input.seedCommitment === 'string' &&
-      !constantTimeHexEqual(input.seedCommitment, seedCommitment(seed, ctx.roundId))
-    ) {
+    // The pre-round commitment is REQUIRED, not optional. Treating a missing or
+    // wrongly-typed field as "nothing to check" would let a transcript that was
+    // never committed to in advance verify as honest — a fail-open hole.
+    if (typeof input.seedCommitment !== 'string' || !/^[0-9a-f]{64}$/u.test(input.seedCommitment)) {
+      return reject('INVALID_TRANSCRIPT', 'Pre-round seed commitment is missing or malformed', '$.seedCommitment');
+    }
+    if (!constantTimeHexEqual(input.seedCommitment, seedCommitment(seed, ctx))) {
       return reject('COMMITMENT_MISMATCH', 'Pre-round seed commitment does not open to this seed', '$.seedCommitment');
     }
     const expectedCommitment = transcriptCommitment(seed, variant.id, ctx, expected, input.previousCommitment);
@@ -338,7 +471,10 @@ export function verifyTranscript(serverSeedHex, input) {
  * @param {{lines: ReadonlyArray<{code: string, params: object, stakeChips: bigint}>}} ticket
  */
 export function settleTicket(transcript, ticket) {
-  const variant = getVariant(transcript.variantId);
+  if (typeof transcript !== 'object' || transcript === null) {
+    fail('INVALID_TRANSCRIPT', 'Transcript must be an object', '$.transcript');
+  }
+  const variant = assertVariant(transcript.variantId);
   if (typeof ticket !== 'object' || ticket === null || !Array.isArray(ticket.lines)) {
     fail('INVALID_TICKET', 'Ticket must carry a lines array', '$.lines');
   }
@@ -368,9 +504,16 @@ export function settleTicket(transcript, ticket) {
 
   let totalStake = 0n;
   let payout = 0n;
+  // A ticket is a set of DISTINCT claims. Duplicating a line would be an
+  // end-run around the per-line stake ceiling, which exists to bound single-bet
+  // exposure; the client merges repeats by raising the stake instead. Enforcing
+  // it here is also what makes the maximum-credit optimisation in
+  // docs/MATH.md section 8 a true maximum rather than a lower bound.
+  const claims = new Set();
   const lines = ticket.lines.map((line, index) => {
     const path = `$.lines[${index}]`;
-    const family = getFamily(line.code);
+    if (typeof line !== 'object' || line === null) fail('INVALID_TICKET', 'Ticket line must be an object', path);
+    const family = assertBetFamily(line.code);
     const stake = line.stakeChips;
     if (typeof stake !== 'bigint') fail('INVALID_TICKET', 'Stake must be a BigInt chip amount', `${path}.stakeChips`);
     if (stake < LIMITS.minLineStakeChips || stake > LIMITS.maxLineStakeChips) {
@@ -382,6 +525,11 @@ export function settleTicket(transcript, ticket) {
     const legal = family.instances(variant.n, { permutationCount: factorialNumber(variant.n) });
     const instance = legal.find((candidate) => sameParams(candidate.params, line.params));
     if (!instance) fail('UNKNOWN_INSTANCE', 'Bet parameters are not a legal instance', `${path}.params`);
+    const claim = `${family.code}|${instance.label}`;
+    if (LIMITS.requireDistinctLines && claims.has(claim)) {
+      fail('DUPLICATE_LINE', 'A ticket cannot carry the same claim twice; raise the stake instead', path);
+    }
+    claims.add(claim);
     const multiplier = variant.multipliers[family.code];
     const won = family.resolve(instance, ctx) === true;
     const gross = won ? exactChips(stake, multiplier, `${path}.payout`) : 0n;

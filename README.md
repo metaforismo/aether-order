@@ -24,21 +24,28 @@ moment it ends.
 | ![arithmetic](https://img.shields.io/badge/arithmetic-exact%20BigInt-brightgreen) | no floating point on any money or probability path |
 | ![certification](https://img.shields.io/badge/certification-none%20claimed-lightgrey) | engineering evidence, not a laboratory or regulatory approval |
 
-**What is real today:** the complete game and art specification, the exact
-mathematical model with an exhaustive machine proof, the Reveal Engine
-permutation lifecycle module specification with a runnable reference
-implementation, frozen wire-format fixtures, and a test suite that asserts the
-published paytable against the enumeration on every commit.
+**What is real today:** the complete game and art specification; the exact
+mathematical model with an exhaustive machine proof; the Reveal Engine
+permutation lifecycle specification; and a runnable reference implementation of
+its *derivation, commitment, verification and settlement* core, with frozen
+wire-format fixtures and a test suite that asserts the published paytable
+against the enumeration on every commit.
 
-**What is not built yet:** the client, the audio, and the RGS integration.
+**What is specified but not implemented here:** the protocol layer of the module
+— ticket receipts, idempotency, snapshotting and the packaged conformance
+runner. `docs/ENGINE.md` §10 marks each surface as implemented or specified.
+
+**What is not built at all yet:** the client, the audio, and the RGS
+integration.
 
 ---
 
 ## How a round works
 
-1. **Before you bet**, the server draws a secret 32-byte seed and publishes
-   `SHA-256` of it. You can see that hash on screen. It cannot be changed
-   afterwards.
+1. **Before you bet**, the server draws a secret 32-byte seed and publishes a
+   `SHA-256` hash that locks in the seed *and* the whole round context — the
+   variant, the round id and the nonce. You can see that hash on screen. None
+   of it can be changed afterwards.
 2. **You build a ticket** — up to 12 lines, 0.25 to 50.00 credits each. You may
    also type your own client seed, which is mixed into the draw.
 3. **You commit.** The permutation is now fixed. Nothing you do from here can
@@ -78,8 +85,11 @@ Commit-reveal, verifiable by re-derivation: once a round is settled you can
 check its outcome yourself instead of taking the operator's word for it. (Seed
 generation and custody still sit with the operator — see the boundary below.)
 
-- **Commit first.** The server publishes `SHA-256(domain ‖ serverSeed ‖ roundId)`
-  *before* your ticket exists. It cannot pick a seed to suit your bet.
+- **Commit first, and commit everything.** The server publishes
+  `SHA-256(domain ‖ serverSeed ‖ gameId ‖ variant ‖ roundId ‖ nonce)` *before*
+  your ticket exists. Every input to the draw except your own client seed is
+  frozen by that hash, so an operator that has seen your ticket has nothing
+  left to search.
 - **You contribute entropy.** Your client seed enters every draw, so the
   operator cannot grind seeds against a known ticket. It changes *which* order
   comes up and never your odds — every seed gives the same uniform draw.
@@ -87,10 +97,18 @@ generation and custody still sit with the operator — see the boundary below.)
   rejection sampler over a 256-bit range, so there is no modulo bias. The
   enumerator proves the shuffle is a bijection from draw vectors onto all `n!`
   permutations — exhaustively, for both variants.
-- **Reveal and re-derive.** After settlement the seed is published. Anyone can
-  recompute the permutation and both hashes from the transcript alone.
+- **Reveal and re-derive.** After settlement the seed is published. Anyone
+  holding the transcript plus that revealed seed can recompute the permutation
+  and both hashes independently.
 - **Rounds are chained.** Each transcript binds the previous round's
-  commitment, so rounds cannot be reordered, dropped, or back-dated.
+  commitment, which makes a retroactive edit to a round's ancestry detectable
+  to anyone who kept a later commitment. On its own a hash chain proves neither
+  completeness nor chronology — that needs an external anchor such as an
+  operator signature or a published chain head.
+- **Behaviour is fingerprinted, not just declared.** The adapter fingerprint
+  bound into every commitment includes a digest of how every bet actually
+  resolves across the whole outcome space, so a silent change to a bet rule
+  invalidates the round it would have re-settled.
 - **Exact money.** Stakes and payouts are integer chips with exact BigInt
   rational arithmetic. The stake quantum is chosen so every payout is an exact
   integer: rounding is provably a no-op, and realised RTP equals theoretical

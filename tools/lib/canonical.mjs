@@ -3,8 +3,17 @@
  *
  * Byte-identical to `reveal-engine`'s `src/internal/canonical.ts`: a field
  * count, then a uint32 big-endian byte length plus bytes for every field.
- * The framing is unambiguous, so no two distinct field vectors can collide on
- * the same byte string and no separator can be smuggled inside a field.
+ *
+ * The property this gives is **unambiguous field boundaries**: the split into
+ * fields is recoverable from the bytes, so no field can smuggle a separator and
+ * ['ab','c'] can never collide with ['a','bc'] or ['abc'].
+ *
+ * It is deliberately *not* type-tagged. `7`, `7n` and `'7'` encode to the same
+ * bytes, because numbers and BigInts are rendered as their base-10 ASCII. That
+ * is safe here and only here: every field position in every commitment payload
+ * has a fixed declared type, so a value can never migrate between types at the
+ * same position. Do not rely on typed injectivity — if a future payload needs
+ * two types at one position, add an explicit type tag field.
  */
 
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';

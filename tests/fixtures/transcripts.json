@@ -10,10 +10,10 @@
       },
       "serverSeed": "3ee21536ede1e7e1c572daf5a9cc118a628539b9804cb069a573190e4e308f0d",
       "transcript": {
-        "adapterFingerprint": "93ce961efc3528804b3fb500f0672f2ac55927224c0402154c34efc7a4adb17e",
+        "adapterFingerprint": "1c0a2e9f0a600ed6390e579c3ab42be0356c2ea3eac41b19031754c7e6ecd4c5",
         "adapterVersion": "1.0.0",
         "clientSeed": "axiom",
-        "commitment": "f58037045e9900f3ed3d72f618b7b2dab73077289b62b92660c89d8c51e3720e",
+        "commitment": "40ff777385e729c93e602c70f2cc68c2ff556f7b12bad3528cdfd63bfd5d7d92",
         "gameId": "aether-order",
         "moduleVersion": "reveal-engine/permutation-v1",
         "n": 5,
@@ -28,7 +28,7 @@
         "previousCommitment": "0000000000000000000000000000000000000000000000000000000000000000",
         "roundId": "fixture-classic-0",
         "schema": "reveal-engine/permutation-transcript-v1",
-        "seedCommitment": "4340b23bbe65d75c13dcc0ec9e921c468c1f038f31ed5beb009077413082d5bc",
+        "seedCommitment": "fc4232d8e8bc46fe2057f3824a6df92f03d47932bfa0535793a2c493e031cb34",
         "variantId": "classic"
       }
     },
@@ -41,10 +41,10 @@
       },
       "serverSeed": "c2a449a0a39c51cc3d6defb32a241511cc9db81c2f2be06d77e9449eaef31011",
       "transcript": {
-        "adapterFingerprint": "93ce961efc3528804b3fb500f0672f2ac55927224c0402154c34efc7a4adb17e",
+        "adapterFingerprint": "1c0a2e9f0a600ed6390e579c3ab42be0356c2ea3eac41b19031754c7e6ecd4c5",
         "adapterVersion": "1.0.0",
         "clientSeed": "",
-        "commitment": "19ca68c2b639a23d0b1128142fce7585572a925639a9683d94732c0785c57269",
+        "commitment": "3585c3d2924df2a867fa9a063cc46d847e726712c926694913789e3049b8247b",
         "gameId": "aether-order",
         "moduleVersion": "reveal-engine/permutation-v1",
         "n": 5,
@@ -56,10 +56,10 @@
           1,
           2
         ],
-        "previousCommitment": "f58037045e9900f3ed3d72f618b7b2dab73077289b62b92660c89d8c51e3720e",
+        "previousCommitment": "40ff777385e729c93e602c70f2cc68c2ff556f7b12bad3528cdfd63bfd5d7d92",
         "roundId": "fixture-classic-1",
         "schema": "reveal-engine/permutation-transcript-v1",
-        "seedCommitment": "1e83b7f226ba2e9f2ab25e94cfb2f0b728f4fcf30908b20346bc65e5e61298ad",
+        "seedCommitment": "d5bfa526c29cefc6900561f05675e49f4f388d5c4b25a56f218241960fb2f304",
         "variantId": "classic"
       }
     },
@@ -72,10 +72,10 @@
       },
       "serverSeed": "4a6d0097dbeb6e0d56d581ada31517b699696d79992a3f978a6092e902540b40",
       "transcript": {
-        "adapterFingerprint": "93ce961efc3528804b3fb500f0672f2ac55927224c0402154c34efc7a4adb17e",
+        "adapterFingerprint": "1c0a2e9f0a600ed6390e579c3ab42be0356c2ea3eac41b19031754c7e6ecd4c5",
         "adapterVersion": "1.0.0",
         "clientSeed": "axiom",
-        "commitment": "1c20f2f1850e4944d43a55916fca487ce0293f24d6ab2899658c37c8a5f4fa46",
+        "commitment": "c7e9f3adbe00f5452383c1522ebaca932927c5cc7cb7f67cb78b3f0661ab0aa5",
         "gameId": "aether-order",
         "moduleVersion": "reveal-engine/permutation-v1",
         "n": 5,
@@ -87,10 +87,10 @@
           1,
           3
         ],
-        "previousCommitment": "19ca68c2b639a23d0b1128142fce7585572a925639a9683d94732c0785c57269",
+        "previousCommitment": "3585c3d2924df2a867fa9a063cc46d847e726712c926694913789e3049b8247b",
         "roundId": "fixture-classic-2",
         "schema": "reveal-engine/permutation-transcript-v1",
-        "seedCommitment": "494bf0b79a68b090262f1c0fa0efa029c539cbad3469e7178054484cb267f626",
+        "seedCommitment": "e5cab0ce6000e879ce031ca5ef7601508047a2d053e7295922e029dca9fb3c54",
         "variantId": "classic"
       }
     },
@@ -103,10 +103,10 @@
       },
       "serverSeed": "6382c81920c9dbeab1a754151b811dced08418e022139fc9f343a1138364f4b8",
       "transcript": {
-        "adapterFingerprint": "93ce961efc3528804b3fb500f0672f2ac55927224c0402154c34efc7a4adb17e",
+        "adapterFingerprint": "1c0a2e9f0a600ed6390e579c3ab42be0356c2ea3eac41b19031754c7e6ecd4c5",
         "adapterVersion": "1.0.0",
         "clientSeed": "",
-        "commitment": "e296e1f43c2b0bf214a85d5b021e3855379d7b8421a0c4a0ab812f0f5c9c34ee",
+        "commitment": "7117d7d157e61be6bd66daa5a92232adab5b694ed9ed55e4dbba0307ec8d503c",
         "gameId": "aether-order",
         "moduleVersion": "reveal-engine/permutation-v1",
         "n": 5,
@@ -118,10 +118,10 @@
           1,
           0
         ],
-        "previousCommitment": "1c20f2f1850e4944d43a55916fca487ce0293f24d6ab2899658c37c8a5f4fa46",
+        "previousCommitment": "c7e9f3adbe00f5452383c1522ebaca932927c5cc7cb7f67cb78b3f0661ab0aa5",
         "roundId": "fixture-classic-3",
         "schema": "reveal-engine/permutation-transcript-v1",
-        "seedCommitment": "547fb22b115c156e3dd71573a5a7df3f1c71faab4ae9f0082e263a94a5b8f87e",
+        "seedCommitment": "506d9d9d0f27b1f040a544327834711b98e63dc076035b0bec2fd5037396e73c",
         "variantId": "classic"
       }
     },
@@ -134,10 +134,10 @@
       },
       "serverSeed": "852aa050d2ad61ec9015a07a8718cfcbe78a24a209efa3882b35f6d5fadd9e9b",
       "transcript": {
-        "adapterFingerprint": "2211d939334978a18684d67277df39daed2c40aaa1748bae5d1390b621ed03fe",
+        "adapterFingerprint": "51b39c563a87d62e20da32dca1b55807079b7a5bde2bdabc6803de52816e8304",
         "adapterVersion": "1.0.0",
         "clientSeed": "axiom",
-        "commitment": "aa3dd8831183480e1ecf8147ecd8dd4be470aa0fae9c1abbca021d6639c04180",
+        "commitment": "a9bc380280e9888d95bb9023a6c4e7e4a02798cc24db5e24b684952520db15d0",
         "gameId": "aether-order",
         "moduleVersion": "reveal-engine/permutation-v1",
         "n": 7,
@@ -154,7 +154,7 @@
         "previousCommitment": "0000000000000000000000000000000000000000000000000000000000000000",
         "roundId": "fixture-seven-0",
         "schema": "reveal-engine/permutation-transcript-v1",
-        "seedCommitment": "593227293effdee1da11efe68204dcb1922f04133b989a3ab4b5a2011a8c16a6",
+        "seedCommitment": "6c031c612dc037423606033d775af9e87e01acd41b0665939b960f21e4556e58",
         "variantId": "seven"
       }
     },
@@ -167,10 +167,10 @@
       },
       "serverSeed": "57d1dc0543549ad1ed85fa023ccc3e6178480dfc55e06f81975d2990f39eb02c",
       "transcript": {
-        "adapterFingerprint": "2211d939334978a18684d67277df39daed2c40aaa1748bae5d1390b621ed03fe",
+        "adapterFingerprint": "51b39c563a87d62e20da32dca1b55807079b7a5bde2bdabc6803de52816e8304",
         "adapterVersion": "1.0.0",
         "clientSeed": "",
-        "commitment": "ffcbba7b0cc4daf0424f83cafa2b5bf469e57c41be2efb94f4bbd7a4c200fd2c",
+        "commitment": "6d7edc23c8634be7f7bfced6b700463db6847903695d3f45b4c6dcb4fd84950d",
         "gameId": "aether-order",
         "moduleVersion": "reveal-engine/permutation-v1",
         "n": 7,
@@ -184,10 +184,10 @@
           2,
           4
         ],
-        "previousCommitment": "aa3dd8831183480e1ecf8147ecd8dd4be470aa0fae9c1abbca021d6639c04180",
+        "previousCommitment": "a9bc380280e9888d95bb9023a6c4e7e4a02798cc24db5e24b684952520db15d0",
         "roundId": "fixture-seven-1",
         "schema": "reveal-engine/permutation-transcript-v1",
-        "seedCommitment": "be07dbb9f6b04ec17ec79b37cbc93dbdfb6a636059005c9b1595e5255dd0fa2a",
+        "seedCommitment": "54e2d43b3d45333aed37c0ad9dde54d3d9a2bfd19f6e5a8f80c367bf04442174",
         "variantId": "seven"
       }
     },
@@ -200,10 +200,10 @@
       },
       "serverSeed": "44fd5855a1b4a619b0bec2a27fd1d1b3961692dccb9e22a0eeb5cc5fc5fdb8c6",
       "transcript": {
-        "adapterFingerprint": "2211d939334978a18684d67277df39daed2c40aaa1748bae5d1390b621ed03fe",
+        "adapterFingerprint": "51b39c563a87d62e20da32dca1b55807079b7a5bde2bdabc6803de52816e8304",
         "adapterVersion": "1.0.0",
         "clientSeed": "axiom",
-        "commitment": "bed9a912b0b2a71bfd99fca77da98fe6d41f98737b6f163e3528121f9d7fc2a2",
+        "commitment": "f224734dbd1544eaac12b9b0cd2cdd4e9d880d208adcc6b9b039affb494cf4a1",
         "gameId": "aether-order",
         "moduleVersion": "reveal-engine/permutation-v1",
         "n": 7,
@@ -217,10 +217,10 @@
           0,
           2
         ],
-        "previousCommitment": "ffcbba7b0cc4daf0424f83cafa2b5bf469e57c41be2efb94f4bbd7a4c200fd2c",
+        "previousCommitment": "6d7edc23c8634be7f7bfced6b700463db6847903695d3f45b4c6dcb4fd84950d",
         "roundId": "fixture-seven-2",
         "schema": "reveal-engine/permutation-transcript-v1",
-        "seedCommitment": "7a068dcbd69b1a4e7ddb55280b874788fb5a0535f2122b23d4ec436b2384a977",
+        "seedCommitment": "24f51eb79a45c62b9a11092056fcfd882164f76f4f703555ab056bd7c1316e2c",
         "variantId": "seven"
       }
     },
@@ -233,10 +233,10 @@
       },
       "serverSeed": "a556e2e60eddaa18b41ae395293f03c8a36d3a1ea0454b096bb5816cfe62bccb",
       "transcript": {
-        "adapterFingerprint": "2211d939334978a18684d67277df39daed2c40aaa1748bae5d1390b621ed03fe",
+        "adapterFingerprint": "51b39c563a87d62e20da32dca1b55807079b7a5bde2bdabc6803de52816e8304",
         "adapterVersion": "1.0.0",
         "clientSeed": "",
-        "commitment": "8252f9db578f574754cef388f580883d7d8d3680b7258ddd7cd827cecdd22d9e",
+        "commitment": "6a85ae2056de1d3124c2b5e32487964f2dddd78256710ab2dfe9669ac715f638",
         "gameId": "aether-order",
         "moduleVersion": "reveal-engine/permutation-v1",
         "n": 7,
@@ -250,10 +250,10 @@
           6,
           0
         ],
-        "previousCommitment": "bed9a912b0b2a71bfd99fca77da98fe6d41f98737b6f163e3528121f9d7fc2a2",
+        "previousCommitment": "f224734dbd1544eaac12b9b0cd2cdd4e9d880d208adcc6b9b039affb494cf4a1",
         "roundId": "fixture-seven-3",
         "schema": "reveal-engine/permutation-transcript-v1",
-        "seedCommitment": "9e6acd771494e788bc334819d3a032da37eb38b6a25010eda4b9f2526294185c",
+        "seedCommitment": "99d338e363e7b007d0d2e6742bcaeca39651fdadb4afeeb85e3cc00f15446a05",
         "variantId": "seven"
       }
     }

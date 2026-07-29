@@ -41,7 +41,7 @@ One round, start to credited, is about four seconds.
 
 | # | Beat | Duration | What the player sees | What the system does |
 | --- | --- | --- | --- | --- |
-| 0 | **IDLE** | — | Spheres drift; tube empty; seed chip amber | Server seed drawn; `seedCommitment` published and shown |
+| 0 | **IDLE** | — | Spheres drift; tube empty; seed chip amber | Server seed drawn; the round context (variant, round id, nonce) and `seedCommitment` published and shown |
 | 1 | **BUILD** | player-paced | Chips; running stake and max return | Nothing random; no timer that can expire into a bet |
 | 2 | **COMMIT** | 120 ms | CTA collapses into the ticket strip | Wallet debited; ticket + client seed frozen; permutation derived |
 | 3 | **CHARGE** | 260 ms | Impeller rings spin up; liquid tint deepens 8% | Choreography track built from the transcript |
@@ -70,7 +70,7 @@ here with its effect on the outcome distribution stated plainly.
 | D0 | **Client seed** (optional string) | before COMMIT | Changes *which* permutation is drawn. Does not change its distribution — for every client seed the permutation is uniform on `S_n`. | none |
 | D1 | **Variant** CLASSIC / SEVEN | before COMMIT | Changes `n`, the outcome space and the volatility. | none — both are 96.000% |
 | D2 | **Bet lines** (which types, which parameters, ≤ 12) | before COMMIT | Changes the variance of the round. | none — every bet type is 96.000% |
-| D3 | **Stake per line** | before COMMIT | Scales expected value and variance linearly. | none |
+| D3 | **Stake per line** | before COMMIT | Scales expected value and standard deviation linearly; variance by the square. | none |
 | D4 | **COMMIT** | the moment of commitment | None. The permutation is already fixed by the committed seed. | none |
 | — | **SKIP / MUTE / REPLAY / haptics / chamber skin** | after COMMIT | None. These are not inputs to the derivation and cannot be — the transcript must re-derive on a verifier that has no UI context. | none |
 
@@ -129,9 +129,12 @@ the convenience control never costs anything. The paytable sheet says this in
 one line so nobody has to work it out.
 
 **Ticket rules.** Up to 12 lines. Stake per line 0.25 – 50.00, in 0.25 steps.
-Ticket total ≤ 200.00. The ticket strip always shows, in tabular figures:
-lines · total stake · *maximum return if every line hits*. The last figure is
-computed exactly, never rounded up, and never framed as expected.
+Ticket total ≤ 200.00. A ticket carries **distinct claims only** — tapping the
+same chip with the same picks raises that line's stake rather than adding a
+second row, which keeps the per-line ceiling meaningful. The ticket strip always
+shows, in tabular figures: lines · total stake · *maximum return if every line
+hits*. The last figure is computed exactly, never rounded up, and never framed
+as expected.
 
 ---
 
