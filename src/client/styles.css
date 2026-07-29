@@ -55,7 +55,28 @@
   box-sizing: border-box;
 }
 
-html,
+/*
+ * The root font size is the player's, and this stylesheet must not restate it.
+ *
+ * `html { font-size: var(--t-sm) }` looks harmless and is not: `--t-sm` is
+ * `0.9375rem`, so it resolves against the *initial* root size and then becomes
+ * the root size — 15 px — and every `rem` token below re-resolves against that.
+ * The published scale (§6.5: 40 / 28 / 22 / 17 / 15 / 13 / 11) shipped at 93.75%
+ * of itself: 37.5 / 26.25 / 20.63 / 15.94 / 14.06 / 12.19 / 10.31, with the
+ * smallest step at 10.31 px — still under §6.5's 11 px floor, which is the very
+ * defect the rem conversion was made to fix. Body then applied `--t-sm` a second
+ * time on top, so body copy rendered at 14.06 px.
+ *
+ * So: nothing sets a font size on `html`. The tokens resolve against the root
+ * the browser or the OS gives us, which is also exactly what §11's "text scaling
+ * to 200%" asks for.
+ */
+html {
+  margin: 0;
+  height: 100%;
+  background: var(--void);
+}
+
 body {
   margin: 0;
   height: 100%;
@@ -67,9 +88,6 @@ body {
   -webkit-font-smoothing: antialiased;
   font-variant-numeric: tabular-nums lining-nums;
   overscroll-behavior: none;
-}
-
-body {
   display: flex;
   justify-content: center;
 }
@@ -80,6 +98,17 @@ select {
   font: inherit;
   color: inherit;
   font-variant-numeric: tabular-nums lining-nums;
+}
+
+/*
+ * §6.5 publishes seven type steps and 11 px is the smallest. `small` has a UA
+ * default of `smaller`, i.e. 0.8333em of whatever it sits in, so the picker's
+ * slot labels landed at 10.83 px inside a 13 px cell — off the scale by the same
+ * mechanism that put a 9 px label on the colour tokens in round 1. Every `small`
+ * in this build is a scale label, so it is pinned to the smallest step.
+ */
+small {
+  font-size: var(--t-xxs);
 }
 
 button {
@@ -593,16 +622,33 @@ button:focus-visible,
   border: 1px solid var(--chrome-dark);
   border-radius: 4px;
   background: linear-gradient(180deg, rgba(23, 64, 92, 0.22), rgba(10, 18, 32, 0.5));
-  padding: 8px;
+  /*
+   * 6 px on the inline axis, not 8: at 8 the longest label in the catalogue was
+   * 2 px wider than the box it had to sit in even at the smallest published step.
+   * The trim is invisible and it buys the chip its own longest name.
+   */
+  padding: 8px 6px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   scroll-snap-align: start;
 }
+/*
+ * §6.5 sets bet names uppercase at +0.06em, and at the 13 px step `NEIGHBOURS`
+ * is 103 px wide inside a 96 px chip: it overhung its own border at 100% text
+ * and was cut off by the right edge of the screen at 200%, which is exactly the
+ * clipping §11 forbids. A name whose longest word cannot fit takes the next step
+ * down on §6.5's published scale (`main.ts`, `chipRail`); `overflow-wrap` stays
+ * as the guarantee that no future label can ever be clipped instead of wrapped.
+ */
 .chip b {
   font-size: var(--t-xs);
   letter-spacing: 0.06em;
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.chip b[data-long='yes'] {
+  font-size: var(--t-xxs);
 }
 .chip em {
   font-style: normal;
@@ -1220,7 +1266,11 @@ table.paytable td.num {
   :root {
     --rail-h: 48px;
   }
+  /*
+   * A floor, not a height: a wrapped name (see `.chip b`) needs the chip to be
+   * able to grow, and a fixed height here would clip what the rule above wraps.
+   */
   .chip {
-    height: 78px;
+    min-height: 78px;
   }
 }

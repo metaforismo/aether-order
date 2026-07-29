@@ -443,10 +443,23 @@ function tierTabs(): string {
     .join('')}</div>`;
 }
 
+/**
+ * The chip rail.
+ *
+ * `NEIGHBOURS` is the reason the name carries a length flag. §6.5 sets bet names
+ * uppercase at +0.06em, and at the 13 px step that word is 103 px wide inside a
+ * 96 px chip: it overhung its own border at 100% text and was cut off by the
+ * right edge of the screen at 200%, which §11 forbids. A word longer than the
+ * ~8 characters the chip holds drops to 11 px — the *next step down on §6.5's
+ * own scale*, not an arbitrary size — and stays on one line. `FULL ORDER` is
+ * unaffected: its longest word is five characters and it wraps at the space.
+ */
 function chipRail(): string {
   const info = variant();
   const counts = new Map<string, number>();
   for (const line of state.lines) counts.set(line.code, (counts.get(line.code) ?? 0) + 1);
+  const longestWord = (name: string): number =>
+    name.split(/\s+/u).reduce((longest, word) => Math.max(longest, word.length), 0);
   return `<div class="rail-scroll">${info.bets
     .filter((bet) => bet.tier === state.tier)
     .map((bet) => {
@@ -455,7 +468,7 @@ function chipRail(): string {
         `${bet.name}, ${bet.picks}, pays ${bet.multiplierDecimal}`,
       )}">
         ${count > 0 ? `<span class="chip__count">${count}</span>` : ''}
-        <b>${esc(bet.name)}</b>
+        <b${longestWord(bet.name) > 8 ? ' data-long="yes"' : ''}>${esc(bet.name)}</b>
         <em>${esc(bet.picks)}</em>
         <u>${esc(bet.multiplierDecimal)}</u>
       </button>`;

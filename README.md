@@ -273,6 +273,20 @@ engine's canonical wire order, frozen once at COMMIT; and gold is transient on
 the lock ring, so a losing tube is never left wearing a row of gold rings (§6.1
 lists gold's six uses and "the slot ring at the moment it locks" is one moment).
 
+**The type scale is a token, and the tokens are asserted.** §6.5 publishes seven
+steps — 40 / 28 / 22 / 17 / 15 / 13 / 11 — and §11 asks the layout to survive
+200% text scaling without clipping. Held as fixed pixels, as round 1 held them,
+OS and browser scaling is a no-op and the second requirement is not merely unmet
+but unimplementable; held as `rem` *and* restated on `html`, as round 2 held
+them, the whole scale silently ships at 93.75% of itself and the smallest step
+lands under the 11 px floor the conversion was made to fix. Both are one
+declaration in a stylesheet, so `tests/client.test.mjs` parses the scale out of
+`docs/DESIGN.md`, recomputes every token against a 16 px root, and fails if
+anything sets a font size on the root or off the published scale. The chip rail
+reflows to two rows on a container query in `em`, so it is the *text* scale that
+trips it and not the viewport, and a label too wide for its chip drops one
+published step rather than being cut off by the edge of the screen.
+
 **Graybox boundaries, stated rather than implied.** The chamber is DOM and SVG at
 the geometry §6.9 specifies, not the WebGL lane §7 budgets: no fluid shader, no
 bloom, no caustic, no bubble buffer, no sprite master, and therefore none of
