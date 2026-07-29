@@ -252,9 +252,9 @@ describe('docs/DESIGN.md §13.1 reads its round-shape claims off the enumeration
     // FIRST is the only chip whose lock is fixed.
     const fixed = CLASSIC.rows.filter((row) => row.earliestLock === row.latestLock);
     expect(fixed.map((row) => row.code)).toEqual(['first']);
-    // LINK · EITHER is the only chip that can never resolve at lock 1.
+    // NEIGHBOURS is the only chip that can never resolve at lock 1.
     const neverFirstLock = CLASSIC.rows.filter((row) => row.earliestLock > 1);
-    expect(neverFirstLock.map((row) => row.code)).toEqual(['link-any']);
+    expect(neverFirstLock.map((row) => row.code)).toEqual(['neighbours']);
     // The ORDER ladder is three separate moments: 2, 3, n-1.
     expect(byCode('opening').latestLock).toBe(2);
     expect(byCode('podium').latestLock).toBe(3);
@@ -263,7 +263,7 @@ describe('docs/DESIGN.md §13.1 reads its round-shape claims off the enumeration
     expect(byCode('late').latestLock).toBe(CLASSIC.n - 2);
     // Exactly six chips can run to the last informative lock.
     const toTheEnd = CLASSIC.rows.filter((row) => row.latestLock === CLASSIC.n - 1).map((row) => row.code);
-    expect(toTheEnd.sort()).toEqual(['before', 'full', 'last', 'link', 'link-any', 'slot']);
+    expect(toTheEnd.sort()).toEqual(['before', 'full', 'last', 'neighbours', 'slot', 'stack']);
     expect(DESIGN).toMatch(/Six of the eleven chips can run to lock `n−1`/u);
   });
 
@@ -277,7 +277,7 @@ describe('docs/DESIGN.md §13.1 reads its round-shape claims off the enumeration
     expect(withdrawal).toBeGreaterThan(-1);
     expect(DESIGN.slice(0, withdrawal)).not.toMatch(claim);
     // The three FLOW chips that make the old sentence false.
-    for (const code of ['before', 'link-any']) {
+    for (const code of ['before', 'neighbours']) {
       expect(byCode(code).latestLock, code).toBe(CLASSIC.n - 1);
     }
     expect(byCode('late').latestLock).toBeGreaterThan(2);

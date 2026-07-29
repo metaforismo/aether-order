@@ -45,10 +45,10 @@ describe.each(VARIANT_IDS)('behavioural catalogue digest — %s', (variantId) =>
   });
 
   it('reversing a predicate moves the digest, though nothing declarative changed', () => {
-    // LINK a>b wins when b is immediately ABOVE a. Reverse it: same code, same
+    // STACK a>b wins when b is immediately ABOVE a. Reverse it: same code, same
     // tier, same labels, same params, same instance count, same win COUNT — and
     // a completely different set of winning outcomes.
-    const reversed = withFamily('link', {
+    const reversed = withFamily('stack', {
       resolve: (i, { pos }) => pos[i.params.a] === pos[i.params.b] + 1,
     });
     const tampered = digestCatalogue(variantId, reversed);

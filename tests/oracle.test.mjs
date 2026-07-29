@@ -33,13 +33,13 @@ const ORACLE_WINS = Object.freeze({
   early: (n) => 2n * f(n - 1),
   late: (n) => 2n * f(n - 1),
   // Glue the pair into one block: (n-1)! block arrangements x 2 internal orders.
-  'link-any': (n) => 2n * f(n - 1),
+  'neighbours': (n) => 2n * f(n - 1),
   // Fix one colour in one slot; arrange the remaining n-1 freely.
   first: (n) => f(n - 1),
   last: (n) => f(n - 1),
   slot: (n) => f(n - 1),
   // Same glued block, internal order fixed.
-  link: (n) => f(n - 1),
+  stack: (n) => f(n - 1),
   // Two slots pinned; arrange the remaining n-2.
   opening: (n) => f(n - 2),
   // Three slots pinned; arrange the remaining n-3.
@@ -52,11 +52,11 @@ const ORACLE_INSTANCES = Object.freeze({
   before: (n) => big(n) * big(n - 1),
   early: (n) => big(n),
   late: (n) => big(n),
-  'link-any': (n) => (big(n) * big(n - 1)) / 2n,
+  'neighbours': (n) => (big(n) * big(n - 1)) / 2n,
   first: (n) => big(n),
   last: (n) => big(n),
   slot: (n) => big(n) * big(n),
-  link: (n) => big(n) * big(n - 1),
+  stack: (n) => big(n) * big(n - 1),
   opening: (n) => big(n) * big(n - 1),
   podium: (n) => big(n) * big(n - 1) * big(n - 2),
   full: (n) => f(n),

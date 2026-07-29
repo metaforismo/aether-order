@@ -93,11 +93,11 @@ permutation, resolvable by inspection of the settled tube.
 | `before` | BEFORE | FLOW | two colours, in order | the first colour settles in a lower slot than the second |
 | `early` | EARLY | FLOW | one colour | that colour is one of the first two to settle (slots 1–2) |
 | `late` | LATE | FLOW | one colour | that colour is one of the last two to settle (slots `n-1`, `n`) |
-| `link-any` | LINK · EITHER | FLOW | two colours | the two colours settle in adjacent slots, in either order |
+| `neighbours` | NEIGHBOURS | FLOW | two colours | the two colours settle in adjacent slots, in either order |
 | `first` | FIRST | FORM | one colour | that colour settles first (slot 1) |
 | `last` | LAST | FORM | one colour | that colour settles last (slot `n`) |
 | `slot` | SLOT | FORM | one colour and one slot | that colour settles in exactly that slot |
-| `link` | LINK | FORM | two colours, in order | the second colour settles in the slot immediately above the first |
+| `stack` | STACK | FORM | two colours, in order | the second colour settles in the slot immediately above the first |
 | `opening` | OPENING | ORDER | two colours, in order | those two are the first two to settle, in exactly that order |
 | `podium` | PODIUM | ORDER | three colours, in order | those three are the first three to settle, in exactly that order |
 | `full` | FULL ORDER | ORDER | the complete order | every sphere settles in exactly the chosen slot |
@@ -110,7 +110,7 @@ for using the convenience control.
 **How an instance is spelled.** Every bet's parameters are **element indices**,
 and the index is the position in `variants[v].elements` in
 `docs/paytable.json` — the same index the transcript's `permutation` array
-carries. So `first {c=0}` is FIRST on element 0, `link {a=0,b=1}` is element 1
+carries. So `first {c=0}` is FIRST on element 0, `stack {a=0,b=1}` is element 1
 directly above element 0, and `full {order=3-0-1-2-4}` is the complete column.
 
 FULL ORDER is parameterised by the **order**, not by its lexicographic rank.
@@ -134,17 +134,17 @@ For a permutation drawn uniformly from `S_n`:
 | `before` | `n! / 2` | `1/2` |
 | `early` | `2 · (n-1)!` | `2/n` |
 | `late` | `2 · (n-1)!` | `2/n` |
-| `link-any` | `2 · (n-1)!` | `2/n` |
+| `neighbours` | `2 · (n-1)!` | `2/n` |
 | `first` | `(n-1)!` | `1/n` |
 | `last` | `(n-1)!` | `1/n` |
 | `slot` | `(n-1)!` | `1/n` |
-| `link` | `(n-1)!` | `1/n` |
+| `stack` | `(n-1)!` | `1/n` |
 | `opening` | `(n-2)!` | `1 / (n(n-1))` |
 | `podium` | `(n-3)!` | `1 / (n(n-1)(n-2))` |
 | `full` | `1` | `1 / n!` |
 
-`link-any` counts the two colours as a glued block: `(n-1)!` block orderings
-times 2 internal orders. `link` fixes the internal order, halving it. `opening`
+`neighbours` counts the two colours as a glued block: `(n-1)!` block orderings
+times 2 internal orders. `stack` fixes the internal order, halving it. `opening`
 and `podium` pin the first two and first three slots respectively and leave the
 rest free. These closed forms are *not* what the paytable is built from — the
 enumerator counts every instance against every permutation and would fail if a
@@ -208,11 +208,11 @@ rather than quietly ship a mispriced chip.
 | `before` | FLOW | 20 | 60 | 1/2 | 48/25 | 1.92× | 24/25 |
 | `early` | FLOW | 5 | 48 | 2/5 | 12/5 | 2.40× | 24/25 |
 | `late` | FLOW | 5 | 48 | 2/5 | 12/5 | 2.40× | 24/25 |
-| `link-any` | FLOW | 10 | 48 | 2/5 | 12/5 | 2.40× | 24/25 |
+| `neighbours` | FLOW | 10 | 48 | 2/5 | 12/5 | 2.40× | 24/25 |
 | `first` | FORM | 5 | 24 | 1/5 | 24/5 | 4.80× | 24/25 |
 | `last` | FORM | 5 | 24 | 1/5 | 24/5 | 4.80× | 24/25 |
 | `slot` | FORM | 25 | 24 | 1/5 | 24/5 | 4.80× | 24/25 |
-| `link` | FORM | 20 | 24 | 1/5 | 24/5 | 4.80× | 24/25 |
+| `stack` | FORM | 20 | 24 | 1/5 | 24/5 | 4.80× | 24/25 |
 | `opening` | ORDER | 20 | 6 | 1/20 | 96/5 | 19.20× | 24/25 |
 | `podium` | ORDER | 60 | 2 | 1/60 | 288/5 | 57.60× | 24/25 |
 | `full` | ORDER | 120 | 1 | 1/120 | 576/5 | 115.20× | 24/25 |
@@ -226,11 +226,11 @@ rather than quietly ship a mispriced chip.
 | `before` | FLOW | 42 | 2520 | 1/2 | 48/25 | 1.92× | 24/25 |
 | `early` | FLOW | 7 | 1440 | 2/7 | 84/25 | 3.36× | 24/25 |
 | `late` | FLOW | 7 | 1440 | 2/7 | 84/25 | 3.36× | 24/25 |
-| `link-any` | FLOW | 21 | 1440 | 2/7 | 84/25 | 3.36× | 24/25 |
+| `neighbours` | FLOW | 21 | 1440 | 2/7 | 84/25 | 3.36× | 24/25 |
 | `first` | FORM | 7 | 720 | 1/7 | 168/25 | 6.72× | 24/25 |
 | `last` | FORM | 7 | 720 | 1/7 | 168/25 | 6.72× | 24/25 |
 | `slot` | FORM | 49 | 720 | 1/7 | 168/25 | 6.72× | 24/25 |
-| `link` | FORM | 42 | 720 | 1/7 | 168/25 | 6.72× | 24/25 |
+| `stack` | FORM | 42 | 720 | 1/7 | 168/25 | 6.72× | 24/25 |
 | `opening` | ORDER | 42 | 120 | 1/42 | 1008/25 | 40.32× | 24/25 |
 | `podium` | ORDER | 210 | 24 | 1/210 | 1008/5 | 201.60× | 24/25 |
 | `full` | ORDER | 5040 | 1 | 1/5040 | 24192/5 | 4838.40× | 24/25 |
@@ -345,8 +345,8 @@ BigInt approximations:
 | Code | Tier | Probability | Variance (exact) | SD (approx) |
 | --- | --- | --- | --- | --- |
 | `before` | FLOW | 1/2 | 576/625 | 0.9600 |
-| `early`, `late`, `link-any` | FLOW | 2/5 | 864/625 | 1.1757 |
-| `first`, `last`, `slot`, `link` | FORM | 1/5 | 2304/625 | 1.9200 |
+| `early`, `late`, `neighbours` | FLOW | 2/5 | 864/625 | 1.1757 |
+| `first`, `last`, `slot`, `stack` | FORM | 1/5 | 2304/625 | 1.9200 |
 | `opening` | ORDER | 1/20 | 10944/625 | 4.1845 |
 | `podium` | ORDER | 1/60 | 33984/625 | 7.3738 |
 | `full` | ORDER | 1/120 | 68544/625 | 10.4723 |
@@ -356,8 +356,8 @@ BigInt approximations:
 | Code | Tier | Probability | Variance (exact) | SD (approx) |
 | --- | --- | --- | --- | --- |
 | `before` | FLOW | 1/2 | 576/625 | 0.9600 |
-| `early`, `late`, `link-any` | FLOW | 2/7 | 288/125 | 1.5178 |
-| `first`, `last`, `slot`, `link` | FORM | 1/7 | 3456/625 | 2.3515 |
+| `early`, `late`, `neighbours` | FLOW | 2/7 | 288/125 | 1.5178 |
+| `first`, `last`, `slot`, `stack` | FORM | 1/7 | 3456/625 | 2.3515 |
 | `opening` | ORDER | 1/42 | 23616/625 | 6.1469 |
 | `podium` | ORDER | 1/210 | 120384/625 | 13.8785 |
 | `full` | ORDER | 1/5040 | 2902464/625 | 68.1464 |

@@ -177,7 +177,7 @@ describe.each(VARIANT_IDS)('the ticket strip headline is a real maximum — %s',
       [
         { code: 'podium', params: { a: 0, b: 1, c: 2 }, stakeChips: 250n },
         { code: 'late', params: { c: 4 }, stakeChips: 250n },
-        { code: 'link', params: { a: 0, b: 1 }, stakeChips: 250n },
+        { code: 'stack', params: { a: 0, b: 1 }, stakeChips: 250n },
       ],
       Array.from({ length: n }, (_, c) => ({ code: 'first', params: { c }, stakeChips: STAKE_QUANTUM })),
     ];

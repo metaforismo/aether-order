@@ -20,7 +20,7 @@ A new player opens the game and sees, in this order:
 2. **A tube with five numbered slots**, empty, running up the middle.
 3. **One line of copy:** *"They settle in a random order. Bet on the order."*
 4. **The FORM tier's chips, already open.** `4.80×`, `4.80×`, `4.80×`, `4.80×` —
-   FIRST, LAST, SLOT, LINK, four different claims at one price.
+   FIRST, LAST, SLOT, STACK, four different claims at one price.
 5. **One line under the rail:** *"Every bet pays 96%. The tiers are how wild the
    ride is, not how good the deal is."*
 
@@ -118,13 +118,13 @@ this rule was a paragraph. It is code now — `tools/lib/resolution.mjs`,
 | `before` | BEFORE — whichever of the two colours lands first | 4 | 6 |
 | `last` | LAST — the lock the colour lands on, else lock `n−1` | 4 | 6 |
 | `slot` | SLOT `c @ k` — the lock `c` lands on, or lock `k`, whichever is first | 4 | 6 |
-| `link` | LINK — the lock after the lower colour lands, or the lock the upper colour lands on | 4 | 6 |
-| `link-any` | LINK · EITHER — the lock after the first of the pair lands | 4 | 6 |
+| `stack` | STACK — the lock after the lower colour lands, or the lock the upper colour lands on | 4 | 6 |
+| `neighbours` | NEIGHBOURS — the lock after the first of the pair lands | 4 | 6 |
 | `full` | FULL ORDER — the first mismatched lock, else lock `n−1` (§9) | 4 | 6 |
 <!-- resolution:end -->
 
 Every description above is capped by the rule: wherever a formula would give
-lock `n` — SLOT on the top slot, LAST when the colour never lands early, LINK
+lock `n` — SLOT on the top slot, LAST when the colour never lands early, STACK
 when the lower colour is at the top — the answer is lock `n−1`, because by then
 there is nothing left to find out. The two numeric columns are that cap made
 explicit, and they are generated, not typed.
@@ -248,7 +248,7 @@ tab.
 | **BEFORE** | two colours, in order | the first settles below the second | `1.92×` | `1.92×` |
 | **EARLY** | one colour | it is one of the first two to settle | `2.40×` | `3.36×` |
 | **LATE** | one colour | it is one of the last two to settle | `2.40×` | `3.36×` |
-| **LINK · EITHER** | two colours | they settle side by side, either order | `2.40×` | `3.36×` |
+| **NEIGHBOURS** | two colours | they settle side by side, in either order | `2.40×` | `3.36×` |
 
 ### FORM — the core game
 
@@ -257,7 +257,7 @@ tab.
 | **FIRST** | one colour | it settles first | `4.80×` | `6.72×` |
 | **LAST** | one colour | it settles last | `4.80×` | `6.72×` |
 | **SLOT** | one colour, one slot | it settles in exactly that slot | `4.80×` | `6.72×` |
-| **LINK** | two colours, in order | the second settles directly above the first | `4.80×` | `6.72×` |
+| **STACK** | two colours, in order | the second settles directly above the first | `4.80×` | `6.72×` |
 
 ### ORDER — the reason to watch
 
@@ -275,6 +275,29 @@ reason this format is worth animating.
 FIRST and LAST are one-tap presets of SLOT. They are priced identically — using
 the convenience control never costs anything. The paytable sheet says this in
 one line so nobody has to work it out.
+
+**STACK and NEIGHBOURS were called LINK and LINK · EITHER, and the rename is a
+product fix, not a copy pass.** They were the only two chips in the menu that
+shared a word. They sit in different tiers, at exactly half the price of one
+another, and they differ only by whether the stacking order is fixed. The rest
+of this menu passes the 30-second comprehension test comfortably — five spheres,
+a five-slot tube, *"They settle in a random order. Bet on the order."*, and four
+chips all reading `4.80×` — and those two were the one genuine trap in it. The
+chip rail is where the choice is made, and two chips one word apart at 2× the
+price is precisely the confusion a product whose whole thesis is *no trap bets*
+cannot afford: a player who taps the wrong one does not conclude they misread a
+label, they conclude the cheaper chip **was** the trap.
+
+The new names share nothing and each carries its own semantics. A *stack* is a
+specific vertical arrangement, which is exactly what the bet claims and exactly
+what the tube shows. *Neighbours* are next to each other with no order implied.
+The wire codes moved with the names — `link`/`link-any` are now `stack` and
+`neighbours` — because a receipt reading `code=link` beside a chip reading STACK
+is the same auditability defect FULL ORDER had with `rank=37` (`MATH.md` §3),
+and it is not one this document is going to reintroduce in the same round it
+fixed. That is replay-visible, so `adapterVersion` moved too.
+
+§14's first falsification test now checks the pair directly.
 
 ### Ticket rules
 
@@ -356,7 +379,7 @@ target during a round.
 552 │   FLOW  ·  FORM  ·  ORDER                 │  44  tier tabs
 596 ├───────────────────────────────────────────┤
 604 │  ┌──────┐┌──────┐┌──────┐┌──────┐         │  88  chip rail
-    │  │FIRST ││ SLOT ││ LINK ││ LAST │  →      │      (h-scroll)
+    │  │FIRST ││ SLOT ││STACK ││ LAST │  →      │      (h-scroll)
 692 │  │4.80× ││4.80× ││4.80× ││4.80× │         │
     ├───────────────────────────────────────────┤
 700 │  3 lines · 3.00 · best 139.20             │  36  ticket strip
@@ -407,9 +430,9 @@ that mirrors the real tube: the player picks the slot **on a picture of the
 tube**, not from a number list. Two taps. This is the single most important
 affordance in the game and every other picker inherits from it.
 
-**C. Two colours, ordered or unordered** (BEFORE, LINK, LINK · EITHER, OPENING)
+**C. Two colours, ordered or unordered** (BEFORE, STACK, NEIGHBOURS, OPENING)
 — two wells labelled `FIRST PICK` / `SECOND PICK` (or `EITHER ORDER` for
-LINK · EITHER, which shows one unordered well pair). Two taps. Live sentence:
+NEIGHBOURS, which shows one unordered well pair). Two taps. Live sentence:
 *"AMBER settles before AQUA."* The sentence is the confirmation, not the icons.
 
 **D. Three colours, ordered — PODIUM.** The sheet shows the bottom three slots
@@ -582,7 +605,7 @@ only structural difference is that the round's clock belongs to the server.
 540 ├───────────────────────────────────────────┤
 552 │  IN THIS DRAW  ·  41 tickets              │  36  presence row
 588 ├───────────────────────────────────────────┤
-    │  ▸ FIRST amber        ▸ LINK aqua>violet  │  76  ticket ticker
+    │  ▸ FIRST amber        ▸ STACK aqua>violet │  76  ticket ticker
     │  ▸ FULL ORDER ×3      ▸ BEFORE ivory<coral│      (2 rows, scrolls)
 664 ├───────────────────────────────────────────┤
     │  FLOW · FORM · ORDER      3 lines · 3.00  │  44  tabs + strip
@@ -1539,8 +1562,8 @@ re-prices**, because every probability except BEFORE's `1/2` depends on `n`:
 | Chip | CLASSIC | SEVEN |
 | --- | --- | --- |
 | BEFORE | `1.92×` | `1.92×` — the only one that does not move |
-| EARLY · LATE · LINK · EITHER | `2.40×` | `3.36×` |
-| FIRST · LAST · SLOT · LINK | `4.80×` | `6.72×` |
+| EARLY · LATE · NEIGHBOURS | `2.40×` | `3.36×` |
+| FIRST · LAST · SLOT · STACK | `4.80×` | `6.72×` |
 | OPENING | `19.20×` | `40.32×` |
 | PODIUM | `57.60×` | `201.60×` |
 | FULL ORDER | `115.20×` | `4838.40×` at 1-in-5040 |
@@ -1613,9 +1636,9 @@ instances × 120 outcomes by `tools/lib/resolution.mjs` rather than described:
 | `before` | BEFORE | FLOW | 1 | 4 |
 | `last` | LAST | FORM | 1 | 4 |
 | `slot` | SLOT | FORM | 1 | 4 |
-| `link` | LINK | FORM | 1 | 4 |
+| `stack` | STACK | FORM | 1 | 4 |
 | `full` | FULL ORDER | ORDER | 1 | 4 |
-| `link-any` | LINK · EITHER | FLOW | 2 | 4 |
+| `neighbours` | NEIGHBOURS | FLOW | 2 | 4 |
 <!-- shape:end -->
 
 Read off it, rather than asserted beside it:
@@ -1624,7 +1647,7 @@ Read off it, rather than asserted beside it:
   as the bottom sphere seats — first row, and the only row where the two numbers
   are equal. A FIRST-only ticket is a one-beat round and the other four falls
   are scenery.
-- **LINK · EITHER is the only chip that can never resolve at lock 1.**
+- **NEIGHBOURS is the only chip that can never resolve at lock 1.**
   Adjacency needs two spheres seated before it can be settled either way, so its
   earliest is 2. Every other chip can die — or win — on the very first fall.
 - **The ORDER tier is a ladder in time, not just in price.** OPENING is decided
@@ -1635,8 +1658,8 @@ Read off it, rather than asserted beside it:
   `n−2` at the latest — once `n−2` spheres are down, whether a colour is in the
   top two is already settled — so the last two falls of such a round carry
   nothing at all. The chip's name describes where it looks, not when it lands.
-- **Six of the eleven chips can run to lock `n−1`**: BEFORE, LAST, SLOT, LINK,
-  LINK · EITHER and FULL ORDER. A ticket carrying any of them can be live until
+- **Six of the eleven chips can run to lock `n−1`**: BEFORE, LAST, SLOT, STACK,
+  NEIGHBOURS and FULL ORDER. A ticket carrying any of them can be live until
   the last informative fall.
 
 The round the player watches is a consequence of the ticket they built, which is
@@ -1645,7 +1668,7 @@ the only kind of variety a game with no post-commit decisions can honestly have.
 **The claim this replaces was false, and it was false in the flattering
 direction.** Round 4 wrote: *"A FLOW-only ticket is decided in the first two
 locks and the rest of the settle is scenery."* Only EARLY is decided by lock 2.
-LATE runs to lock `n−2`, and BEFORE and LINK · EITHER run to lock `n−1` — the
+LATE runs to lock `n−2`, and BEFORE and NEIGHBOURS run to lock `n−1` — the
 last informative lock — so three of the tier's four chips resolve later than the
 sentence claimed, and the tier the sentence used as its example is the one whose
 chips resolve *latest* on average. It was the section's only concrete
@@ -1778,6 +1801,15 @@ rationalised later:
 1. If unprompted first-session players cannot state *"every bet pays the same"*
    after five rounds, the central differentiator is not legible and the UX has
    failed regardless of how true it is.
+
+   **The same test carries a second question, on the one pair that has ever
+   looked like a trap.** Show the rail and ask what the difference between
+   STACK and NEIGHBOURS is. A player who cannot say *"one fixes which colour is
+   on top"* has met a comprehension trap, and the fact that the two chips are
+   priced 2× apart makes it the expensive kind — the wrong tap looks like a
+   penalty for choosing badly. They were LINK and LINK · EITHER until round 5
+   (§4); if the new names still fail here, the fix is another name, not another
+   tooltip.
 2. If the ORDER-tier attach rate sits below ~15%, the ladder is not carrying the
    watch-value and §13.1's variety argument is wrong.
 3. If the verifier is opened by fewer than ~5% of players in their first

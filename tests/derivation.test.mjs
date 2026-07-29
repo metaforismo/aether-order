@@ -575,7 +575,7 @@ describe('commitments', () => {
     expect(digestCatalogue('classic', renamed)).not.toBe(honest);
 
     // Dropping a family entirely must move it as well.
-    expect(digestCatalogue('classic', BET_FAMILIES.filter((f) => f.code !== 'link'))).not.toBe(honest);
+    expect(digestCatalogue('classic', BET_FAMILIES.filter((f) => f.code !== 'stack'))).not.toBe(honest);
   });
 
   it('claim signatures are keyed on parameters, not on adapter-authored labels', () => {

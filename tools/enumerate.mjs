@@ -312,9 +312,9 @@ function fixtureTicketFor(transcript, n, index) {
       lines: [
         { code: 'early', params: { c: perm[0] }, stakeChips: 25n },
         { code: 'late', params: { c: perm[n - 1] }, stakeChips: 25n },
-        { code: 'link-any', params: minMaxPair(perm[0], perm[1]), stakeChips: 25n },
+        { code: 'neighbours', params: minMaxPair(perm[0], perm[1]), stakeChips: 25n },
         { code: 'last', params: { c: perm[n - 1] }, stakeChips: 50n },
-        { code: 'link', params: { a: perm[0], b: perm[1] }, stakeChips: 50n },
+        { code: 'stack', params: { a: perm[0], b: perm[1] }, stakeChips: 50n },
         { code: 'slot', params: { c: perm[1], k: 1 }, stakeChips: 25n },
         { code: 'before', params: { a: perm[1], b: perm[0] }, stakeChips: 25n },
         { code: 'first', params: { c: perm[1] }, stakeChips: 25n },
@@ -330,12 +330,12 @@ function fixtureTicketFor(transcript, n, index) {
         { code: 'before', params: { a: 0, b: 1 }, stakeChips: 25n },
         { code: 'early', params: { c: 0 }, stakeChips: 25n },
         { code: 'late', params: { c: n - 1 }, stakeChips: 25n },
-        { code: 'link-any', params: { a: 0, b: 1 }, stakeChips: 25n },
+        { code: 'neighbours', params: { a: 0, b: 1 }, stakeChips: 25n },
         { code: 'first', params: { c: 0 }, stakeChips: 25n },
         { code: 'last', params: { c: n - 1 }, stakeChips: 25n },
         { code: 'slot', params: { c: 2, k: 2 }, stakeChips: 25n },
         { code: 'slot', params: { c: 3, k: 3 }, stakeChips: 25n },
-        { code: 'link', params: { a: 0, b: 1 }, stakeChips: 25n },
+        { code: 'stack', params: { a: 0, b: 1 }, stakeChips: 25n },
         { code: 'opening', params: { a: 0, b: 1 }, stakeChips: 25n },
         { code: 'podium', params: { a: 0, b: 1, c: 2 }, stakeChips: 25n },
         { code: 'full', params: fullOrderParamsByRank(n, 0), stakeChips: 25n },
@@ -345,7 +345,7 @@ function fixtureTicketFor(transcript, n, index) {
   return shapes[index % shapes.length]();
 }
 
-/** `link-any` enumerates unordered pairs as (a < b); a ticket must match that. */
+/** `neighbours` enumerates unordered pairs as (a < b); a ticket must match that. */
 const minMaxPair = (x, y) => ({ a: Math.min(x, y), b: Math.max(x, y) });
 
 /** Three lines that CAN all hit at once — rank 0 is the identity permutation. */

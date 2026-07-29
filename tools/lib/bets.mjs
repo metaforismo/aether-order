@@ -14,6 +14,21 @@
  *
  * Slots are 0-indexed internally and 1-indexed in every player-facing string.
  * Slot 0 is the first sphere to settle (bottom of the tube).
+ *
+ * STACK and NEIGHBOURS were LINK and LINK · EITHER until round 5. They are the
+ * only two chips in the menu that shared a word, they sit in different tiers at
+ * exactly half the price of one another, and they differ only by whether the
+ * stacking order is fixed — which is the one genuine comprehension trap in an
+ * otherwise very legible menu, and the worst possible one for a product whose
+ * whole thesis is "no trap bets": a player who taps the wrong one concludes the
+ * cheaper chip WAS the trap. The names now share nothing and each carries its
+ * own semantics — a stack is a specific vertical arrangement, neighbours are
+ * next to each other in no particular order.
+ *
+ * The wire CODES changed with the names rather than staying `link`/`link-any`,
+ * because a receipt reading `code=link` beside a chip reading STACK is the same
+ * auditability defect the `full` family had with `rank=37`. That is
+ * replay-visible, so ADAPTER_VERSION moved with it.
  */
 
 import { orderKey, unrankPermutation } from './permutations.mjs';
@@ -82,12 +97,12 @@ export const BET_FAMILIES = Object.freeze([
     resolve: (i, { pos, n }) => pos[i.params.c] >= n - 2,
   }),
   Object.freeze({
-    code: 'link-any',
-    name: 'LINK · EITHER',
+    code: 'neighbours',
+    name: 'NEIGHBOURS',
     tier: TIERS.FLOW,
     picks: 'two colours',
     rule: 'The two colours settle in adjacent slots, in either order.',
-    instances: (n) => unorderedPairs(n).map(([a, b]) => inst('link-any', { a, b }, `${a}~${b}`)),
+    instances: (n) => unorderedPairs(n).map(([a, b]) => inst('neighbours', { a, b }, `${a}~${b}`)),
     resolve: (i, { pos }) => Math.abs(pos[i.params.a] - pos[i.params.b]) === 1,
   }),
   Object.freeze({
@@ -122,12 +137,12 @@ export const BET_FAMILIES = Object.freeze([
     resolve: (i, { pos }) => pos[i.params.c] === i.params.k,
   }),
   Object.freeze({
-    code: 'link',
-    name: 'LINK',
+    code: 'stack',
+    name: 'STACK',
     tier: TIERS.FORM,
     picks: 'two colours, in order',
     rule: 'The second colour settles in the slot immediately above the first.',
-    instances: (n) => orderedPairs(n).map(([a, b]) => inst('link', { a, b }, `${a}>${b}`)),
+    instances: (n) => orderedPairs(n).map(([a, b]) => inst('stack', { a, b }, `${a}>${b}`)),
     resolve: (i, { pos }) => pos[i.params.b] === pos[i.params.a] + 1,
   }),
   Object.freeze({

@@ -12,14 +12,22 @@ import { rational } from './rational.mjs';
 
 export const GAME_ID = 'aether-order';
 /**
- * Bumped from 1.1.0 when FULL ORDER stopped being parameterised by its
- * lexicographic rank. `canonicalParams` is bound into the catalogue digest, the
- * adapter fingerprint, every ticket and settlement digest and every signed
- * receipt, so that is a replay-visible change and docs/ENGINE.md §2 requires a
- * new adapter version for it. An integration must retain the exact adapter
- * needed to replay any liability opened under 1.1.0.
+ * Two replay-visible changes moved this off 1.1.0:
+ *
+ *   1.2.0 — FULL ORDER stopped being parameterised by its lexicographic rank
+ *           and is now spelled with the order itself, so a receipt records what
+ *           the player picked rather than an index into a ranking function.
+ *   1.3.0 — the LINK / LINK · EITHER pair was renamed STACK / NEIGHBOURS, codes
+ *           included, because a receipt reading `code=link` beside a chip
+ *           reading STACK reintroduces the defect 1.2.0 fixed.
+ *
+ * Both change `canonicalParams` or a family code, both are bound into the
+ * catalogue digest and thence into the adapter fingerprint, every ticket and
+ * settlement digest and every signed receipt. docs/ENGINE.md §2 requires a new
+ * adapter version for exactly this, and an integration must retain the exact
+ * adapter needed to replay any liability opened under an earlier one.
  */
-export const ADAPTER_VERSION = '1.2.0';
+export const ADAPTER_VERSION = '1.3.0';
 export const API_VERSION = 'reveal-engine/api-v1';
 export const MODULE_VERSION = 'reveal-engine/permutation-v1';
 export const TRANSCRIPT_SCHEMA = 'reveal-engine/permutation-transcript-v1';
@@ -244,11 +252,11 @@ const CLASSIC_MULTIPLIERS = Object.freeze({
   before: rational(48n, 25n), //   1.92x
   early: rational(12n, 5n), //     2.40x
   late: rational(12n, 5n), //      2.40x
-  'link-any': rational(12n, 5n), //2.40x
+  'neighbours': rational(12n, 5n), //2.40x
   first: rational(24n, 5n), //     4.80x
   last: rational(24n, 5n), //      4.80x
   slot: rational(24n, 5n), //      4.80x
-  link: rational(24n, 5n), //      4.80x
+  stack: rational(24n, 5n), //      4.80x
   opening: rational(96n, 5n), //  19.20x
   podium: rational(288n, 5n), //  57.60x
   full: rational(576n, 5n), //   115.20x
@@ -258,11 +266,11 @@ const SEVEN_MULTIPLIERS = Object.freeze({
   before: rational(48n, 25n), //     1.92x
   early: rational(84n, 25n), //      3.36x
   late: rational(84n, 25n), //       3.36x
-  'link-any': rational(84n, 25n), // 3.36x
+  'neighbours': rational(84n, 25n), // 3.36x
   first: rational(168n, 25n), //     6.72x
   last: rational(168n, 25n), //      6.72x
   slot: rational(168n, 25n), //      6.72x
-  link: rational(168n, 25n), //      6.72x
+  stack: rational(168n, 25n), //      6.72x
   opening: rational(1008n, 25n), // 40.32x
   podium: rational(1008n, 5n), //  201.60x
   full: rational(24192n, 5n), //  4838.40x

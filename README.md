@@ -92,9 +92,9 @@ nothing about the outcome, and does not let you bet any faster.
 | --- | --- | --- | --- |
 | **FLOW** — lands often | BEFORE | two colours, in order | `1.92×` |
 | | EARLY / LATE | one colour, first two or last two | `2.40×` |
-| | LINK · EITHER | two colours, side by side | `2.40×` |
+| | NEIGHBOURS | two colours, side by side, either order | `2.40×` |
 | **FORM** — the core game | FIRST / LAST / SLOT | one colour, one position | `4.80×` |
-| | LINK | two colours, directly stacked | `4.80×` |
+| | STACK | two colours, one directly above the other | `4.80×` |
 | **ORDER** — rare, big | OPENING | the first two, in order | `19.20×` |
 | | PODIUM | the first three, in order | `57.60×` |
 | | FULL ORDER | the whole column, exactly | `115.20×` |
