@@ -30,6 +30,17 @@ jobs:
       - name: Exhaustive enumeration (the proof)
         run: npm run enumerate
 
+      # The service and the client are TypeScript against the packaged engine.
+      # A type error here is an integration that would fail at runtime, so it is
+      # a build failure rather than something a reviewer is asked to notice.
+      - name: Typecheck (service + client)
+        run: npm run typecheck
+
+      - name: Build the client
+        run: npm run build
+
+      # Includes tests/playthrough.test.ts, which drives a full round through
+      # the real HTTP service and asserts the exact credits at every step.
       - name: Tests
         run: npm test
 
