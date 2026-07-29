@@ -25,6 +25,9 @@
 /** The chamber rect in CSS pixels on the 390 x 844 reference viewport. */
 export const CHAMBER_CSS = Object.freeze({ width: 390, height: 430 });
 
+/** The whole reference viewport. The chrome layer is this big; the canvas is not. */
+export const VIEWPORT_CSS = Object.freeze({ width: 390, height: 844 });
+
 /** Sphere diameter in CSS pixels: the tube is 96 wide with 78-tall slots. */
 export const SPHERE_DIAMETER_CSS = 64;
 
@@ -171,9 +174,213 @@ export function frameBudget({
   });
 }
 
+/* ==================================================================== *
+ * The other half of the frame: the DOM/SVG chrome layer.                *
+ *                                                                       *
+ * The pass table above budgets the WebGL canvas and nothing else, and    *
+ * §6.2 deliberately moves every hard edge OUT of that canvas: all text,  *
+ * the slot rings, the tube outline and the 1 px specular line are DOM    *
+ * and SVG at native DPR, because the backing store is capped at DPR 2.   *
+ * §6.4 then animates exactly that layer throughout SETTLE — a gold ring  *
+ * lock per slot with a 90 ms rebound, a 2 px chamber flex, and per-line  *
+ * state changes at 120 ms.                                              *
+ *                                                                       *
+ * So the published budget proved the cheap half and was silent on the    *
+ * expensive one. On a Galaxy A54 the chrome layer is ~1073 x 2321 device *
+ * pixels, composited every frame beside the canvas, and it appeared in   *
+ * no table in the document. Concurrent SVG animation plus a WebGL canvas *
+ * is the standard 60 fps failure on this exact device class, and it is   *
+ * the binding cost here — not fill rate.                                 *
+ *                                                                       *
+ * Two things are modelled below, because they fail for different         *
+ * reasons:                                                               *
+ *                                                                       *
+ *   1. COMPOSITE. The system compositor blends the chrome layer and the  *
+ *      upscaled canvas into the framebuffer at NATIVE dpr, every frame,  *
+ *      whether anything moved or not. It is pure bandwidth and it is     *
+ *      unavoidable; it is also, once counted, affordable.                *
+ *   2. RASTER. If an animation touches any property that invalidates a   *
+ *      layer's raster — stroke geometry, filters, layout — the layer is  *
+ *      re-rasterised and re-uploaded every frame. THIS is what kills the *
+ *      frame rate, it is not visible in a fragment count, and it is      *
+ *      avoidable by rule: during SETTLE the chrome layer animates        *
+ *      `transform` and `opacity` only, on pre-promoted layers.           *
+ *                                                                       *
+ * `naiveRasterPixelsPerFrame` is the counterfactual that rule buys back. *
+ * ==================================================================== */
+
+/** Chrome geometry in CSS pixels. docs/DESIGN.md §5 S1 and S4 declare these. */
+export const CHROME_CSS = Object.freeze({
+  /** The tube outline group: the 2 px chamber flex transforms this. */
+  tube: Object.freeze({ width: 96, height: 430 }),
+  /** One slot's ring bounding box. The tube keeps its width; pitch varies. */
+  slotHeight: Object.freeze({ classic: 78, seven: 58 }),
+  /** One pinned ticket-strip row in S4, which changes state at its lock. */
+  ticketRow: Object.freeze({ width: 390, height: 28 }),
+  /** The settle-cadence hairline under the top rail. */
+  hairline: Object.freeze({ width: 390, height: 3 }),
+});
+
+/** docs/DESIGN.md §4: a ticket carries at most this many lines. */
+export const MAX_TICKET_ROWS = 12;
+
+/** The §6.4 motion table, as numbers, so the concurrency claim is computed. */
+export const MOTION_MS = Object.freeze({
+  settleStagger: Object.freeze({ classic: 420, seven: 360 }),
+  lockRebound: 90,
+  lineStateChange: 120,
+  fall: 340,
+});
+
+/** Bytes per output pixel written by the compositor into the framebuffer. */
+const COMPOSITOR_WRITE_BYTES = BYTES_PER_PIXEL;
+
+/**
+ * The compositor and raster budget for the DOM/SVG layer during SETTLE.
+ *
+ * @param {object} options
+ * @param {number} options.devicePixelRatio the panel's ratio — NOT capped; the
+ *   whole point of §6.2 is that this layer is drawn at native density
+ * @param {'classic'|'seven'} options.variant
+ * @param {number} options.ticketRows lines pinned in S4
+ * @param {number} options.fps
+ */
+export function chromeBudget({
+  devicePixelRatio,
+  variant = 'seven',
+  ticketRows = MAX_TICKET_ROWS,
+  fps = 60,
+  viewport = VIEWPORT_CSS,
+  chamber = CHAMBER_CSS,
+} = {}) {
+  if (!(devicePixelRatio > 0)) throw new RangeError('chromeBudget requires a positive devicePixelRatio');
+  const slots = SPHERE_COUNT[variant];
+  if (!slots) throw new RangeError(`Unknown variant: ${variant}`);
+  const px = (css) => Math.round(css * devicePixelRatio);
+  const area = (w, h) => px(w) * px(h);
+
+  const viewportPixels = area(viewport.width, viewport.height);
+  // The canvas covers only the chamber rect, and the compositor samples it at
+  // native density even though it was rendered at the capped one.
+  const canvasPixels = area(chamber.width, chamber.height);
+
+  const compositeShaded = viewportPixels;
+  const compositeWriteBytes = viewportPixels * COMPOSITOR_WRITE_BYTES;
+  const compositeReadBytes = (viewportPixels + canvasPixels) * BYTES_PER_PIXEL;
+
+  /**
+   * Every chrome element that moves during SETTLE, promoted to its own layer so
+   * that moving it costs a transform and never a repaint.
+   */
+  const layers = Object.freeze([
+    Object.freeze({
+      id: 'slot-rings',
+      count: slots,
+      devicePixelsEach: area(CHROME_CSS.tube.width, CHROME_CSS.slotHeight[variant]),
+      animates: 'transform (4% ring overshoot) + opacity',
+      note: 'one per slot; the 90 ms rebound is shorter than the settle stagger, so at most one is in flight',
+    }),
+    Object.freeze({
+      id: 'tube-outline',
+      count: 1,
+      devicePixelsEach: area(CHROME_CSS.tube.width, CHROME_CSS.tube.height),
+      animates: 'transform (2 px chamber flex)',
+      note: 'the flex is a translate on the whole group, never a change to the path',
+    }),
+    Object.freeze({
+      id: 'ticket-rows',
+      count: ticketRows,
+      devicePixelsEach: area(CHROME_CSS.ticketRow.width, CHROME_CSS.ticketRow.height),
+      animates: 'opacity + colour',
+      note: 'one per line; state changes at the deciding lock, 120 ms, identical for won and lost',
+    }),
+    Object.freeze({
+      id: 'cadence-hairline',
+      count: 1,
+      devicePixelsEach: area(CHROME_CSS.hairline.width, CHROME_CSS.hairline.height),
+      animates: 'transform (scaleX)',
+      note: 'reaches full width at lock n-1, not lock n',
+    }),
+  ]);
+
+  const promotedPixels = layers.reduce((sum, layer) => sum + layer.count * layer.devicePixelsEach, 0);
+  const layerCount = layers.reduce((sum, layer) => sum + layer.count, 0);
+
+  // At most one ring rebound is ever in flight, because the rebound is shorter
+  // than the interval between locks. Computed, not assumed.
+  const stagger = MOTION_MS.settleStagger[variant];
+  const concurrentRingRebounds = Math.max(1, Math.ceil(MOTION_MS.lockRebound / stagger));
+
+  // Under the compositor-only rule nothing is re-rasterised during SETTLE.
+  const rasterPixelsPerFrame = 0;
+  // The counterfactual: animate the ring by stroke geometry and the flex by
+  // editing the tube path, and both layers invalidate every frame.
+  const ringPixels = layers[0].devicePixelsEach * concurrentRingRebounds;
+  const naiveRasterPixelsPerFrame = ringPixels + layers[1].devicePixelsEach * layers[1].count;
+
+  return Object.freeze({
+    devicePixelRatio,
+    variant,
+    fps,
+    viewport: `${px(viewport.width)} × ${px(viewport.height)}`,
+    viewportPixels,
+    canvasSampledPixels: canvasPixels,
+    compositeShadedFragments: compositeShaded,
+    compositeWriteBytes,
+    compositeReadBytes,
+    compositeMegafragmentsPerSecond: (compositeShaded * fps) / 1e6,
+    compositeWriteMegabytesPerSecond: (compositeWriteBytes * fps) / 1e6,
+    compositeReadMegabytesPerSecond: (compositeReadBytes * fps) / 1e6,
+    compositeTrafficMegabytesPerSecond: ((compositeWriteBytes + compositeReadBytes) * fps) / 1e6,
+    layers,
+    layerCount,
+    promotedPixels,
+    /** Layer-memory cost of promoting all of it, at 4 bytes per pixel. */
+    promotedLayerMegabytes: (promotedPixels * BYTES_PER_PIXEL) / 1e6,
+    concurrentRingRebounds,
+    rasterPixelsPerFrame,
+    rasterMegapixelsPerSecond: (rasterPixelsPerFrame * fps) / 1e6,
+    naiveRasterPixelsPerFrame,
+    naiveRasterMegapixelsPerSecond: (naiveRasterPixelsPerFrame * fps) / 1e6,
+    naiveUploadMegabytesPerSecond: (naiveRasterPixelsPerFrame * BYTES_PER_PIXEL * fps) / 1e6,
+  });
+}
+
+/**
+ * Both layers of one frame on one device: the capped WebGL canvas plus the
+ * native-DPR chrome layer and the composite that puts them on screen.
+ *
+ * This is the number docs/DESIGN.md §7.1 has to publish. The canvas alone was
+ * 72.2 Mfrag/s and 2–7% of the reference class's fill; with the layer the
+ * design deliberately loaded with every hard edge, it is roughly three times
+ * that. Still comfortable, and now it is the whole frame.
+ */
+export function deviceFrameBudget({ devicePixelRatio, variant = 'seven', ticketRows = MAX_TICKET_ROWS, fps = 60 } = {}) {
+  const webgl = frameBudget({ devicePixelRatio, spheres: SPHERE_COUNT[variant], fps });
+  const chrome = chromeBudget({ devicePixelRatio, variant, ticketRows, fps });
+  return Object.freeze({
+    devicePixelRatio,
+    variant,
+    fps,
+    webgl,
+    chrome,
+    totalShadedFragments: webgl.shadedFragments + chrome.compositeShadedFragments,
+    totalMegafragmentsPerSecond: webgl.megafragmentsPerSecond + chrome.compositeMegafragmentsPerSecond,
+    totalTrafficMegabytesPerSecond:
+      webgl.trafficMegabytesPerSecond + chrome.compositeTrafficMegabytesPerSecond,
+    totalRasterMegapixelsPerSecond: chrome.rasterMegapixelsPerSecond,
+  });
+}
+
 /**
  * The clip export budget (§9.1): 1080 x 1920 offscreen at a fixed 30 fps,
  * rendered from the transcript rather than screen-recorded.
+ *
+ * The chamber passes are not the whole frame here either. The clip carries the
+ * burned-in commitment hash, the multiplier stamp and the tube outline, and
+ * those are composited over the chamber at export resolution on every frame —
+ * so the overlay is counted rather than assumed away, exactly as the composite
+ * pass is counted on device.
  */
 export function clipExportBudget({ width = 1080, height = 1920, seconds = 6, fps = 30, spheres = SPHERE_COUNT.seven } = {}) {
   // The clip renders the chamber full-bleed, so the sphere scales with width.
@@ -188,15 +395,20 @@ export function clipExportBudget({ width = 1080, height = 1920, seconds = 6, fps
     fps,
   });
   const frames = seconds * fps;
+  // One full-frame overlay composite: hash, stamp, tube outline, at 1080x1920.
+  const overlayFragmentsPerFrame = width * height;
+  const shadedPerFrame = perFrame.shadedFragments + overlayFragmentsPerFrame;
   return Object.freeze({
     width,
     height,
     fps,
     seconds,
     frames,
-    shadedFragmentsPerFrame: perFrame.shadedFragments,
-    megafragmentsPerFrame: perFrame.shadedFragments / 1e6,
-    totalMegafragments: (perFrame.shadedFragments * frames) / 1e6,
+    chamberFragmentsPerFrame: perFrame.shadedFragments,
+    overlayFragmentsPerFrame,
+    shadedFragmentsPerFrame: shadedPerFrame,
+    megafragmentsPerFrame: shadedPerFrame / 1e6,
+    totalMegafragments: (shadedPerFrame * frames) / 1e6,
   });
 }
 

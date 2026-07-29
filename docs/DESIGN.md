@@ -467,6 +467,14 @@ resolve lock by lock (§2.1). A thin progress hairline under the top rail tracks
 the settle cadence. `SKIP` sits top-right: a 15 px uppercase label inside a
 44 × 44 hit area, no confirm.
 
+**Geometry, because §7.1.1 budgets it.** The pinned strip is one **390 × 28**
+row per line, bottom-aligned, up to the 12-line ticket maximum (336 px, which
+fits between the full-bleed chamber and the safe area with the CTA collapsed).
+The hairline is **390 × 3**. Each row is its own promoted layer and changes
+state with `opacity` and `color` only. Nothing here reflows during SETTLE: the
+strip is laid out once at COMMIT, when the resolution track is built, and after
+that it only fades.
+
 The hairline reaches full width at lock `n−1`, not at lock `n`. That is honest —
 it is a progress indicator for the *information*, and there is none left after
 the penultimate lock — and it is also the cue that lets a player who has already
@@ -815,6 +823,19 @@ the impellers. No easing curve is linear. `prefers-reduced-motion` replaces
 agitate with a 200 ms cross-dissolve and the falls with 120 ms fades, keeping
 the same total duration so the audio phrase still lands.
 
+**One more rule, and it is a performance rule with a visual consequence.** Rows
+4 to 7 of that table animate the DOM/SVG chrome layer, not the canvas — §6.2
+moved every hard edge out there deliberately — and that layer is composited at
+native DPR beside the WebGL canvas on every frame. So: **during SETTLE, chrome
+animates `transform` and `opacity` only, on pre-promoted layers.** The 4% ring
+overshoot is a `scale` on a pre-rasterised ring, not a growing stroke. The 2 px
+chamber flex is a `translate` on the tube group, not a new path. The per-line
+change is `opacity` and `color`. Anything that invalidates raster —
+`stroke-width`, `stroke-dashoffset`, filters, `box-shadow`, width/height — is
+banned for the duration of the beat, and §7.1.1 does the arithmetic for what it
+would cost. The lock rebound is 90 ms against a 360–420 ms stagger, so at most
+one ring is ever in flight; that headroom is not an invitation to spend it.
+
 ### 6.5 Typography
 
 - **Display / UI:** Neue Haas Grotesk Display Pro 65 Medium. Fallback stack
@@ -853,9 +874,20 @@ Described, not copied — these are qualities to hit, not images to reproduce.
 
 ## 7. Rendering: premium fluid, no fluid simulation
 
-**Constraint:** 60 fps on iPhone SE 2, Pixel 6a and Galaxy A54; hard floor
-30 fps; ≤ 900 KB initial payload; battery-safe for 20-minute sessions. A
-real-time fluid solver is off the table. None is needed.
+**Target:** 60 fps on iPhone SE 2, Pixel 6a and Galaxy A54; hard floor 30 fps;
+≤ 900 KB initial payload; battery-safe for 20-minute sessions. A real-time fluid
+solver is off the table. None is needed.
+
+**"Target", not "constraint", and the word is doing work.** No client exists, so
+60 fps here is a *budget plus an acceptance test*, never a measurement, and this
+document is not going to spell it like one. §7.1 budgets the two layers that
+cost anything — the WebGL canvas and the DOM/SVG chrome the canvas deliberately
+pushes every hard edge into — and shows both fit the reference class with
+headroom. §7.4 states the rule that keeps the chrome layer cheap, the
+acceptance test that has to be run on real hardware before content lock, and the
+runtime ladder that makes a miss graceful instead of silent. A budget is
+evidence that a target is *reachable*; only the acceptance test can say it was
+reached.
 
 **Principle:** the transcript is known the instant the round commits, so the
 entire round is a *precomputed choreography track*. Nothing is solved at
@@ -915,8 +947,9 @@ the build if the document and the module disagree.
 **The assumption, stated:** the chamber's WebGL backing store is **capped at
 DPR 2** (§6.2). Every reference device therefore renders the same 780 × 860
 backing store for a 390 × 430 CSS chamber. UI chrome is not in this canvas —
-it is DOM and SVG at native DPR — so the composite pass composites fluid and
-bloom only.
+it is DOM and SVG at native DPR — so the composite pass below composites fluid
+and bloom only. **That chrome is not free, and this table is therefore not the
+whole frame: §7.1.1 budgets the layer it excludes.**
 
 | # | Pass | Resolution (device px) | Shaded fragments | Note |
 | --- | --- | --- | --- | --- |
@@ -934,18 +967,82 @@ emphatically does not.
 
 Against the reference class — an A13, Mali-G78, Mali-G68 or Adreno 619 does
 1–4 Gfrag/s against 10–25 GB/s of memory bandwidth — that is 2–7% of fill and
-4–10% of bandwidth. Comfortable, and now comfortable at the right order of
-magnitude.
+4–10% of bandwidth for the canvas.
 
 **What the cap buys.** Uncapped on the Galaxy A54's ~2.75 ratio the same frame
 is **136.5 Mfrag/s** and 1.96 GB/s: still feasible, and 89% more work for a
 difference no one can see on content with no hard edges in it. The cap is worth
 roughly a watt on a 20-minute session, which is the actual reason for it.
 
+### 7.1.1 The other layer, which the table above does not contain
+
+**The canvas is not the frame.** §6.2 caps the backing store at DPR 2 and pays
+for it by moving *every hard edge out of the canvas*: all text, the slot rings,
+the tube outline and the 1 px specular line are DOM and SVG at native DPR. §6.4
+then animates precisely that layer for the whole of SETTLE — a gold ring lock
+per slot with a 90 ms rebound at 4% ring overshoot, a 2 px chamber flex, and a
+per-line state change at 120 ms. Round 4 published the five-pass table above as
+the frame budget and never counted that layer at all, which meant the budget
+proved the cheap half of the frame and was silent on the expensive half.
+Concurrent SVG animation beside a WebGL canvas is the standard 60 fps failure on
+exactly this device class.
+
+Two costs, and they fail for different reasons.
+
+**Composite — unavoidable, and affordable once counted.** The system compositor
+blends the chrome layer and the upscaled canvas into the framebuffer at *native*
+density every frame, whether or not anything moved. Generated by
+`tools/lib/framebudget.mjs`, at 12 pinned ticket rows and `n = 7`:
+
+<!-- chrome-budget:start -->
+| Device | DPR | Chrome layer (device px) | Composite | Canvas + composite | Total traffic |
+| --- | --- | --- | --- | --- | --- |
+| iPhone SE (2nd gen) | 2 | 780 × 1688 | 79.0 Mfrag/s | 151.2 Mfrag/s | 1,830 MB/s |
+| Pixel 6a | 2.6 | 1014 × 2194 | 133.5 Mfrag/s | 205.6 Mfrag/s | 2,377 MB/s |
+| Galaxy A54 | 2.75 | 1073 × 2321 | 149.4 Mfrag/s | 221.6 Mfrag/s | 2,537 MB/s |
+<!-- chrome-budget:end -->
+
+Against the same 1–4 Gfrag/s and 10–25 GB/s, the *whole* frame is **6–22% of
+fill and 10–25% of bandwidth** — roughly three times the canvas-only figure, and
+still comfortable. That is the honest number, and it is the one this section
+publishes.
+
+**Raster — avoidable, and the thing that actually breaks.** A fragment count
+cannot see the real risk. If an animation touches any property that invalidates
+a layer's raster — stroke geometry, `stroke-dashoffset`, filters, `box-shadow`,
+width/height, anything that triggers layout or paint — that layer is
+re-rasterised on the compositor thread and re-uploaded *every frame*. On the
+A54 the tube outline group alone is 264 × 1183 device pixels; animating the ring
+by stroke geometry and the flex by editing the tube path costs **21.3 Mpx/s of
+raster and 85 MB/s of texture upload** for content that has not changed shape.
+
+So it is a rule, not a hope:
+
+> **During SETTLE the chrome layer animates `transform` and `opacity` only, on
+> pre-promoted layers.** The ring rebound is a `scale` on a pre-rasterised ring.
+> The chamber flex is a `translate` on the tube group, never a new path. The
+> per-line state change is `opacity` and `color`. Any property that invalidates
+> raster is banned for the duration of the beat. A build that animates
+> `stroke-width` during SETTLE has broken the frame budget, not decorated it.
+
+Under that rule the layer costs **21 promoted layers, 1,608,028 device pixels,
+6.43 MB of layer memory, and 0 pixels of raster per frame** on the A54. The
+rings are also serialised for free: the 90 ms rebound is shorter than the
+360 ms settle stagger, so **at most one ring is ever in flight**.
+
+`tests/framebudget.test.mjs` recomputes all of it and fails the build if the
+document and the module disagree.
+
+### 7.1.2 What happens if it misses anyway
+
 Bloom is the first thing cut: below 50 fps on the rolling average the client
 drops passes 3–4 and composites the emissive layer additively at full
 resolution. That is a visible downgrade and an acceptable one. Below 45 fps the
 Canvas2D lane takes over entirely (technique 6).
+
+The ladder is a mitigation, not a substitute for the target, and the honest way
+to say that is: **the budget shows 60 fps is reachable on the reference devices;
+it does not show it was reached.** That is §7.4's job.
 
 ### 7.2 What "the same round" means across the two lanes
 
@@ -1008,6 +1105,32 @@ verified receipt, and the UI may not draw it as one.
 **What is explicitly not built:** SPH or grid fluid, soft-body spheres,
 real-time refraction of the full scene, per-sphere 3D meshes, cloth, or any
 runtime physics integration.
+
+### 7.4 The acceptance test for the frame rate
+
+A budget shows a target is reachable. Only a measurement shows it was reached,
+and this is the measurement — run before content lock, on all three reference
+devices, on battery, at 50% screen brightness, after five minutes of continuous
+play:
+
+1. **Frame time.** 200 consecutive SETTLE frames captured from the browser's own
+   timeline, on a 12-line SEVEN ticket, which is the worst chrome load the game
+   can produce. 95th-percentile frame time ≤ 16.7 ms is a pass; ≤ 22 ms with the
+   bloom passes dropped is a conditional pass that ships with the ladder's
+   threshold raised; anything worse fails and the chamber loses a pass.
+2. **Zero raster during SETTLE.** The compositor trace must show no raster task
+   attributable to the chrome layer between lock 1 and lock `n−1`. That is
+   §7.1.1's rule, checked rather than trusted, and it is what fails first when
+   somebody reaches for a `stroke-width` transition to make a ring feel nicer.
+3. **Layer count and memory** within §7.1.1's published figures. A build that
+   promotes each of twelve ticket rows *and* something else is how 6 MB becomes
+   60 and a mid-range phone starts evicting layers mid-settle.
+4. **Thermals.** Frame time at minute 20 within 15% of frame time at minute 1,
+   because a 20-minute session is the published battery target and a chamber
+   that throttles at minute 12 has not met the target on any device.
+
+**None of it has been run, because there is no client.** Nothing in §7 implies
+otherwise, and the word "target" in the opening line is there for this reason.
 
 ---
 
@@ -1133,7 +1256,7 @@ That is a load-bearing distribution claim, so here is what it costs.
 | Muxer | Inline fragmented-MP4 writer, ~7 KB gzipped. No external library, no WASM. |
 | Audio | `AudioEncoder` → AAC-LC 96 kbps, muxed alongside. If unavailable, the clip ships silent rather than failing. |
 | Frames | 180 (6 s × 30 fps), rendered offscreen at 1080 × 1920 through the same choreography track. |
-| Render cost | **3.68 Mfrag/frame** × 180 ≈ **663 Mfrag** — every pass at export resolution, not just the composite, which is what the old 2.07 figure counted. Tenths of a second of GPU time; ~2–4 s wall clock on the reference devices including readback. |
+| Render cost | **5.76 Mfrag/frame** × 180 ≈ **1,036 Mfrag** — every chamber pass at export resolution (3.68 Mfrag) **plus the overlay composite** (2.07 Mfrag: the burned-in hash, the stamp and the tube outline, blended over the chamber at 1080 × 1920 on every frame). Round 3 counted only the composite pass (2.07); round 4 counted every chamber pass and still omitted the overlay, which is the same omission §7.1.1 fixes on device. Tenths of a second of GPU time; ~2–4 s wall clock on the reference devices including readback. |
 | Encode cost | Hardware encoder, 3–8× realtime on A13 / SD 6-series → ~1–2 s. |
 | Total time | ≤ 6 s behind a progress sheet with a cancel button. |
 | File size | ≈ 3.75 MB video + ~70 KB audio, inside the 4 MB target. |

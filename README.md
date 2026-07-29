@@ -190,7 +190,7 @@ them leaves its published band.
 
 | Document | What it covers |
 | --- | --- |
-| [`docs/DESIGN.md`](docs/DESIGN.md) | The full product spec: loop, every player decision and its exact effect, bet menu, portrait UX screen by screen, art direction with palette and materials, the no-fluid-sim rendering plan with a per-pass frame budget, sound, the signature clip moment, session and competitive positioning, responsible-design rules |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | The full product spec: loop, every player decision and its exact effect, bet menu, portrait UX screen by screen, art direction with palette and materials, the no-fluid-sim rendering plan with a per-pass frame budget for *both* layers and the acceptance test that has to be run against it, sound, the signature clip moment, session and competitive positioning, responsible-design rules |
 | [`docs/MATH.md`](docs/MATH.md) | The exact model: state space, unbiasedness proofs, every bet's probability and multiplier as fractions, RTP justification, volatility, the cap, the maximum a ticket can actually return, rounds-per-hour exposure, and the proof that no decision policy beats 96% |
 | [`docs/ENGINE.md`](docs/ENGINE.md) | The Reveal Engine permutation lifecycle module, the adapter surface as TypeScript types, and the normative byte layouts for transcripts, tickets, settlements, receipts and snapshots |
 | [`docs/paytable.json`](docs/paytable.json) | Machine-readable published paytable, play policy and claim-alias set, regenerated and diff-checked in CI |

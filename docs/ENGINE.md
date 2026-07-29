@@ -1051,7 +1051,7 @@ export const PERMUTATION_LIMITS = Object.freeze({
 | Celebration gate and best-possible-outcome figure | implemented | `tools/lib/presentation.mjs` |
 | Play-policy digest stamped into every round snapshot | implemented | `tools/lib/derive.mjs` |
 | Line resolution track: `decisiveLock`, `resolutionTrack` | implemented | `tools/lib/resolution.mjs` |
-| Per-pass frame budget behind docs/DESIGN.md §7.1 | implemented | `tools/lib/framebudget.mjs` |
+| Per-pass frame budget, chrome-layer composite and raster budget behind docs/DESIGN.md §7.1–§7.1.2 | implemented | `tools/lib/framebudget.mjs` |
 | Palette separation and the closest-pair list behind docs/DESIGN.md §6.1 | implemented | `tools/lib/palette.mjs` |
 | Reproducible cost measurements for §4, with asserted bands | implemented | `tools/bench.mjs` |
 | `definePermutationGame` validating factory | **specified only** (the reference freezes literals in `model.mjs` and validates them through `assertAdapterConforms`) | — |

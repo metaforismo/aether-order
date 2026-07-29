@@ -37,8 +37,13 @@ import { describe, expect, it } from 'vitest';
 import {
   BACKING_STORE_DPR_CAP,
   CHAMBER_CSS,
+  CHROME_CSS,
+  MAX_TICKET_ROWS,
+  MOTION_MS,
   REFERENCE_DEVICES,
+  chromeBudget,
   clipExportBudget,
+  deviceFrameBudget,
   frameBudget,
 } from '../tools/lib/framebudget.mjs';
 import { ELEMENTS } from '../tools/lib/model.mjs';
@@ -109,12 +114,18 @@ describe('docs/DESIGN.md §7.1 states the budget in device pixels', () => {
     expect(DESIGN).toContain(`${uncapped.megafragmentsPerSecond.toFixed(1)} Mfrag/s`);
   });
 
-  it('the clip export cost is the one this module computes', () => {
+  it('the clip export cost is the one this module computes, overlay included', () => {
     const clip = clipExportBudget();
     expect(DESIGN).toContain(`${clip.megafragmentsPerFrame.toFixed(2)} Mfrag/frame`);
-    expect(DESIGN).toContain(`${Math.round(clip.totalMegafragments)} Mfrag`);
-    // The stale figure counted only the composite pass.
+    expect(DESIGN).toContain(`${Math.round(clip.totalMegafragments).toLocaleString('en-US')} Mfrag`);
+    // Round 3 counted only the composite pass; round 4 counted every chamber
+    // pass and still left out the overlay composited over it on every frame —
+    // the same omission §7.1.1 fixes on device.
+    expect(clip.overlayFragmentsPerFrame).toBe(1080 * 1920);
+    expect(clip.shadedFragmentsPerFrame).toBe(clip.chamberFragmentsPerFrame + clip.overlayFragmentsPerFrame);
+    expect(DESIGN).toContain(`${(clip.chamberFragmentsPerFrame / 1e6).toFixed(2)} Mfrag`);
     expect(DESIGN).not.toContain('2.07 Mfrag/frame');
+    expect(DESIGN).not.toContain('3.68 Mfrag/frame');
   });
 
   it('no longer publishes the logical-pixel totals as the budget', () => {
@@ -124,6 +135,112 @@ describe('docs/DESIGN.md §7.1 states the budget in device pixels', () => {
     expect(table).not.toContain('20.6 Mfrag/s');
     expect(table).not.toContain('logical');
     expect(table).toContain(`${capped.megafragmentsPerSecond.toFixed(1)} Mfrag/s`);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 1b. The layer the canvas budget does not contain.                    *
+ *                                                                      *
+ * §6.2 caps the WebGL backing store at DPR 2 and pays for it by moving  *
+ * every hard edge — text, slot rings, tube outline, specular line —     *
+ * into DOM and SVG at native DPR. §6.4 then animates exactly that layer *
+ * for the whole of SETTLE. Round 4's five-pass table budgeted the       *
+ * canvas and nothing else, so it proved the cheap half of the frame and *
+ * was silent on the half the design deliberately loaded with hard       *
+ * edges — which is the standard 60 fps failure on this device class.    *
+ * ------------------------------------------------------------------ */
+
+/** Parse the §7.1.1 chrome-budget table out of the document. */
+function documentedChromeBudget() {
+  const start = DESIGN.indexOf('<!-- chrome-budget:start -->');
+  const end = DESIGN.indexOf('<!-- chrome-budget:end -->');
+  expect(start, 'docs/DESIGN.md is missing the chrome-budget markers').toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  const rows = [];
+  for (const line of DESIGN.slice(start, end).split('\n')) {
+    const cells = line.split('|').map((cell) => cell.trim());
+    if (cells.length === 8 && /^\d/u.test(cells[2])) {
+      rows.push({ name: cells[1], dpr: Number(cells[2]), layer: cells[3], composite: cells[4], total: cells[5], traffic: cells[6] });
+    }
+  }
+  return rows;
+}
+
+describe('docs/DESIGN.md §7.1.1 budgets the DOM/SVG chrome layer', () => {
+  const documented = documentedChromeBudget();
+
+  it('covers every reference device, at native DPR rather than the capped one', () => {
+    expect(documented.map((row) => row.name)).toEqual(REFERENCE_DEVICES.map((device) => device.name));
+    for (const [index, device] of REFERENCE_DEVICES.entries()) {
+      expect(documented[index].dpr).toBe(device.devicePixelRatio);
+      const chrome = chromeBudget({ devicePixelRatio: device.devicePixelRatio });
+      // The chrome layer is NOT capped: that is the whole point of §6.2.
+      expect(chrome.viewport).toBe(documented[index].layer);
+    }
+  });
+
+  it.each(REFERENCE_DEVICES.map((device) => [device.name, device.devicePixelRatio]))(
+    '%s: every published figure is the one the module computes',
+    (name, dpr) => {
+      const row = documented.find((candidate) => candidate.name === name);
+      const budget = deviceFrameBudget({ devicePixelRatio: dpr });
+      expect(row.composite).toBe(`${budget.chrome.compositeMegafragmentsPerSecond.toFixed(1)} Mfrag/s`);
+      expect(row.total).toBe(`${budget.totalMegafragmentsPerSecond.toFixed(1)} Mfrag/s`);
+      expect(row.traffic).toBe(`${Math.round(budget.totalTrafficMegabytesPerSecond).toLocaleString('en-US')} MB/s`);
+    },
+  );
+
+  it('the worst reference device is the one whose figures the prose quotes', () => {
+    const worst = REFERENCE_DEVICES.reduce((a, b) => (b.devicePixelRatio > a.devicePixelRatio ? b : a));
+    const chrome = chromeBudget({ devicePixelRatio: worst.devicePixelRatio });
+    expect(chrome.viewport).toBe('1073 × 2321');
+    expect(DESIGN).toContain(chrome.layerCount.toString());
+    expect(DESIGN).toContain(chrome.promotedPixels.toLocaleString('en-US'));
+    expect(DESIGN).toContain(`${chrome.promotedLayerMegabytes.toFixed(2)} MB`);
+    expect(DESIGN).toContain(`${chrome.naiveRasterMegapixelsPerSecond.toFixed(1)} Mpx/s`);
+    expect(DESIGN).toContain(`${Math.round(chrome.naiveUploadMegabytesPerSecond)} MB/s of texture upload`);
+  });
+
+  it('states the compositor-only rule that makes the raster budget zero', () => {
+    const chrome = chromeBudget({ devicePixelRatio: 2.75 });
+    expect(chrome.rasterPixelsPerFrame).toBe(0);
+    expect(chrome.naiveRasterPixelsPerFrame).toBeGreaterThan(0);
+    // The rule has to be in the motion table AND in the budget, because a
+    // motion designer reads one of those and a renderer engineer reads the
+    // other, and the defect is one of them not knowing about the other.
+    const motion = DESIGN.slice(DESIGN.indexOf('### 6.4 Motion language'), DESIGN.indexOf('### 6.5 Typography'));
+    expect(motion).toMatch(/`transform` and `opacity` only/u);
+    expect(motion).toMatch(/stroke-width/u);
+    expect(DESIGN).toMatch(/During SETTLE the chrome layer animates `transform` and `opacity` only/u);
+  });
+
+  it('serialises the ring rebounds by arithmetic rather than by hope', () => {
+    for (const variant of ['classic', 'seven']) {
+      const chrome = chromeBudget({ devicePixelRatio: 2.75, variant });
+      expect(MOTION_MS.lockRebound).toBeLessThan(MOTION_MS.settleStagger[variant]);
+      expect(chrome.concurrentRingRebounds, variant).toBe(1);
+    }
+    // And the motion table the module mirrors must still say those numbers.
+    expect(DESIGN).toContain('420 ms (CLASSIC) / 360 ms (SEVEN)');
+    expect(DESIGN).toContain('| Lock rebound | 90 ms |');
+  });
+
+  it('stops presenting the canvas figure as the whole frame', () => {
+    const section = DESIGN.slice(DESIGN.indexOf('### 7.1 The frame budget'), DESIGN.indexOf('### 7.2 What "the same round"'));
+    expect(section).toMatch(/2–7% of fill and\s+4–10% of bandwidth for the canvas/u);
+    expect(section).toMatch(/6–22% of\s+fill and 10–25% of bandwidth/u);
+    // And 60 fps is a budgeted target with a named acceptance test, not a
+    // measurement, because no client exists to have measured it.
+    expect(DESIGN).toContain('### 7.4 The acceptance test for the frame rate');
+    expect(DESIGN).toMatch(/None of it has been run, because there is no client/u);
+    expect(DESIGN).toMatch(/\*\*Target:\*\* 60 fps/u);
+  });
+
+  it('the ticket-strip geometry it budgets is specified in S4', () => {
+    const s4 = DESIGN.slice(DESIGN.indexOf('### S4 — ROUND'), DESIGN.indexOf('### S5 — RESULT'));
+    expect(s4).toContain(`${CHROME_CSS.ticketRow.width} × ${CHROME_CSS.ticketRow.height}`);
+    expect(s4).toContain(`${CHROME_CSS.hairline.width} × ${CHROME_CSS.hairline.height}`);
+    expect(s4).toContain(`${MAX_TICKET_ROWS}-line`);
   });
 });
 
