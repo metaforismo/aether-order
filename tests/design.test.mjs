@@ -115,15 +115,15 @@ describe('docs/DESIGN.md palette and contrast', () => {
 
   it('quotes every close-pair ratio correctly, including the two inside CLASSIC', () => {
     const byId = Object.fromEntries(ELEMENTS.map((element) => [element.id, element.hex]));
-    // Round 2 named INDIGO/VIOLET as the weakest pair in the set. It is fourth.
+    // Round 2 named INDIGO/VIOLET as the weakest pair in the set. It is THIRD,
+    // and round 4's list omitted AMBER↔ROSE, which is effectively tied with it.
+    // tests/framebudget.test.mjs asserts the published SET; this asserts the
+    // arithmetic behind the five ratios that set contains.
     expect(contrast(byId.amber, byId.aqua).toFixed(2)).toBe('1.10');
     expect(contrast(byId.coral, byId.violet).toFixed(2)).toBe('1.14');
-    expect(contrast(byId.indigo, byId.violet).toFixed(2)).toBe('1.24');
-    expect(contrast(byId.rose, byId.coral).toFixed(2)).toBe('1.34');
-    expect(DESIGN).toContain('AMBER↔AQUA at 1.10:1');
-    expect(DESIGN).toContain('CORAL↔VIOLET at 1.14:1');
-    expect(DESIGN).toContain('INDIGO↔VIOLET at 1.24:1');
-    expect(DESIGN).toContain('ROSE↔CORAL at 1.34:1');
+    expect(contrast(byId.violet, byId.indigo).toFixed(2)).toBe('1.24');
+    expect(contrast(byId.amber, byId.rose).toFixed(2)).toBe('1.25');
+    expect(contrast(byId.coral, byId.rose).toFixed(2)).toBe('1.34');
   });
 });
 
