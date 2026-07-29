@@ -85,7 +85,7 @@ theorem, and this repository does not attempt to prove it. See §11.
 
 ## 3. The bet catalogue
 
-Ten bet types, in three volatility tiers. Every type is a claim about the
+Eleven bet types, in three volatility tiers. Every type is a claim about the
 permutation, resolvable by inspection of the settled tube.
 
 | Code | Name | Tier | Player picks | Wins when |
@@ -99,6 +99,7 @@ permutation, resolvable by inspection of the settled tube.
 | `slot` | SLOT | FORM | one colour and one slot | that colour settles in exactly that slot |
 | `link` | LINK | FORM | two colours, in order | the second colour settles in the slot immediately above the first |
 | `opening` | OPENING | ORDER | two colours, in order | those two are the first two to settle, in exactly that order |
+| `podium` | PODIUM | ORDER | three colours, in order | those three are the first three to settle, in exactly that order |
 | `full` | FULL ORDER | ORDER | the complete order | every sphere settles in exactly the chosen slot |
 
 `first` and `last` are the same mathematical object as `slot` with `k = 1` and
@@ -121,21 +122,44 @@ For a permutation drawn uniformly from `S_n`:
 | `slot` | `(n-1)!` | `1/n` |
 | `link` | `(n-1)!` | `1/n` |
 | `opening` | `(n-2)!` | `1 / (n(n-1))` |
+| `podium` | `(n-3)!` | `1 / (n(n-1)(n-2))` |
 | `full` | `1` | `1 / n!` |
 
 `link-any` counts the two colours as a glued block: `(n-1)!` block orderings
-times 2 internal orders. `link` fixes the internal order, halving it. These
-closed forms are *not* what the paytable is built from — the enumerator counts
-every instance against every permutation and would fail if a formula were wrong.
+times 2 internal orders. `link` fixes the internal order, halving it. `opening`
+and `podium` pin the first two and first three slots respectively and leave the
+rest free. These closed forms are *not* what the paytable is built from — the
+enumerator counts every instance against every permutation and would fail if a
+formula were wrong.
 
 ### 3.2 Family homogeneity
 
 Every instance inside a family has the same win count. That is what makes a
 single published multiplier per family honest: there is no "cheap" corner of a
 bet type and no trap instance. The enumerator asserts homogeneity instance by
-instance and throws if a family ever splits — `5,499` distinct instances checked across
-the two variants (235 in CLASSIC, 5,264 in SEVEN), every one evaluated against
-every outcome: `28,200` and `26,530,560` instance × outcome pairs.
+instance and throws if a family ever splits — `5,769` distinct instances checked
+across the two variants (295 in CLASSIC, 5,474 in SEVEN), every one evaluated
+against every outcome: `35,400` and `27,588,960` instance × outcome pairs.
+
+### 3.3 Distinct instances are not distinct claims
+
+Two instances that win on exactly the same set of permutations are the **same
+bet spelled two ways**. `FIRST amber` and `SLOT amber @ slot 1` are one claim;
+so are `LAST amber` and `SLOT amber @ slot n`. The enumerator digests every
+instance's win/lose bitmap as it computes it and reports the collisions, so the
+aliasing set is emitted rather than described:
+
+| Variant | Instances | Distinct claims | Alias groups |
+| --- | --- | --- | --- |
+| CLASSIC | 295 | 285 | 10 (5 × `first ≡ slot @ 1`, 5 × `last ≡ slot @ 5`) |
+| SEVEN | 5,474 | 5,460 | 14 (7 × `first ≡ slot @ 1`, 7 × `last ≡ slot @ 7`) |
+
+This matters twice. The client needs it to merge two chips that mean the same
+thing instead of silently rejecting a tap (`docs/DESIGN.md` §4), and settlement
+needs it because the distinct-claim rule — the thing that makes the per-line
+stake ceiling bite, and §8's maximum a maximum — compares behaviour, not labels.
+The report is published in `docs/paytable.json` as `claimAliases` and is
+conformance check 12 in `docs/ENGINE.md` §8.
 
 ---
 
@@ -172,6 +196,7 @@ rather than quietly ship a mispriced chip.
 | `slot` | FORM | 25 | 24 | 1/5 | 24/5 | 4.80× | 24/25 |
 | `link` | FORM | 20 | 24 | 1/5 | 24/5 | 4.80× | 24/25 |
 | `opening` | ORDER | 20 | 6 | 1/20 | 96/5 | 19.20× | 24/25 |
+| `podium` | ORDER | 60 | 2 | 1/60 | 288/5 | 57.60× | 24/25 |
 | `full` | ORDER | 120 | 1 | 1/120 | 576/5 | 115.20× | 24/25 |
 <!-- paytable:classic:end -->
 
@@ -189,6 +214,7 @@ rather than quietly ship a mispriced chip.
 | `slot` | FORM | 49 | 720 | 1/7 | 168/25 | 6.72× | 24/25 |
 | `link` | FORM | 42 | 720 | 1/7 | 168/25 | 6.72× | 24/25 |
 | `opening` | ORDER | 42 | 120 | 1/42 | 1008/25 | 40.32× | 24/25 |
+| `podium` | ORDER | 210 | 24 | 1/210 | 1008/5 | 201.60× | 24/25 |
 | `full` | ORDER | 5040 | 1 | 1/5040 | 24192/5 | 4838.40× | 24/25 |
 <!-- paytable:seven:end -->
 
@@ -203,10 +229,15 @@ line returns 1.92 credits, of which 0.92 is profit.
 
 **Why inside the 94–97% band at all.** Below 94% the product stops being
 competitive against the online table and instant-game category and starts to
-look extractive to an informed player; above 97% the margin no longer supports
-a premium-production title with a five-figure top multiplier and a real
-liability reserve. 96% is the modal published figure for the category, so it is
-the number players can calibrate against without doing arithmetic.
+look extractive to an informed player; above 97% a 3% margin no longer covers
+premium production, a liability reserve and platform revenue share for a title
+whose entire commercial argument is that it does not claw margin back through
+trap bets. 96% is the modal published figure for the category, so it is the
+number players can calibrate against without doing arithmetic.
+
+*(This is a margin argument, not a prize-size argument. The top multipliers here
+are `115.20×` and `4,838.40×`; see §8.2 for why the format cannot honestly
+advertise a bigger headline number and why we would rather have the smaller one.)*
 
 **Why exactly 96% and not 95.5% or 96.3%.** Three concrete reasons:
 
@@ -214,7 +245,7 @@ the number players can calibrate against without doing arithmetic.
    `ρ / p` makes the least common denominator of the multipliers the *required
    stake quantum*: a stake must clear every denominator for payouts to stay
    exact integers (§6). It also fixes how many decimals the paytable needs.
-   Computed over the nine distinct probabilities across both variants
+   Computed over the eleven distinct probabilities across both variants
    (`tools/enumerate.mjs` prints this table):
 
    | Candidate ρ | Stake quantum | Display decimals |
@@ -230,7 +261,7 @@ the number players can calibrate against without doing arithmetic.
    `24/25` gives the smallest stake step in the band by a factor of at least
    1.6 — 0.25 credits, an ordinary casino chip — while every multiplier
    terminates at two decimals (`1.92`, `2.40`, `3.36`, `4.80`, `6.72`, `19.20`,
-   `40.32`, `115.20`, `4838.40`). Nothing needs rounding to display, and §6
+   `40.32`, `57.60`, `115.20`, `201.60`, `4838.40`). Nothing needs rounding to display, and §6
    shows nothing needs rounding to *pay*. Only 94% matches it on decimals, and
    it would force a 1.00-credit minimum bet at the bottom of the band; 95.5%
    would force a 4.00-credit minimum and chips reading `2.3875×`.
@@ -299,6 +330,7 @@ BigInt approximations:
 | `early`, `late`, `link-any` | FLOW | 2/5 | 864/625 | 1.1757 |
 | `first`, `last`, `slot`, `link` | FORM | 1/5 | 2304/625 | 1.9200 |
 | `opening` | ORDER | 1/20 | 10944/625 | 4.1845 |
+| `podium` | ORDER | 1/60 | 33984/625 | 7.3738 |
 | `full` | ORDER | 1/120 | 68544/625 | 10.4723 |
 
 **SEVEN**
@@ -309,17 +341,31 @@ BigInt approximations:
 | `early`, `late`, `link-any` | FLOW | 2/7 | 288/125 | 1.5178 |
 | `first`, `last`, `slot`, `link` | FORM | 1/7 | 3456/625 | 2.3515 |
 | `opening` | ORDER | 1/42 | 23616/625 | 6.1469 |
+| `podium` | ORDER | 1/210 | 120384/625 | 13.8785 |
 | `full` | ORDER | 1/5040 | 2902464/625 | 68.1464 |
 
 Tier labels are machine-checked to be monotone in variance: a chip in a higher
 tier is never less volatile than one in a lower tier. The tiers therefore mean
 what they say.
 
-**Tier hit rates.** FLOW lines land on 29–50% of rounds, FORM lines on 14–20%,
-ORDER lines on 0.02–5%. Expected rounds between FULL ORDER hits: 120 in CLASSIC
-(median ≈ 83 rounds) and 5,040 in SEVEN (median ≈ 3,494 rounds). Medians are
-approximations of `ln 2 / ln(N/(N-1))`, given for player-facing honesty about
-what a 115.20× or 4,838.40× chip actually feels like.
+**Tier hit rates**, as exact fractions rather than a rounded range — a hit rate
+rounded in the house's favour is exactly the kind of small dishonesty this
+document exists to avoid:
+
+| Tier | CLASSIC | SEVEN | Across both |
+| --- | --- | --- | --- |
+| FLOW | `2/5 … 1/2` = 40% … 50% | `2/7 … 1/2` ≈ 28.571% … 50% | ≥ `2/7` ≈ 28.571% |
+| FORM | `1/5` = 20% | `1/7` ≈ 14.286% | `1/7 … 1/5` |
+| ORDER | `1/120 … 1/20` ≈ 0.833% … 5% | `1/5040 … 1/42` ≈ 0.0198% … 2.381% | `1/5040 … 1/20` |
+
+Expected rounds between hits on the two rarest chips, with the median in
+brackets (`ln 2 / ln(N/(N-1))`, an approximation given for player-facing honesty
+about what these chips actually feel like):
+
+| Chip | CLASSIC | SEVEN |
+| --- | --- | --- |
+| PODIUM | 60 rounds (median ≈ 41) | 210 rounds (median ≈ 145) |
+| FULL ORDER | 120 rounds (median ≈ 83) | 5,040 rounds (median ≈ 3,494) |
 
 ---
 
@@ -361,8 +407,8 @@ settlement path:
 
 | Variant | Best ticket | Stake | Credit | Ticket multiple |
 | --- | --- | --- | --- | --- |
-| CLASSIC | 4 lines (`full`, `opening`, 2 × `slot`) at 50.00 each | 200.00 credits | 7,200.00 credits | 36.00× |
-| SEVEN | 4 lines (`full`, `opening`, 2 × `slot`) at 50.00 each | 200.00 credits | 244,608.00 credits | 1,223.04× |
+| CLASSIC | 4 lines (`full`, `podium`, `opening`, `slot`) at 50.00 each | 200.00 credits | 9,840.00 credits | 49.20× |
+| SEVEN | 4 lines (`full`, `podium`, `opening`, `slot`) at 50.00 each | 200.00 credits | 254,352.00 credits | 1,271.76× |
 
 Because the objective is linear in the stakes under a budget plus a per-line
 ceiling, and lines must be distinct, greedy-by-multiplier is optimal — any other
@@ -370,6 +416,66 @@ selection improves by exchanging a chosen line for an unchosen one with a larger
 multiplier. These are therefore true maxima, and the enumerator asserts the
 optimality witness (the chosen multipliers are the largest available and the
 budget is fully spent) rather than merely reporting a legal ticket.
+
+### 8.1 The figure the player sees before committing
+
+The operator-facing maximum above is rigorous. The player-facing one has to be
+too, and it is a different quantity.
+
+The ticket strip shows one headline number while a ticket is being built. The
+obvious implementation — sum every line's return-if-hit — is **not a maximum**.
+It is an upper bound that is attained only if some single permutation satisfies
+every line at once, and mutually exclusive lines are precisely what a hedged
+ticket is made of. §9.3 sells perfect hedges as the sharpest proof that there is
+no edge here; a headline figure that overstates exactly those tickets would be
+advertising an outcome the game cannot produce.
+
+The published figure is therefore
+
+```
+bestOutcome(T) = max over ω in S_n of C(ω, T)
+```
+
+computed by settling the ticket against all `n!` permutations. That is at most
+`5,040 × 12` predicate evaluations, so it is recomputed on the device on every
+ticket edit. It is labelled **"best possible outcome"** and never "maximum
+return if every line hits", because in general no such outcome exists.
+
+How far apart the two get, from `tools/enumerate.mjs` §11:
+
+| Ticket | Sum of every line | True best outcome | Overstatement |
+| --- | --- | --- | --- |
+| CLASSIC · 4 × FULL ORDER at 50.00 | 23,040.00 | 5,760.00 | 4× |
+| CLASSIC · 3 × FIRST, different colours, at 1.00 | 14.40 | 4.80 | 3× |
+| SEVEN · 4 × FULL ORDER at 50.00 | 967,680.00 | 241,920.00 | 4× |
+| SEVEN · 3 × FIRST, different colours, at 1.00 | 20.16 | 6.72 | 3× |
+| Either · FULL ORDER + OPENING + SLOT, compatible | equal | equal | none |
+
+`tools/lib/presentation.mjs` computes both and returns the naive sum only so the
+test suite can assert they differ; the client renders `bestOutcomeChips` and has
+no access to the other number.
+
+### 8.2 On the size of the top prize
+
+The largest multiplier a permutation draw can offer is `ρ · n!`, because the
+rarest claim expressible about a permutation is the permutation itself. That
+gives `115.20×` at `n = 5` and `4,838.40×` at `n = 7`. Both are modest next to
+the six- and seven-figure nominal prizes that lottery-style draws advertise, and
+this document will not dress them up.
+
+Raising the ceiling means raising `n`. `n = 9` would put FULL ORDER at
+`348,364.80×` — a genuinely large number — and it is rejected, deliberately:
+verifying it the way this repository verifies everything else would mean
+evaluating 362,880 FULL ORDER instances against 362,880 outcomes, about `1.3 ×
+10^11` predicate evaluations for the catalogue digest alone. That is not
+enumerable in CI, so a NINE variant could only ever be *sampled*. A headline
+number that cannot be exhaustively proved is worth less to this product than a
+smaller one that can, and `ENGINE_LIMITS.maxExhaustiveElements = 8` encodes that
+choice rather than leaving it to judgement.
+
+So the honest positioning is: **`4,838.40×` is the largest prize we can prove**,
+and every chip beneath it carries the identical 4.000% edge. `docs/DESIGN.md`
+§14 makes the competitive argument that follows from that constraint.
 
 ---
 
@@ -388,6 +494,7 @@ is presentational and provably outcome-free.
 | D3 | Stake per line | before commit | scales EV and SD linearly, variance by the square; not the RTP |
 | D4 | Commit | the moment of commitment | none; the permutation is already determined by the committed seed |
 | — | SKIP / MUTE / REPLAY | after commit | none; not inputs to the derivation |
+| — | Round pacing (cycle floor, rolling ceiling) | between rounds | none per round; it bounds `R`, the number of rounds, which is the only lever on expected loss at all (§10) |
 
 After D4 there is **no decision of any kind**. There is no cash-out, no
 double-up, no gamble ladder, no "stop the shake", no mid-fall pick, no side
@@ -427,9 +534,10 @@ Concretely, the enumerator exhibits the constant tickets:
   return 1.20 credits. Exactly `24/25`, zero variance.
 - 7 lines of SLOT on one colour, one per slot: stake 1.75, certain return 1.68.
 - BEFORE `A<B` plus BEFORE `B<A`: exactly one always wins, ratio `24/25`.
-- All 120 FULL ORDER instances: stake 30.00, certain return 28.80. (Above the
-  12-line ticket limit; shown as a mathematical bound, not a purchasable
-  ticket.)
+- All 60 PODIUM instances in CLASSIC: stake 15.00, certain return 14.40.
+- All 120 FULL ORDER instances: stake 30.00, certain return 28.80. (The last two
+  are above the 12-line ticket limit; shown as mathematical bounds, not
+  purchasable tickets.)
 
 Perfect hedging converts the game into a deterministic 4% fee. That is the
 sharpest possible statement that there is no edge to find.
@@ -458,8 +566,9 @@ flat, Kelly-flavoured, stop-loss, stop-win, "only bet after three losses",
 switching between CLASSIC and SEVEN, switching between tiers — returns exactly
 96% of whatever total it turns over. Expected net result is
 `−(1/25) × turnover`. The **only** lever a player has on expected loss is how
-much they stake in total. This is why the client shows cumulative net position
-and elapsed time rather than a streak counter (see `docs/DESIGN.md` §9).
+much they stake in total. That is why the client shows cumulative net position
+and elapsed time rather than a streak counter (`docs/DESIGN.md` §10), and why
+the number of rounds per hour is capped rather than optimised (§10.1).
 
 ### 9.5 Why information cannot help
 
@@ -509,6 +618,32 @@ price, radically different ride. That framing — identical cost, purchased
 variance — is the only accurate way to describe the tier choice, and the client
 copy is required to use it.
 
+### 10.1 Rounds per hour is the whole exposure argument
+
+`R` is the only variable in `−(1/25) · R · S` that a game design controls. Speed
+of play is therefore not a UX preference; it is the design's only lever on how
+much a player can lose per hour, and it belongs in this document beside the RTP
+rather than in a UX appendix.
+
+The published policy (`PLAY_POLICY` in `tools/lib/model.mjs`,
+`docs/DESIGN.md` §10) sets a **2,500 ms minimum round cycle** measured
+COMMIT to COMMIT and enforced server-side, plus a hard ceiling of **900 rounds
+per rolling 60 minutes**. The consequences are arithmetic:
+
+| Quantity | Value |
+| --- | --- |
+| Arithmetic ceiling from the 2,500 ms cycle floor alone | 1,440 rounds/hour |
+| Published rolling ceiling (binds first) | 900 rounds/hour |
+| Turnover at the ceiling and the 200.00 maximum ticket | 180,000 credits/hour |
+| Expected loss at that turnover | 7,200 credits/hour |
+| Turnover at the ceiling and a 1.00 ticket | 900 credits/hour |
+| Expected loss at that turnover | 36 credits/hour |
+
+Without a floor, a SKIP-compressed round plus a one-tap REBET is a ~1.5 s cycle:
+2,400 rounds/hour, 480,000 credits/hour of turnover and ~19,200 credits/hour of
+expected loss — a 2.7× increase in maximum hourly exposure obtained purely by
+making the animation shorter. That is the number the floor exists to delete.
+
 ---
 
 ## 11. What this document does not claim
@@ -521,7 +656,18 @@ report, a regulatory approval, a penetration-test attestation, or a certified
 RTP for any deployed game. The uniformity result in §2 is conditional on the
 stated PRF assumption on HMAC-SHA256 and on the operator drawing server seeds
 from a properly seeded CSPRNG with reviewed custody — neither of which this
-repository can establish. A deployment requires its own frozen configuration,
+repository can establish.
+
+**Commit-reveal proves the draw, not the bet.** Everything in §2 and §9.5 is
+about the permutation. None of it says anything about what the player staked: a
+transcript plus a revealed seed lets anyone confirm the order was honest and
+lets nobody confirm who was on it, or for how much. That gap is closed by the
+signed receipt in `docs/ENGINE.md` §6.1, which binds the seed commitment, the
+round commitment, a digest of the ticket and a digest of the settlement into one
+object an operator signs. It is a genuinely weaker guarantee than the
+commitment — non-repudiation against a named signer, resting on key custody,
+rather than verification from first principles — and it is stated as such
+wherever it is claimed. A deployment requires its own frozen configuration,
 independently reviewed seed custody, operator and wallet integration audit,
 jurisdictional analysis, liability and reserve modelling, production load
 evidence, and any laboratory or regulatory process the target market requires.

@@ -6,14 +6,21 @@ adapter. This document specifies the module the game expects, the exact adapter
 surface it implements against, and the byte layouts both sides must agree on.
 
 `tools/lib/` carries a runnable reference implementation of the module's
-**derivation, commitment, verification and settlement core**, written in plain
-ESM so that the enumerator, the tests and an independent verifier can execute it
-without a build step. The protocol layer — receipts, idempotency, snapshots,
-serialisation and the packaged conformance runner — is specified here but not
-implemented in this repository; §10 marks each surface. Where the reference does
-exist it is normative: the TypeScript module inside Reveal Engine must produce
-**byte-identical** commitments, and `tests/fixtures/transcripts.json` freezes the
-vectors that prove it.
+**derivation, commitment, verification, settlement, ticket-binding and receipt
+core**, plus the packaged conformance runner, written in plain ESM so that the
+enumerator, the tests and an independent verifier can execute it without a build
+step. What remains specified-only is listed in §10, with a reason for each; the
+list is short and nothing on it is a fairness surface.
+
+The reference is normative: the TypeScript module inside Reveal Engine must
+produce **byte-identical** commitments, ticket digests, receipt digests and
+signatures, and `tests/fixtures/transcripts.json` freezes eight complete rounds —
+transcript, ticket, settlement and signed receipt — that prove it.
+
+Every function signature in this document is machine-checked against the
+reference implementation's real signature by `tests/design.test.mjs`. A
+declaration here that has drifted from the code is a build failure, not a
+documentation bug.
 
 ---
 
@@ -57,7 +64,14 @@ export const PERMUTATION_MODULE_VERSION = 'reveal-engine/permutation-v1';
 export const PERMUTATION_TRANSCRIPT_SCHEMA = 'reveal-engine/permutation-transcript-v1';
 export const PERMUTATION_TICKET_SCHEMA     = 'reveal-engine/permutation-ticket-v1';
 export const PERMUTATION_RECEIPT_SCHEMA    = 'reveal-engine/permutation-receipt-v1';
+export const PERMUTATION_SNAPSHOT_SCHEMA   = 'reveal-engine/permutation-round-snapshot-v1';
 ```
+
+Each of these names a structure that is specified in this document with a
+normative byte layout (§7) and frozen in `tests/fixtures/transcripts.json`.
+Naming a constant is not a specification, and a schema tag with no populated
+structure behind it is worse than no tag at all — it reads as a commitment that
+was never made.
 
 Versioning follows the engine's existing rule: the module may add
 backward-compatible fields; any change to derivation, commitment bytes, pricing,
@@ -152,6 +166,24 @@ export interface PermutationRiskPolicy {
   readonly requireDistinctLines: boolean;
 }
 
+/**
+ * Speed of play. Deliberately NOT part of the adapter fingerprint: pacing is a
+ * client and RGS obligation, and tightening it must not invalidate an open
+ * liability. It is nonetheless adapter-published, so the client and the server
+ * cannot hold different numbers.
+ *
+ * `minRoundCycleMs` is measured COMMIT to COMMIT and enforced server-side; a
+ * COMMIT that arrives early is rejected, not queued. SKIP compresses the
+ * presentation and can never shorten the cycle — see docs/DESIGN.md §2.
+ */
+export interface PermutationPlayPolicy {
+  readonly minRoundCycleMs: number;
+  readonly maxRoundsPerRollingHour: number;
+  readonly realityCheckMinutes: readonly number[];
+  /** Must be true. A skip control that shortens the cycle is a slam stop. */
+  readonly skipShortensPresentationOnly: true;
+}
+
 export interface PermutationGameDefinition {
   readonly apiVersion: typeof ENGINE_API_VERSION;
   readonly moduleVersion: typeof PERMUTATION_MODULE_VERSION;
@@ -164,6 +196,7 @@ export interface PermutationGameDefinition {
   readonly bets: readonly BetFamily[];
   readonly pricing: PermutationPricingPolicy;
   readonly risk: PermutationRiskPolicy;
+  readonly play: PermutationPlayPolicy;
 }
 
 /** The only supported construction path: validates, clones, deep-freezes. */
@@ -195,15 +228,30 @@ export function permutationClaimSignature(
  * `permutationCatalogueDigest(game)`.
  *
  * `definePermutationGame` MUST compute and memoise this at construction, so the
- * cost is paid once at startup and never inside a round. Measured on the
- * reference implementation: 245 ms cold for n = 7 (26.5M predicate
- * evaluations), 1 ms for n = 5, and 0.07 ms per transcript once warm.
+ * cost is paid once at startup and never inside a round. See the measured cost
+ * below the code block; it is a startup cost, not a round cost.
  */
 export function permutationAdapterFingerprint(game: PermutationGameDefinition): string;
 ```
 
 AETHER ORDER supplies two definitions, `classic` (`n = 5`) and `seven`
 (`n = 7`), sharing one bet catalogue and one `targetRtp = 24/25`.
+
+**Cost of the behavioural fingerprint.** Reproduce with `node tools/bench.mjs`,
+which prints the machine it ran on so the figures are falsifiable rather than
+folklore. On an Apple M3 (8 cores, 16 GB, macOS, Node 25.8.2):
+
+| Measurement | Per operation |
+| --- | --- |
+| Catalogue digest, cold, `n = 5` (35,400 predicate evaluations) | 0.98 ms |
+| Catalogue digest, cold, `n = 7` (27.6M predicate evaluations) | 214 ms |
+| Transcript build, `n = 7`, warm | 59 µs |
+| Transcript verify, `n = 7`, warm | 60 µs |
+| Ticket settle, `n = 7`, three lines, warm | 85 µs |
+
+Expect a factor of two or three either way on other hardware. The conclusion is
+insensitive to that: the digest is paid once per process at adapter
+construction, and nothing on a round path touches it.
 
 ---
 
@@ -215,13 +263,24 @@ IDLE ─────────────────────────
                                                                    │
                                                         settleTicket (atomic)
                                                                    ▼
-        verifyTranscript ◀──── revealSeed ──────────────────── SETTLED
+                                        SETTLED ──── makeReceipt ──▶ RECEIPTED
+                                           │                            │
+                        revealSeed ────────┴──── verifyTranscript       │
+                                                 verifyReceipt ◀────────┘
 ```
 
 There is exactly one frame. A round has no intra-round player action, therefore
 no price frame revision, no `STALE_FRAME`, no sell path, and no re-entry
 accounting. `openTicket` and `settleTicket` are each idempotent under an
 action-bound idempotency key, exactly as in `RoundBook`.
+
+**Pacing is part of the lifecycle.** The RGS must reject a COMMIT that arrives
+less than `play.minRoundCycleMs` after the previous one for the same session,
+and must refuse to open a round once the session has settled
+`play.maxRoundsPerRollingHour` rounds in the trailing 60 minutes. Both are
+server-side: a client-side floor is a suggestion. Rejection is a hard `no bet`
+that returns the stake intent unspent — never a queued or delayed bet, because a
+delayed bet is a latency-sensitive money decision by another name.
 
 Ordering is load-bearing and must be enforced by the RGS:
 
@@ -261,12 +320,30 @@ predictable. The cost is one commitment publication per round.
 ## 6. Engine module surface (TypeScript sketch)
 
 ```ts
-export interface RoundContext {
-  readonly gameId: string;
+/** Everything frozen and published BEFORE the player commits a ticket. */
+export interface SeedContext {
   readonly variantId: string;
   readonly roundId: string;    // printable ASCII, <= 128 bytes
-  readonly clientSeed: string; // printable ASCII, <= 64 bytes, may be empty
   readonly nonce: number;      // non-negative safe integer
+}
+
+/** The seed context plus the one input the player supplies afterwards. */
+export interface RoundContext extends SeedContext {
+  readonly gameId: string;
+  readonly clientSeed: string; // printable ASCII, <= 64 bytes, may be empty
+}
+
+export interface ConformanceCheck {
+  readonly id: number;         // 1 .. 12, matching §8
+  readonly name: string;
+  readonly ok: boolean;
+  readonly detail: string;
+}
+
+export interface ConformanceReport {
+  readonly variantId: string;
+  readonly ok: boolean;
+  readonly checks: readonly ConformanceCheck[];
 }
 
 export interface PermutationTranscript {
@@ -293,9 +370,23 @@ export interface TicketLine {
   readonly stake: bigint;      // minor units, multiple of stakeQuantum
 }
 
+/**
+ * The result of `openTicket`. `lines` are in CANONICAL order — sorted by
+ * `(code, canonical params)` — so a retry that reorders the same lines produces
+ * the same `ticketDigest` and therefore the same `idempotencyKey` and cannot
+ * double-debit. The distinct-claim rule makes that order total.
+ */
 export interface Ticket {
   readonly schema: typeof PERMUTATION_TICKET_SCHEMA;
+  readonly moduleVersion: typeof PERMUTATION_MODULE_VERSION;
+  readonly gameId: string;
+  readonly variantId: string;
+  readonly roundId: string;
+  readonly nonce: number;
   readonly lines: readonly TicketLine[];
+  readonly totalStake: bigint;
+  readonly ticketDigest: string;
+  /** Derived, never caller-chosen: see §7.7. */
   readonly idempotencyKey: string;
 }
 
@@ -313,14 +404,70 @@ export interface Settlement {
   readonly net: bigint;
 }
 
+/**
+ * The signed binding between a round and a bet. See §6.1.
+ */
+export interface PermutationReceipt {
+  readonly schema: typeof PERMUTATION_RECEIPT_SCHEMA;
+  readonly moduleVersion: typeof PERMUTATION_MODULE_VERSION;
+  readonly gameId: string;
+  readonly adapterVersion: string;
+  readonly adapterFingerprint: string;
+  readonly variantId: string;
+  readonly roundId: string;
+  readonly nonce: number;
+  /** The pre-round publication, copied from the transcript. */
+  readonly seedCommitment: string;
+  /** The round commitment, copied from the transcript. */
+  readonly commitment: string;
+  readonly ticketDigest: string;
+  readonly settlementDigest: string;
+  readonly totalStake: bigint;
+  readonly credited: bigint;
+  /** Printable ASCII identifier of the operator key that signed this. */
+  readonly signerId: string;
+  /** SHA-256 of the receipt core bytes (§7.8). For display and anchoring. */
+  readonly digest: string;
+  /** Ed25519 over the core bytes, hex. `null` until signed. */
+  readonly signature: string | null;
+}
+
+/** A resumable round. Every phase carries exactly what that phase produced. */
+export interface RoundSnapshot {
+  readonly schema: typeof PERMUTATION_SNAPSHOT_SCHEMA;
+  readonly moduleVersion: typeof PERMUTATION_MODULE_VERSION;
+  readonly gameId: string;
+  readonly phase: 'COMMITTED' | 'TICKETED' | 'SETTLED';
+  readonly variantId: string;
+  readonly roundId: string;
+  readonly nonce: number;
+  readonly seedCommitment: string;
+  readonly transcript: PermutationTranscript | null;
+  readonly ticket: Ticket | null;
+  readonly settlement: Settlement | null;
+  readonly receipt: PermutationReceipt | null;
+}
+
 export type VerificationResult =
   | { readonly ok: true;  readonly commitment: string }
   | { readonly ok: false; readonly code: PermutationErrorCode;
       readonly message: string; readonly path: string };
 
+export type ReceiptVerificationResult =
+  | { readonly ok: true;  readonly digest: string;
+      readonly signatureChecked: boolean; readonly signatureValid: boolean | null }
+  | { readonly ok: false; readonly code: PermutationErrorCode;
+      readonly message: string; readonly path: string;
+      readonly signatureChecked: boolean };
+
 /* --- functions ---------------------------------------------------------- */
 
-export function seedCommitment(serverSeedHex: string, roundId: string): string;
+/**
+ * Binds the seed AND the whole seed context. A commitment over
+ * `(serverSeed, roundId)` alone would leave `variantId` and `nonce` free for an
+ * operator that has already seen the ticket to search; see §5 and §7.2.
+ */
+export function seedCommitment(serverSeedHex: string, context: SeedContext): string;
 
 export function uniformBelow(
   serverSeedHex: string, context: RoundContext,
@@ -340,20 +487,90 @@ export function verifyPermutationTranscript(
   serverSeedHex: string, game: PermutationGameDefinition, input: unknown,
 ): VerificationResult;
 
+/** Validate against the risk policy, fix canonical order, derive the digest. */
+export function openTicket(
+  game: PermutationGameDefinition, context: SeedContext, ticket: unknown,
+): Ticket;
+
 export function settleTicket(
   game: PermutationGameDefinition,
   transcript: PermutationTranscript,
   ticket: Ticket,
 ): Settlement;
 
-export function serializeTranscript(t: PermutationTranscript): string;
+export function ticketDigest(
+  game: PermutationGameDefinition, context: SeedContext, ticket: unknown,
+): string;
+
+export function settlementDigest(
+  game: PermutationGameDefinition, settlement: Settlement,
+): string;
+
+export function idempotencyKeyFor(action: 'open' | 'settle', ticketDigest: string): string;
+
+export function makeReceipt(input: {
+  transcript: PermutationTranscript; ticket: unknown;
+  settlement: Settlement; signerId: string;
+}): PermutationReceipt;
+
+export function signReceipt(receipt: PermutationReceipt, privateKey: KeyObject): PermutationReceipt;
+
+export function verifyReceipt(
+  receipt: unknown,
+  context: { transcript: PermutationTranscript; ticket: unknown;
+             settlement: Settlement; publicKey?: KeyObject },
+): ReceiptVerificationResult;
+
+export function serializeTranscript(transcript: PermutationTranscript): string;
 export function deserializeTranscript(input: unknown): PermutationTranscript;
+export function serializeRoundSnapshot(snapshot: RoundSnapshot): string;
+export function deserializeRoundSnapshot(input: unknown): RoundSnapshot;
+
+/** Adapter conformance, §8, checks 1 to 12, as one callable function. */
+export function assertPermutationAdapterConforms(
+  game: PermutationGameDefinition,
+): ConformanceReport;
 ```
 
-`verifyPermutationTranscript` returns a typed result instead of throwing so a
-verifier UI can name the exact failure. `settleTicket` throws
-`RevealEngineError` on hostile or malformed input — a bad ticket is a
-programming or protocol error, not a game state.
+`verifyPermutationTranscript` and `verifyReceipt` return typed results instead
+of throwing so a verifier UI can name the exact failure. `settleTicket`,
+`openTicket` and the digest functions throw `RevealEngineError` on hostile or
+malformed input — a bad ticket is a programming or protocol error, not a game
+state.
+
+**The reference implementation is game-specific and therefore omits the `game`
+parameter**, taking the variant from the context or the transcript instead.
+Every other parameter matches this surface in name and order, and
+`tests/design.test.mjs` parses the declarations out of this document and
+compares them against the reference's real signatures — which is how the stale
+`seedCommitment(serverSeedHex, roundId)` above was caught the second time.
+
+### 6.1 The receipt, and what it is for
+
+Commit-reveal proves the **draw**. It proves the permutation was fixed before
+the ticket existed, that the revealed seed opens the published hash, and that
+the adapter that settled it is the adapter that was fingerprinted. It proves
+nothing whatsoever about the **bet**: a player holding a transcript can show the
+order was honest and cannot show they were on it, for how much, or that the
+operator ever acknowledged the stake. This is the most common misunderstanding
+of provably-fair systems and it is not fixable by hashing harder — nothing the
+player holds is bound to the round unless somebody binds it.
+
+The receipt is that binding. It is a single object containing the pre-round
+publication, the round commitment, a digest of the ticket, a digest of the
+settlement and the two money totals, hashed and signed by a named operator key.
+Given a receipt and the round's transcript, anyone can recompute all four
+digests and check the signature, and no party can later disagree about what was
+staked or what was paid.
+
+**It is a weaker guarantee than the commitment, and must always be described as
+one.** Commit-reveal is verification from first principles: it needs no trust
+in the operator at all beyond seed custody. The receipt is *non-repudiation
+against a named signer* — it rests on the operator's key being the operator's
+key and on the player having kept the receipt. It stops an operator denying or
+rewriting a settled bet. It does not, on its own, stop an operator refusing to
+issue a receipt in the first place, which is a dispute-process problem and not a
+cryptographic one. §11 and the README repeat this boundary in those terms.
 
 ---
 
@@ -453,7 +670,106 @@ paytable, cap, quantum and limits that were live when the round ran. Binding
 `previousCommitment` chains rounds, so an operator cannot reorder, drop or
 back-date a round after the fact.
 
-### 7.6 Verification
+### 7.6 Ticket and settlement digests
+
+Lines are sorted into **canonical order** — ascending by `code`, then by the
+canonical parameter rendering (`key=value` pairs, keys sorted, joined by `,`) —
+before either digest is taken. Two lines can never share both a code and a
+parameter rendering, because the distinct-claim rule rejects that ticket, so the
+order is total. Sorting is what makes a retry that reorders the same lines
+produce the same digest, and therefore the same idempotency key.
+
+```
+ticketDigest = SHA-256( encodeFields([
+  'aether-order/ticket-digest-v1',
+  'reveal-engine/permutation-ticket-v1',
+  'reveal-engine/permutation-v1',
+  gameId, variantId, roundId, nonce,
+  lineCount,
+  code_0, canonicalParams_0, stake_0,
+  code_1, canonicalParams_1, stake_1, ... ,
+  totalStake,
+]) )
+
+settlementDigest = SHA-256( encodeFields([
+  'aether-order/settlement-digest-v1',
+  'reveal-engine/permutation-v1',
+  gameId, variantId,
+  totalStake, gross, credited, capped ? 1 : 0, net,
+  lineCount,
+  code_0, canonicalParams_0, stake_0, won_0 ? 1 : 0, gross_0, ... ,
+]) )
+```
+
+### 7.7 Idempotency key
+
+Derived, never caller-chosen. A caller-chosen key lets a buggy client reuse one
+key for two different tickets; deriving it from the ticket means the key *is*
+the intent.
+
+```
+idempotencyKey(action, ticketDigest) = SHA-256( encodeFields([
+  'aether-order/idempotency-v1',
+  'reveal-engine/permutation-v1',
+  gameId,
+  action,            // 'open' | 'settle'
+  ticketDigest,
+]) )
+```
+
+`action` separates the two writes so a settle can never be mistaken for a
+replayed open. Presenting the same key with a different payload is
+`IDEMPOTENCY_CONFLICT`.
+
+### 7.8 Receipt
+
+```
+receiptCore = encodeFields([
+  'aether-order/receipt-v1',
+  'reveal-engine/permutation-receipt-v1',
+  'reveal-engine/permutation-v1',
+  gameId, adapterVersion, adapterFingerprint, variantId, roundId, nonce,
+  seedCommitment,      // the pre-round publication
+  commitment,          // the transcript commitment
+  ticketDigest,
+  settlementDigest,
+  totalStake, credited,
+  signerId,
+])
+
+receiptDigest = SHA-256(receiptCore)
+signature     = Ed25519(operator private key, receiptCore)     // RFC 8032
+```
+
+The signature covers the **core bytes**, not the digest, so there is no
+hash-then-sign ambiguity; `receiptDigest` exists for display, for anchoring and
+for the burned-in hash on a shared clip. Ed25519 signatures are deterministic,
+so a signed receipt is a stable byte-for-byte fixture — `tests/fixtures/
+transcripts.json` freezes eight of them under a published test key.
+
+A verifier holding `(receipt, transcript, ticket, settlement)` must recompute
+`ticketDigest`, `settlementDigest` and `receiptDigest`, compare the receipt's
+`seedCommitment` and `commitment` against the transcript's, compare the money
+totals against the settlement, and only then check the signature. A verifier
+given no public key must report `signatureChecked: false` rather than an
+unqualified pass.
+
+### 7.9 Round snapshot
+
+`RoundSnapshot` serialises as canonical JSON: object keys sorted, two-space
+indent, trailing newline, chip amounts as base-10 strings (JSON has no integer
+type that can hold them safely). `deserializeRoundSnapshot` revives every money
+field — `stake`, `totalStake`, `gross`, `credited`, `net` — back to `bigint` and
+rejects anything that is not an integer string, so a snapshot cannot smuggle a
+float onto a money path. Size is bounded by
+`PERMUTATION_LIMITS.maxSnapshotBytes`.
+
+Phase invariants, enforced on construction and on parse: a `TICKETED` or
+`SETTLED` snapshot must carry its ticket; a `SETTLED` snapshot must carry its
+transcript. A half-written snapshot is rejected rather than restored, because a
+restored round missing its transcript is a round that cannot be verified.
+
+### 7.10 Verification
 
 A verifier holding `(serverSeed, transcript)` and the adapter must:
 
@@ -469,17 +785,21 @@ A verifier holding `(serverSeed, transcript)` and the adapter must:
 6. recompute `commitment` and compare in constant time.
 
 `tools/enumerate.mjs` §9 exercises the happy path plus a tampered permutation
-and a wrong revealed seed. `tests/derivation.test.mjs` extends that to mutated
-`clientSeed`, `nonce`, `roundId`, `previousCommitment` and fingerprint.
+and a wrong revealed seed; §10 does the same for the receipt, including a ticket
+whose stake was edited after signing. `tests/derivation.test.mjs` extends
+transcript verification to mutated `clientSeed`, `nonce`, `roundId`,
+`previousCommitment` and fingerprint; `tests/receipt.test.mjs` extends receipt
+verification to every field of the binding.
 
 ---
 
 ## 8. Adapter conformance
 
 The module must expose `assertPermutationAdapterConforms(game)` and run it in
-CI. It is mechanical evidence, not certification. In this repository the checks
-below are implemented as `tools/enumerate.mjs` plus the test suite rather than as
-a packaged function; a port must fold them into the module. It checks:
+CI. It is mechanical evidence, not certification. In this repository it is
+`assertAdapterConforms(variantId)` in `tools/lib/conform.mjs`, called by
+`tools/enumerate.mjs` §13 and by `tests/conformance.test.mjs`; a port renames it
+and takes the game definition instead of a variant id. It checks:
 
 1. **Structure** — `apiVersion` / `moduleVersion` are current; `id`, `variantId`
    and `adapterVersion` are non-empty printable ASCII within
@@ -500,16 +820,29 @@ a packaged function; a port must fold them into the module. It checks:
    `stake × multiplier` is always an exact integer and `floor` is a no-op.
 9. **Cap headroom** — `max multiplier < maxWinMultiple`, so the cap is inert.
 10. **Shuffle bijection** — all `n!` draw vectors map onto `S_n` exactly once.
-11. **Behavioural fingerprint** — the catalogue digest is recomputed and must
-    equal the one bound into the adapter fingerprint.
+11. **Behavioural fingerprint** — the catalogue digest is recomputed from
+    scratch and the fingerprint is rebuilt through the production field builder;
+    it must equal the shipped fingerprint. The check also substitutes a decoy
+    digest and requires the fingerprint to *move*, so it proves the binding is
+    live rather than merely consistent.
 12. **Claim aliasing** — instances that share a win set are reported, so the
     adapter author knows which chips are the same bet under a different name
-    and the client can merge them in the ticket builder.
+    and the client can merge them in the ticket builder. The report is published
+    in `docs/paytable.json` as `claimAliases`.
 
 Checks 5–10 are enumerable in milliseconds for `n <= 8` and are exactly what
 `tools/enumerate.mjs` performs today. For larger `n` the module must refuse to
 run the exhaustive checks rather than silently sample: `ENGINE_LIMITS` caps
 `n` at 12 for definition, and conformance at 8.
+
+**One honest caveat about checks 3 and 4.** Determinism and purity are the only
+checks that need a *second* full pass over the instance × outcome space, which
+at `n = 7` is 27.6M evaluations the enumerator has already made once. They
+therefore run exhaustively for `n <= 6` (up to 720 outcomes) and over a
+deterministic 128-outcome stride sample above that, and the report string says
+which — CLASSIC is exhaustive, SEVEN is sampled. A port may run them
+exhaustively if it can afford to; what it must not do is report a sampled check
+as an exhaustive one.
 
 ---
 
@@ -533,7 +866,15 @@ Integrations branch on `code`, never on message text.
 | `UNKNOWN_INSTANCE` | ticket parameters are not a legal instance of the family |
 | `DUPLICATE_LINE` | the ticket repeats a claim (same win set, any spelling); raise the stake instead |
 | `INEXACT_PAYOUT` | `stake × multiplier` is not an integer — never rounds, always throws |
-| `IDEMPOTENCY_CONFLICT` | same key, different payload or action |
+| `IDEMPOTENCY_CONFLICT` | same key, different payload or action; or an unknown action |
+| `CYCLE_FLOOR` | COMMIT arrived before `play.minRoundCycleMs` elapsed, or the rolling round ceiling is reached — RGS-raised, never a client state |
+
+The receipt path reuses the table above rather than adding a parallel one:
+a receipt that does not bind the supplied ticket or settlement is
+`TRANSCRIPT_MISMATCH`, one whose digest or signature does not open is
+`COMMITMENT_MISMATCH`, and one carrying an unknown schema is
+`UNSUPPORTED_VERSION`. Integrations branch on `code`, so a new code would be a
+breaking change where a reused one is not.
 
 Module additions to `ENGINE_LIMITS`:
 
@@ -545,7 +886,9 @@ export const PERMUTATION_LIMITS = Object.freeze({
   maxClientSeedBytes: 64,
   maxRoundIdBytes: 128,
   maxLabelBytes: 128,           // sampler labels: printable ASCII, bounded
+  maxSignerIdBytes: 128,
   maxTranscriptBytes: 64 * 1024,
+  maxSnapshotBytes: 256 * 1024,
 });
 ```
 
@@ -563,11 +906,17 @@ export const PERMUTATION_LIMITS = Object.freeze({
 | Sampler, shuffle, seed commitment, transcript, verification, settlement | implemented | `tools/lib/derive.mjs` |
 | Catalogue digest and adapter fingerprint | implemented | `tools/lib/derive.mjs` |
 | Exhaustive proofs used by the CLI and the tests | implemented | `tools/lib/analysis.mjs` |
-| Frozen wire-format vectors | implemented | `tests/fixtures/transcripts.json` |
-| Conformance checks 1–10 of §8 | implemented as the enumerator + test suite, **not** as a packaged `assertPermutationAdapterConforms` | `tools/enumerate.mjs`, `tests/` |
-| `openTicket`, receipts, idempotency keys, snapshots | **specified only** | — |
-| `serializeTranscript` / `deserializeTranscript` and size bounds | **specified only** (the reference uses `canonicalJson`) | — |
-| `definePermutationGame` validating factory | **specified only** (the reference freezes literals in `model.mjs`) | — |
+| Frozen wire-format vectors: transcripts, tickets, settlements, signed receipts | implemented | `tests/fixtures/transcripts.json` |
+| Conformance checks 1–12 of §8, as one packaged function | implemented | `tools/lib/conform.mjs` |
+| `openTicket`, ticket digest, derived idempotency keys | implemented | `tools/lib/derive.mjs` |
+| Receipts: build, sign (Ed25519), verify | implemented | `tools/lib/derive.mjs` |
+| `serializeTranscript` / `deserializeTranscript` and size bounds | implemented | `tools/lib/derive.mjs` |
+| Round snapshots: build, serialise, parse, revive money fields | implemented | `tools/lib/derive.mjs` |
+| Celebration gate and best-possible-outcome figure | implemented | `tools/lib/presentation.mjs` |
+| Reproducible cost measurements for §4 | implemented | `tools/bench.mjs` |
+| `definePermutationGame` validating factory | **specified only** (the reference freezes literals in `model.mjs` and validates them through `assertAdapterConforms`) | — |
+| Operator key custody, rotation and publication | **out of scope** — operator responsibility, §11 | — |
+| Round-cycle floor and rolling ceiling enforcement | **specified only** — RGS/session state, which this repository has none of | — |
 
 **Naming.** The module types above are generic over minor units and use
 `stake` / `gross` / `credited`. The reference, being game-specific, names the
@@ -588,3 +937,26 @@ certificate, a security audit, a regulatory approval or a production
 integration. Server-seed generation and custody, wallet atomicity, persistence,
 authenticated storage and idempotency-under-transaction remain the operator's
 responsibility, exactly as stated in the engine's own certification boundary.
+
+**Two different guarantees, and they should never be conflated.**
+
+*Commit-reveal (§5, §7.2, §7.5) is verification from first principles.* Anyone
+holding a transcript and the revealed seed can re-derive the permutation and
+both hashes with no trust in the operator beyond the assumption that server
+seeds are drawn from a properly seeded CSPRNG under reviewed custody. It answers
+"was the draw honest?".
+
+*The receipt (§6.1, §7.8) is non-repudiation against a named signer.* It answers
+"what did I stake, and what was I paid?" — a question commit-reveal cannot
+touch, because nothing in a transcript mentions a ticket. It rests on the
+operator's signing key being what it claims to be, on that key being published
+and rotated responsibly, and on the player retaining the receipt. It stops a
+settled bet being denied or rewritten. It does not stop a receipt never being
+issued: that is a dispute process, a regulator and a licence condition, not a
+hash. This repository implements the cryptography and specifies the format; it
+does not and cannot supply the process.
+
+Key custody, publication and rotation are entirely the operator's. The Ed25519
+key in `tests/fixtures/transcripts.json` is derived from a fixed public seed so
+that signed receipts are reproducible fixtures. It is not a secret and must
+never become one.

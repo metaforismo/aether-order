@@ -33,6 +33,9 @@ jobs:
       - name: Tests
         run: npm test
 
+      - name: Reference timings (informational; docs/ENGINE.md §4)
+        run: npm run bench
+
   crosscheck:
     name: monte carlo cross-check
     runs-on: ubuntu-latest
