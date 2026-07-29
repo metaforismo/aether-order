@@ -131,7 +131,10 @@ one line so nobody has to work it out.
 **Ticket rules.** Up to 12 lines. Stake per line 0.25 – 50.00, in 0.25 steps.
 Ticket total ≤ 200.00. A ticket carries **distinct claims only** — tapping the
 same chip with the same picks raises that line's stake rather than adding a
-second row, which keeps the per-line ceiling meaningful. The ticket strip always
+second row, which keeps the per-line ceiling meaningful. Two chips that mean the
+same thing count as one claim: `FIRST amber` and `SLOT amber @ slot 1` are the
+same bet, and the builder merges them with a one-line explanation
+(*"same bet — stake combined"*) rather than silently rejecting the tap. The ticket strip always
 shows, in tabular figures: lines · total stake · *maximum return if every line
 hits*. The last figure is computed exactly, never rounded up, and never framed
 as expected.

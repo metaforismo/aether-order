@@ -4,7 +4,7 @@
   "moduleVersion": "reveal-engine/permutation-v1",
   "variants": {
     "classic": {
-      "adapterFingerprint": "1c0a2e9f0a600ed6390e579c3ab42be0356c2ea3eac41b19031754c7e6ecd4c5",
+      "adapterFingerprint": "dc760ab3b8f239934c7029b0cbabef1e49bbc8bab14342af9722cb54a42ff746",
       "bets": [
         {
           "code": "before",
@@ -136,7 +136,7 @@
       "targetRtp": "24/25"
     },
     "seven": {
-      "adapterFingerprint": "51b39c563a87d62e20da32dca1b55807079b7a5bde2bdabc6803de52816e8304",
+      "adapterFingerprint": "462146a16cdba56528e304d7b8ae9dda1b7077779501537426ccea4337779f52",
       "bets": [
         {
           "code": "before",

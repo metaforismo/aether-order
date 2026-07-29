@@ -10,6 +10,7 @@ import {
   enumerateVariant,
   proveCapHeadroom,
   proveCoverTickets,
+  optimalityWitness,
   proveMaxRoundCredit,
   proveRejectionUniformity,
   proveShuffleBijection,
@@ -138,9 +139,44 @@ describe.each(VARIANT_IDS)('variant %s', (variantId) => {
     expect(best.capped).toBe(false);
     expect(best.allLinesWon).toBe(true);
     expect(best.optimal).toBe(true);
-    expect(best.totalStakeChips).toBeLessThanOrEqual(LIMITS.maxTicketStakeChips);
+    expect(best.witness.noBetterUnchosen).toBe(true);
+    expect(best.witness.matchesIndependentSelection).toBe(true);
+    expect(best.witness.budgetExhausted).toBe(true);
     expect(best.totalStakeChips).toBe(LIMITS.maxTicketStakeChips);
     expect(cmp(best.roundMultiple, rational(LIMITS.maxWinMultiple))).toBe(-1);
+  });
+
+  it('the optimality witness rejects a deliberately bad selection', () => {
+    // Guard against a tautological witness: feed it the WORST four winning
+    // claims instead of the best and require it to say no. If the witness were
+    // reading back the same ordering the selection came from, this would pass
+    // and the maximum-credit figure would be unproved.
+    const winners = [
+      { code: 'full', params: { rank: 0 }, multiplier: variant.multipliers.full },
+      { code: 'opening', params: { a: 0, b: 1 }, multiplier: variant.multipliers.opening },
+      { code: 'first', params: { c: 0 }, multiplier: variant.multipliers.first },
+      { code: 'before', params: { a: 0, b: 1 }, multiplier: variant.multipliers.before },
+      { code: 'early', params: { c: 0 }, multiplier: variant.multipliers.early },
+    ];
+    const worstFirst = [...winners].sort((a, b) => cmp(a.multiplier, b.multiplier)).slice(0, 4);
+    const badLines = worstFirst.map((winner) => ({
+      code: winner.code,
+      params: winner.params,
+      stakeChips: LIMITS.maxLineStakeChips,
+    }));
+    const bad = optimalityWitness(variant, winners, badLines, LIMITS.maxTicketStakeChips);
+    expect(bad.optimal).toBe(false);
+    expect(bad.noBetterUnchosen).toBe(false);
+    expect(bad.matchesIndependentSelection).toBe(false);
+
+    // And it accepts the genuinely best four.
+    const bestFirst = [...winners].sort((a, b) => cmp(b.multiplier, a.multiplier)).slice(0, 4);
+    const goodLines = bestFirst.map((winner) => ({
+      code: winner.code,
+      params: winner.params,
+      stakeChips: LIMITS.maxLineStakeChips,
+    }));
+    expect(optimalityWitness(variant, winners, goodLines, LIMITS.maxTicketStakeChips).optimal).toBe(true);
   });
 
   it('keeps variance consistent with the closed form rho^2 * (1/p - 1)', () => {

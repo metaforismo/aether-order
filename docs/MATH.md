@@ -239,7 +239,7 @@ Stakes and credits are integer **chips**. One display credit is 100 chips.
 | Parameter | Value |
 | --- | --- |
 | Stake quantum | 25 chips (0.25 credits) |
-| Distinct claims per ticket | required — a claim may not be repeated |
+| Distinct claims per ticket | required — identity is the set of outcomes a line wins on, not how it is spelled |
 | Minimum line stake | 25 chips (0.25 credits) |
 | Maximum line stake | 5,000 chips (50.00 credits) |
 | Maximum ticket stake | 20,000 chips (200.00 credits) |
@@ -330,7 +330,10 @@ Headroom today: `4,884.80×` (CLASSIC), `161.60×` (SEVEN).
 
 **Largest credit a round can actually produce.** A ticket carries *distinct*
 claims: repeating a line is rejected, and the client merges repeats by raising
-that line's stake. That rule is what makes the per-line ceiling bite — without
+that line's stake. Identity is **behavioural** — two lines are the same claim
+exactly when they win on the same set of permutations, so `FIRST amber` and
+`SLOT amber @ 1` are one claim and cannot both appear. Comparing labels instead
+would hand the per-line ceiling straight back. That rule is what makes the per-line ceiling bite — without
 it the whole 200.00 budget could be piled onto four copies of the same winning
 FULL ORDER line, and the maximum would simply be
 `maxTicketStake × max multiplier` (23,040.00 credits in CLASSIC, 967,680.00 in

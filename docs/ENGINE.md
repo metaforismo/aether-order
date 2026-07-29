@@ -142,10 +142,12 @@ export interface PermutationRiskPolicy {
   readonly maxLineStake: bigint;
   readonly maxTicketStake: bigint;
   /**
-   * A ticket may not repeat a claim. Without this the per-line ceiling is
-   * meaningless — the budget could be piled onto copies of the single best
-   * line — and the maximum-credit figure in docs/MATH.md would be a lower
-   * bound rather than a maximum.
+   * A ticket may not repeat a claim, where identity is BEHAVIOURAL: two lines
+   * are the same claim exactly when they win on the same set of permutations.
+   * `first {c:0}` and `slot {c:0,k:0}` are one claim. Without this the per-line
+   * ceiling is meaningless — the budget could be piled onto copies of the
+   * single best line, spelled differently — and the maximum-credit figure in
+   * docs/MATH.md would be a lower bound rather than a maximum.
    */
   readonly requireDistinctLines: boolean;
 }
@@ -169,12 +171,24 @@ export function definePermutationGame(input: PermutationGameDefinition): Permuta
 
 /**
  * Behavioural digest of the catalogue: for every family, in canonical order,
- * every instance's complete win/lose bitmap over all n! permutations.
+ * every instance's label, its canonical parameter rendering (sorted
+ * `key=value` pairs) and its complete win/lose bitmap over all n! permutations.
  * Declaring codes and multipliers is not enough — reversing a predicate would
  * leave a purely declarative fingerprint untouched while changing how an open
- * liability settles.
+ * liability settles, and renaming a parameter key would leave labels and win
+ * sets untouched while breaking how an open ticket's params are matched.
  */
 export function permutationCatalogueDigest(game: PermutationGameDefinition): string;
+
+/**
+ * The behavioural identity of one claim: a digest of the outcomes it wins on,
+ * plus its canonical parameter rendering. Settlement compares lines by this,
+ * never by label, so two spellings of the same bet cannot both sit on a ticket.
+ * Memoised per (variant, code, label).
+ */
+export function permutationClaimSignature(
+  game: PermutationGameDefinition, code: string, instance: BetInstance,
+): string;
 
 /**
  * Binds every replay-visible field: the declarative configuration above AND
@@ -488,6 +502,9 @@ a packaged function; a port must fold them into the module. It checks:
 10. **Shuffle bijection** — all `n!` draw vectors map onto `S_n` exactly once.
 11. **Behavioural fingerprint** — the catalogue digest is recomputed and must
     equal the one bound into the adapter fingerprint.
+12. **Claim aliasing** — instances that share a win set are reported, so the
+    adapter author knows which chips are the same bet under a different name
+    and the client can merge them in the ticket builder.
 
 Checks 5–10 are enumerable in milliseconds for `n <= 8` and are exactly what
 `tools/enumerate.mjs` performs today. For larger `n` the module must refuse to
@@ -514,7 +531,7 @@ Integrations branch on `code`, never on message text.
 | `INVALID_TICKET` | line count, stake, quantum, total or line shape breaches the risk policy |
 | `UNKNOWN_BET` | ticket references a bet code the adapter does not define |
 | `UNKNOWN_INSTANCE` | ticket parameters are not a legal instance of the family |
-| `DUPLICATE_LINE` | the ticket repeats a claim; raise the stake instead |
+| `DUPLICATE_LINE` | the ticket repeats a claim (same win set, any spelling); raise the stake instead |
 | `INEXACT_PAYOUT` | `stake × multiplier` is not an integer — never rounds, always throws |
 | `IDEMPOTENCY_CONFLICT` | same key, different payload or action |
 

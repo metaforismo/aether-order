@@ -26,7 +26,7 @@ import {
   TARGET_RTP,
   getVariant,
 } from './model.mjs';
-import { adapterFingerprint, exactChips, settleTicket } from './derive.mjs';
+import { adapterFingerprint, claimSignature, exactChips, settleTicket } from './derive.mjs';
 import {
   approxDecimal,
   approxSqrt,
@@ -361,19 +361,24 @@ export function proveMaxRoundCredit(variantId) {
   const ctx = Object.freeze({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n });
   const permutationCount = factorial(n);
 
+  // Every winning claim, deduplicated behaviourally: `first {c:0}` and
+  // `slot {c:0,k:0}` are the same claim and cannot both sit on a ticket.
   const winners = [];
+  const seenClaims = new Set();
   for (const family of BET_FAMILIES) {
     for (const instance of family.instances(n, { permutationCount })) {
-      if (family.resolve(instance, ctx)) {
-        winners.push({ code: family.code, params: instance.params, multiplier: variant.multipliers[family.code] });
-      }
+      if (!family.resolve(instance, ctx)) continue;
+      const claim = claimSignature(variant.id, family, instance);
+      if (seenClaims.has(claim)) continue;
+      seenClaims.add(claim);
+      winners.push({ code: family.code, params: instance.params, multiplier: variant.multipliers[family.code] });
     }
   }
-  winners.sort((a, b) => cmp(b.multiplier, a.multiplier));
+  const ranked = [...winners].sort((a, b) => cmp(b.multiplier, a.multiplier));
 
   const lines = [];
   let budget = LIMITS.maxTicketStakeChips;
-  for (const winner of winners) {
+  for (const winner of ranked) {
     if (lines.length >= LIMITS.maxLinesPerTicket || budget < LIMITS.minLineStakeChips) break;
     const stake = budget < LIMITS.maxLineStakeChips ? budget : LIMITS.maxLineStakeChips;
     lines.push({ code: winner.code, params: winner.params, stakeChips: stake });
@@ -383,14 +388,7 @@ export function proveMaxRoundCredit(variantId) {
   const settlement = settleTicket({ permutation: perm, variantId }, { lines });
   const roundMultiple = rational(settlement.creditedChips, settlement.totalStakeChips);
 
-  // Optimality witness: the multipliers actually bought must be the largest
-  // available, and the budget must be fully spent (or the line limit reached).
-  const chosen = lines.map((line) => variant.multipliers[line.code]);
-  const bestAvailable = winners.slice(0, lines.length).map((winner) => winner.multiplier);
-  const optimal =
-    chosen.length === bestAvailable.length &&
-    chosen.every((multiplier, index) => eq(multiplier, bestAvailable[index])) &&
-    (settlement.totalStakeChips === LIMITS.maxTicketStakeChips || lines.length === LIMITS.maxLinesPerTicket);
+  const witness = optimalityWitness(variant, winners, lines, settlement.totalStakeChips);
 
   return Object.freeze({
     lines: lines.length,
@@ -401,7 +399,59 @@ export function proveMaxRoundCredit(variantId) {
     roundMultiple,
     capped: settlement.capped,
     allLinesWon: settlement.lines.every((line) => line.won),
-    optimal,
+    optimal: witness.optimal,
+    witness,
+  });
+}
+
+/**
+ * Is this selection of lines the best ticket buildable from `winners`?
+ *
+ * Deliberately computed WITHOUT reusing whatever ordering produced the
+ * selection — a witness that reads back the same sorted array would agree with
+ * any comparator, including a reversed one, and prove nothing. Two independent
+ * arguments must both hold:
+ *
+ *  1. **Exchange.** No unchosen winning claim may carry a multiplier strictly
+ *     greater than the smallest chosen one. If none does, no swap improves the
+ *     ticket; and since every chosen line already sits at the per-line ceiling
+ *     with the budget exhausted, no reallocation improves it either.
+ *  2. **Independent selection.** Recompute the top-k multipliers from the
+ *     *unsorted* winner list by repeated max-extraction — a different algorithm
+ *     from `Array.prototype.sort` — and require the same sequence.
+ *
+ * Exported so the test suite can feed it a deliberately bad selection and
+ * confirm it says no.
+ */
+export function optimalityWitness(variant, winners, lines, totalStakeChips) {
+  const key = (entry) => `${entry.code}|${JSON.stringify(entry.params)}`;
+  const chosen = lines.map((line) => variant.multipliers[line.code]);
+  if (chosen.length === 0) return Object.freeze({ optimal: false, noBetterUnchosen: false, matchesIndependentSelection: false, budgetExhausted: false });
+
+  const chosenKeys = new Set(lines.map(key));
+  const unchosen = winners.filter((winner) => !chosenKeys.has(key(winner)));
+  const smallestChosen = chosen.reduce((worst, m) => (cmp(m, worst) < 0 ? m : worst), chosen[0]);
+  const noBetterUnchosen = unchosen.every((winner) => cmp(winner.multiplier, smallestChosen) <= 0);
+
+  const pool = [...winners];
+  const independentTop = [];
+  for (let i = 0; i < lines.length && pool.length > 0; i += 1) {
+    let best = 0;
+    for (let j = 1; j < pool.length; j += 1) if (cmp(pool[j].multiplier, pool[best].multiplier) > 0) best = j;
+    independentTop.push(pool.splice(best, 1)[0].multiplier);
+  }
+  const matchesIndependentSelection =
+    independentTop.length === chosen.length &&
+    independentTop.every((multiplier, index) => eq(multiplier, chosen[index]));
+
+  const budgetExhausted =
+    totalStakeChips === LIMITS.maxTicketStakeChips || lines.length === LIMITS.maxLinesPerTicket;
+
+  return Object.freeze({
+    optimal: noBetterUnchosen && matchesIndependentSelection && budgetExhausted,
+    noBetterUnchosen,
+    matchesIndependentSelection,
+    budgetExhausted,
   });
 }
 

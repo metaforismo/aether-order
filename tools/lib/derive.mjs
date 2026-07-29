@@ -151,6 +151,55 @@ function assertCommitmentHex(value, path) {
 
 const catalogueDigestCache = new Map();
 const fingerprintCache = new Map();
+const claimSignatureCache = new Map();
+const viewsCache = new Map();
+
+/** Frozen outcome views for a variant, computed once. */
+function viewsFor(variantId) {
+  const variant = assertVariant(variantId);
+  const cached = viewsCache.get(variant.id);
+  if (cached) return cached;
+  const views = allPermutations(variant.n).map((perm) =>
+    Object.freeze({
+      perm: Object.freeze(perm),
+      pos: Object.freeze(positionsOf(perm)),
+      rank: permutationRank(perm),
+      n: variant.n,
+    }),
+  );
+  viewsCache.set(variant.id, views);
+  return views;
+}
+
+/** Canonical rendering of an instance's parameters: sorted key=value pairs. */
+function canonicalParams(params) {
+  return Object.keys(params)
+    .sort()
+    .map((key) => `${key}=${String(params[key])}`)
+    .join(',');
+}
+
+/**
+ * The behavioural identity of a single claim: a digest of which outcomes it
+ * wins on. Two lines are the SAME claim exactly when their win sets are equal,
+ * however differently they are spelled — `first {c:0}` and `slot {c:0,k:0}` are
+ * one claim, and a ticket may not carry both. Comparing labels would miss that
+ * and hand back the per-line stake ceiling it was meant to enforce.
+ */
+export function claimSignature(variantId, family, instance) {
+  const variant = assertVariant(variantId);
+  const key = `${variant.id}|${family.code}|${instance.label}`;
+  const cached = claimSignatureCache.get(key);
+  if (cached) return cached;
+  const views = viewsFor(variant.id);
+  const bitmap = Buffer.alloc(Math.ceil(views.length / 8));
+  for (let p = 0; p < views.length; p += 1) {
+    if (family.resolve(instance, views[p]) === true) bitmap[p >> 3] |= 1 << (p & 7);
+  }
+  const signature = sha256Hex(bitmap);
+  claimSignatureCache.set(key, signature);
+  return signature;
+}
 
 /**
  * Behavioural digest of the bet catalogue.
@@ -170,24 +219,22 @@ export function catalogueDigest(variantId) {
   if (cached) return cached;
 
   const { n } = variant;
-  const permutations = allPermutations(n);
-  const views = permutations.map((perm) =>
-    Object.freeze({ perm: Object.freeze(perm), pos: Object.freeze(positionsOf(perm)), rank: permutationRank(perm), n }),
-  );
+  const views = viewsFor(variant.id);
   const hash = createHash('sha256');
-  hash.update(
-    encodeFields(['catalogue', MODULE_VERSION, GAME_ID, variant.id, n, permutations.length, BET_FAMILIES.length]),
-  );
-  const bitmap = Buffer.alloc(Math.ceil(permutations.length / 8));
+  hash.update(encodeFields(['catalogue', MODULE_VERSION, GAME_ID, variant.id, n, views.length, BET_FAMILIES.length]));
+  const bitmap = Buffer.alloc(Math.ceil(views.length / 8));
   for (const family of BET_FAMILIES) {
-    const instances = family.instances(n, { permutationCount: permutations.length });
+    const instances = family.instances(n, { permutationCount: views.length });
     hash.update(encodeFields(['family', family.code, family.tier, instances.length]));
     for (const instance of instances) {
       bitmap.fill(0);
       for (let p = 0; p < views.length; p += 1) {
         if (family.resolve(instance, views[p]) === true) bitmap[p >> 3] |= 1 << (p & 7);
       }
-      hash.update(encodeFields([instance.label, bitmap]));
+      // The parameter SCHEMA is bound as well as the behaviour: renaming a
+      // parameter key leaves labels and win sets untouched but breaks how an
+      // open ticket's params are matched, so it must move the digest.
+      hash.update(encodeFields([instance.label, canonicalParams(instance.params), bitmap]));
     }
   }
   const digest = hash.digest('hex');
@@ -237,6 +284,7 @@ export function adapterFingerprint(variantId) {
     LIMITS.maxTicketStakeChips,
     LIMITS.maxClientSeedBytes,
     LIMITS.maxRoundIdBytes,
+    LIMITS.maxLabelBytes,
     LIMITS.requireDistinctLines ? 1 : 0,
   );
   const digest = sha256Hex(encodeFields(fields));
@@ -504,7 +552,8 @@ export function settleTicket(transcript, ticket) {
 
   let totalStake = 0n;
   let payout = 0n;
-  // A ticket is a set of DISTINCT claims. Duplicating a line would be an
+  // A ticket is a set of DISTINCT claims, compared by what they actually win
+  // on rather than by how they are spelled. Duplicating a claim would be an
   // end-run around the per-line stake ceiling, which exists to bound single-bet
   // exposure; the client merges repeats by raising the stake instead. Enforcing
   // it here is also what makes the maximum-credit optimisation in
@@ -525,7 +574,9 @@ export function settleTicket(transcript, ticket) {
     const legal = family.instances(variant.n, { permutationCount: factorialNumber(variant.n) });
     const instance = legal.find((candidate) => sameParams(candidate.params, line.params));
     if (!instance) fail('UNKNOWN_INSTANCE', 'Bet parameters are not a legal instance', `${path}.params`);
-    const claim = `${family.code}|${instance.label}`;
+    // Identity is behavioural, not syntactic: `first {c:0}` and
+    // `slot {c:0,k:0}` win on exactly the same outcomes and are one claim.
+    const claim = claimSignature(variant.id, family, instance);
     if (LIMITS.requireDistinctLines && claims.has(claim)) {
       fail('DUPLICATE_LINE', 'A ticket cannot carry the same claim twice; raise the stake instead', path);
     }
