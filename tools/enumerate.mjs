@@ -859,7 +859,11 @@ for (const variantId of variantIds) {
        * settlement path, not asserted. docs/MATH.md §8 proves it is a maximum.
        */
       maxTicketReturnMultiple: render.fraction(best.roundMultiple),
-      maxTicketReturnMultipleDecimal: `${render.multiplierDecimal(best.roundMultiple)}x`,
+      // U+00D7, per docs/DESIGN.md §6.5: multipliers always render with two
+      // decimals and the multiplication sign. This string is published copy — a
+      // client that prints it verbatim must not end up with an ASCII 'x' beside a
+      // table of correctly typeset multipliers.
+      maxTicketReturnMultipleDecimal: `${render.multiplierDecimal(best.roundMultiple)}\u00d7`,
       maxTicketReturnLines: best.lines,
       maxTicketReturnStakeChips: best.totalStakeChips.toString(),
       maxTicketReturnCreditChips: best.creditedChips.toString(),

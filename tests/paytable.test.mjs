@@ -129,7 +129,7 @@ describe('docs/paytable.json mirrors the enumeration', () => {
       const best = proveMaxRoundCredit(variantId);
       expect(best.optimal).toBe(true);
       expect(entry.maxTicketReturnMultiple).toBe(render.fraction(best.roundMultiple));
-      expect(entry.maxTicketReturnMultipleDecimal).toBe(`${render.multiplierDecimal(best.roundMultiple)}x`);
+      expect(entry.maxTicketReturnMultipleDecimal).toBe(`${render.multiplierDecimal(best.roundMultiple)}\u00d7`);
       expect(entry.maxTicketReturnCreditChips).toBe(best.creditedChips.toString());
       expect(entry.maxTicketReturnStakeChips).toBe(best.totalStakeChips.toString());
       // The published maximum must be the one docs/MATH.md §8 tabulates. The
