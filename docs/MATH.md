@@ -102,8 +102,9 @@ permutation, resolvable by inspection of the settled tube.
 | `podium` | PODIUM | ORDER | three colours, in order | those three are the first three to settle, in exactly that order |
 | `full` | FULL ORDER | ORDER | the complete order | every sphere settles in exactly the chosen slot |
 
-`first` and `last` are the same mathematical object as `slot` with `k = 1` and
-`k = n`. They are separate codes because they are separate one-tap chips in the
+`first` and `last` are the same mathematical object as `slot` at slot 1 and slot
+`n` (spelled `k = 0` and `k = n − 1` on the wire; see below). They are separate
+codes because they are separate one-tap chips in the
 client, and the paytable prices them identically — there is no hidden penalty
 for using the convenience control.
 
@@ -112,6 +113,17 @@ and the index is the position in `variants[v].elements` in
 `docs/paytable.json` — the same index the transcript's `permutation` array
 carries. So `first {c=0}` is FIRST on element 0, `stack {a=0,b=1}` is element 1
 directly above element 0, and `full {order=3-0-1-2-4}` is the complete column.
+
+**`slot`'s `k` is a slot index in that same zero-based convention, not the slot
+number this document uses.** The slot §1 calls `j`, for `j = 1..n`, is spelled
+`k = j − 1`, so `first ≡ slot {k=0}` and `last ≡ slot {k=n−1}`. Every parameter
+on the wire is zero-based and every slot in the product is numbered from one —
+§1 counts slots from 1 and `docs/DESIGN.md` §5 S2 makes the picker a picture of
+that tube — so the two conventions meet at exactly one place, the receipt, and the client
+prints both there rather than renumbering either (S6's *"what the signature
+covers"* card; `docs/adr/0002-slot-parameters-are-zero-based-on-the-wire.md`).
+A player auditing the chip labelled *slot 3* finds `c=…,k=2` in the parameters
+`ticketDigest` ate, and the screen that shows the digest says so.
 
 FULL ORDER is parameterised by the **order**, not by its lexicographic rank.
 That is a deliberate change from adapter version 1.1.0, which emitted
@@ -169,8 +181,12 @@ aliasing set is emitted rather than described:
 
 | Variant | Instances | Distinct claims | Alias groups |
 | --- | --- | --- | --- |
-| CLASSIC | 295 | 285 | 10 (5 × `first ≡ slot @ 1`, 5 × `last ≡ slot @ 5`) |
-| SEVEN | 5,474 | 5,460 | 14 (7 × `first ≡ slot @ 1`, 7 × `last ≡ slot @ 7`) |
+| CLASSIC | 295 | 285 | 10 (5 × `first ≡ slot @ 1` = `{k=0}`, 5 × `last ≡ slot @ 5` = `{k=4}`) |
+| SEVEN | 5,474 | 5,460 | 14 (7 × `first ≡ slot @ 1` = `{k=0}`, 7 × `last ≡ slot @ 7` = `{k=6}`) |
+
+Slot numbers here are the tube's, counting from 1; the parameter beside each is
+the wire spelling the published `claimAliases` carry (§3, `k = j − 1`), which is
+why that report labels the alias of `first` on element 0 as `0@0`.
 
 This matters twice. The client needs it to merge two chips that mean the same
 thing instead of silently rejecting a tap (`docs/DESIGN.md` §4), and settlement
