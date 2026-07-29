@@ -111,12 +111,13 @@ describe.each(VARIANT_IDS)('%s — closed-form oracle vs brute-force enumeration
  * required stake quantum, and fixes the decimals the paytable needs.
  */
 describe('24/25 is the right target RTP for this paytable', () => {
+  // A reduced denominator 2^a * 5^b terminates at max(a, b) places, not a + b.
   const candidates = [
-    ['94.000', rational(47n, 50n), 100n, 4],
-    ['95.000', rational(19n, 20n), 40n, 4],
-    ['95.500', rational(191n, 200n), 400n, 6],
+    ['94.000', rational(47n, 50n), 100n, 2],
+    ['95.000', rational(19n, 20n), 40n, 3],
+    ['95.500', rational(191n, 200n), 400n, 4],
     ['96.000', rational(24n, 25n), 25n, 2],
-    ['97.000', rational(97n, 100n), 200n, 5],
+    ['97.000', rational(97n, 100n), 200n, 3],
   ];
 
   it.each(candidates)('%s requires a %s-chip quantum and %s decimals', (percent, rho, quantum, decimals) => {
@@ -127,13 +128,24 @@ describe('24/25 is the right target RTP for this paytable', () => {
     expect(profile.displayDecimals).toBe(decimals);
   });
 
-  it('the shipped target minimises both, and matches the shipped quantum', () => {
+  it('a known multiplier confirms the max(a,b) rule', () => {
+    // 19/20 prices EARLY in SEVEN at 133/40 = 3.325 — three decimals. Summing
+    // the exponents of 2 and 5 would wrongly say four.
+    expect(rtpCandidateProfile(rational(19n, 20n)).displayDecimals).toBe(3);
+    expect(rtpCandidateProfile(rational(1n, 8n)).displayDecimals).toBeGreaterThan(0);
+  });
+
+  it('the shipped target strictly minimises the stake quantum and ties on decimals', () => {
     const shipped = rtpCandidateProfile(TARGET_RTP);
     expect(eq(TARGET_RTP, rational(24n, 25n))).toBe(true);
     expect(shipped.stakeQuantumChips).toBe(STAKE_QUANTUM);
-    for (const [, rho] of candidates) {
+    expect(shipped.displayDecimals).toBe(2);
+    for (const [percent, rho] of candidates) {
+      if (percent === '96.000') continue;
       const other = rtpCandidateProfile(rho);
-      expect(other.stakeQuantumChips).toBeGreaterThanOrEqual(shipped.stakeQuantumChips);
+      // Strictly larger quantum: no other candidate allows a 0.25 step.
+      expect(other.stakeQuantumChips).toBeGreaterThan(shipped.stakeQuantumChips);
+      // No candidate needs fewer decimals; 94% ties at two.
       expect(other.displayDecimals).toBeGreaterThanOrEqual(shipped.displayDecimals);
     }
   });

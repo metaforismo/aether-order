@@ -188,17 +188,22 @@ function canonicalParams(params) {
  */
 export function claimSignature(variantId, family, instance) {
   const variant = assertVariant(variantId);
-  // Key on what actually determines the bitmap — the family code and the
-  // canonical parameters — never on the label. A label is adapter-authored
-  // metadata; keying on it would let a caller with a hand-built instance whose
-  // label disagreed with its params poison the cache for the real instance.
-  const key = `${variant.id}|${family.code}|${canonicalParams(instance.params)}`;
+  // The predicate always comes from the ADAPTER, looked up by code — never from
+  // the caller's object. A caller-supplied family with a matching code but a
+  // different `resolve` would otherwise write a signature for a claim it does
+  // not define, and the cache would hand that wrong value to settlement.
+  const canonical = assertBetFamily(typeof family === 'string' ? family : family?.code);
+  // Key on what determines the bitmap — the family code and the canonical
+  // parameters — never on the label. A label is adapter-authored metadata;
+  // keying on it would let an instance whose label disagreed with its params
+  // poison the cache entry for the real instance.
+  const key = `${variant.id}|${canonical.code}|${canonicalParams(instance.params)}`;
   const cached = claimSignatureCache.get(key);
   if (cached) return cached;
   const views = viewsFor(variant.id);
   const bitmap = Buffer.alloc(Math.ceil(views.length / 8));
   for (let p = 0; p < views.length; p += 1) {
-    if (family.resolve(instance, views[p]) === true) bitmap[p >> 3] |= 1 << (p & 7);
+    if (canonical.resolve(instance, views[p]) === true) bitmap[p >> 3] |= 1 << (p & 7);
   }
   const signature = sha256Hex(bitmap);
   claimSignatureCache.set(key, signature);

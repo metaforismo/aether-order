@@ -219,18 +219,21 @@ the number players can calibrate against without doing arithmetic.
 
    | Candidate ρ | Stake quantum | Display decimals |
    | --- | --- | --- |
-   | 94.000% = 47/50 | 100 chips (1.00 credits) | 4 |
-   | 95.000% = 19/20 | 40 chips (0.40 credits) | 4 |
-   | 95.500% = 191/200 | 400 chips (4.00 credits) | 6 |
+   | 94.000% = 47/50 | 100 chips (1.00 credits) | 2 |
+   | 95.000% = 19/20 | 40 chips (0.40 credits) | 3 |
+   | 95.500% = 191/200 | 400 chips (4.00 credits) | 4 |
    | **96.000% = 24/25** | **25 chips (0.25 credits)** | **2** |
-   | 97.000% = 97/100 | 200 chips (2.00 credits) | 5 |
+   | 97.000% = 97/100 | 200 chips (2.00 credits) | 3 |
 
-   `24/25` is the only candidate in the band that yields a 0.25 minimum step —
-   an ordinary casino chip — with every multiplier terminating at two decimals
-   (`1.92`, `2.40`, `3.36`, `4.80`, `6.72`, `19.20`, `40.32`, `115.20`,
-   `4838.40`). Nothing needs rounding to display, and §6 shows nothing needs
-   rounding to *pay*. At 95.5% the minimum bet would have to be 4.00 credits and
-   chips would read `2.3875×`.
+   (A reduced denominator `2^a · 5^b` terminates at `max(a, b)` places.)
+
+   `24/25` gives the smallest stake step in the band by a factor of at least
+   1.6 — 0.25 credits, an ordinary casino chip — while every multiplier
+   terminates at two decimals (`1.92`, `2.40`, `3.36`, `4.80`, `6.72`, `19.20`,
+   `40.32`, `115.20`, `4838.40`). Nothing needs rounding to display, and §6
+   shows nothing needs rounding to *pay*. Only 94% matches it on decimals, and
+   it would force a 1.00-credit minimum bet at the bottom of the band; 95.5%
+   would force a 4.00-credit minimum and chips reading `2.3875×`.
 2. **Legibility.** "96%, on every bet" is a single sentence a player can hold.
 3. **Uniformity is a player-protection property.** Craps, Sic Bo and American
    roulette all pay a materially worse edge on their most attractive-looking

@@ -209,6 +209,18 @@ describe('published limits', () => {
     ).not.toThrow();
   });
 
+  it('cannot be handed more lines than it counted', () => {
+    // An array whose own `map` yields more entries than its `length`. Reading
+    // the input twice — once for the limit check, once to iterate — would settle
+    // 13 lines under a limit of 12. Settlement snapshots by index instead.
+    const hidden = Array.from({ length: 13 }, () => ({ code: 'slot', params: { c: 0, k: 0 }, stakeChips: 25n }));
+    const lines = [hidden[0]];
+    lines.map = (fn) => Array.prototype.map.call(hidden, fn);
+    const settled = settleTicket(t, { lines });
+    expect(settled.lines).toHaveLength(1);
+    expect(settled.totalStakeChips).toBe(25n);
+  });
+
   it('caps the biggest possible round well below the ceiling', () => {
     // Without the distinct-line rule, four maximum-stake copies of the winning
     // FULL ORDER line would pay 200.00 x 115.20 = 23,040.00 credits. The rule

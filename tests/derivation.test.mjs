@@ -377,6 +377,12 @@ describe('commitments', () => {
     claimSignature('classic', first, { code: 'first', params: { c: 1 }, label: 'f0' });
     expect(claimSignature('classic', first, { code: 'first', params: { c: 0 }, label: 'f0' })).toBe(honest);
 
+    // A caller-supplied family object with a matching code but a different
+    // predicate must not be able to write a signature for a claim it does not
+    // define. The adapter's own family is always looked up by code.
+    claimSignature('classic', { code: 'first', resolve: () => false }, { params: { c: 0 }, label: 'f0' });
+    expect(claimSignature('classic', first, { code: 'first', params: { c: 0 }, label: 'f0' })).toBe(honest);
+
     // Behavioural aliases across families share a signature; near-misses do not.
     expect(claimSignature('classic', slot, { code: 'slot', params: { c: 0, k: 0 }, label: '0@0' })).toBe(honest);
     expect(claimSignature('classic', slot, { code: 'slot', params: { c: 0, k: 1 }, label: '0@1' })).not.toBe(honest);

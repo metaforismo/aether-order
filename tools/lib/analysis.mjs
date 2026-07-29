@@ -549,18 +549,21 @@ export function rtpCandidateProfile(rho, variantIds = ['classic', 'seven']) {
   for (const probability of probabilities) {
     const multiplier = div(rho, probability);
     quantum = (quantum * multiplier.d) / gcdBig(quantum, multiplier.d);
+    // A reduced fraction with denominator 2^a * 5^b terminates at exactly
+    // max(a, b) places, not a + b: 133/40 = 3.325 is three decimals, not four.
     let residue = multiplier.d;
-    let places = 0;
+    let twos = 0;
+    let fives = 0;
     while (residue % 2n === 0n) {
       residue /= 2n;
-      places += 1;
+      twos += 1;
     }
     while (residue % 5n === 0n) {
       residue /= 5n;
-      places += 1;
+      fives += 1;
     }
     if (residue !== 1n) terminating = false;
-    decimals = Math.max(decimals, places);
+    decimals = Math.max(decimals, Math.max(twos, fives));
   }
   return Object.freeze({
     rho,

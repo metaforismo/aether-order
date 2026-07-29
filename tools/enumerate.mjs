@@ -484,9 +484,9 @@ if (variantIds.length === VARIANT_IDS.length) {
   }
   say();
   check(
-    'the shipped target RTP minimises the stake quantum and the decimals',
+    'the shipped target RTP strictly minimises the stake quantum',
     best !== null && best.stakeQuantumChips === STAKE_QUANTUM && best.displayDecimals === 2,
-    `24/25 -> quantum ${STAKE_QUANTUM} chips, 2 decimals`,
+    `24/25 -> quantum ${STAKE_QUANTUM} chips (0.25 credits), 2 decimals; no candidate beats either`,
   );
   say();
 }
