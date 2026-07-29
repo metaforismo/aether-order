@@ -15,8 +15,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { enumerateVariant, render } from '../tools/lib/analysis.mjs';
-import { TARGET_RTP, VARIANT_IDS, getVariant } from '../tools/lib/model.mjs';
+import { enumerateVariant, render, rtpCandidateProfile } from '../tools/lib/analysis.mjs';
+import { STAKE_QUANTUM, TARGET_RTP, VARIANT_IDS, getVariant } from '../tools/lib/model.mjs';
 import { factorialBig } from '../tools/lib/permutations.mjs';
 import { eq, mul, rational, sub } from '../tools/lib/rational.mjs';
 
@@ -102,5 +102,39 @@ describe.each(VARIANT_IDS)('%s — closed-form oracle vs brute-force enumeration
     // Its instances partition S_n: one instance per outcome, one win each.
     expect(big(full.instances) * big(full.winsPerInstance)).toBe(f(n));
     expect(sub(rational(1n), mul(rational(big(full.instances)), full.probability)).n).toBe(0n);
+  });
+});
+
+/**
+ * The RTP justification in docs/MATH.md §5 is a computed claim, not an opinion:
+ * pricing at rho / p makes the least common denominator of the multipliers the
+ * required stake quantum, and fixes the decimals the paytable needs.
+ */
+describe('24/25 is the right target RTP for this paytable', () => {
+  const candidates = [
+    ['94.000', rational(47n, 50n), 100n, 4],
+    ['95.000', rational(19n, 20n), 40n, 4],
+    ['95.500', rational(191n, 200n), 400n, 6],
+    ['96.000', rational(24n, 25n), 25n, 2],
+    ['97.000', rational(97n, 100n), 200n, 5],
+  ];
+
+  it.each(candidates)('%s requires a %s-chip quantum and %s decimals', (percent, rho, quantum, decimals) => {
+    const profile = rtpCandidateProfile(rho);
+    expect(profile.percent).toBe(percent);
+    expect(profile.allTerminating).toBe(true);
+    expect(profile.stakeQuantumChips).toBe(quantum);
+    expect(profile.displayDecimals).toBe(decimals);
+  });
+
+  it('the shipped target minimises both, and matches the shipped quantum', () => {
+    const shipped = rtpCandidateProfile(TARGET_RTP);
+    expect(eq(TARGET_RTP, rational(24n, 25n))).toBe(true);
+    expect(shipped.stakeQuantumChips).toBe(STAKE_QUANTUM);
+    for (const [, rho] of candidates) {
+      const other = rtpCandidateProfile(rho);
+      expect(other.stakeQuantumChips).toBeGreaterThanOrEqual(shipped.stakeQuantumChips);
+      expect(other.displayDecimals).toBeGreaterThanOrEqual(shipped.displayDecimals);
+    }
   });
 });

@@ -542,8 +542,14 @@ export function settleTicket(transcript, ticket) {
   if (typeof ticket !== 'object' || ticket === null || !Array.isArray(ticket.lines)) {
     fail('INVALID_TICKET', 'Ticket must carry a lines array', '$.lines');
   }
-  if (ticket.lines.length === 0) fail('INVALID_TICKET', 'Ticket must carry at least one line', '$.lines');
-  if (ticket.lines.length > LIMITS.maxLinesPerTicket) {
+  // Snapshot by index before validating. Checking `ticket.lines.length` and then
+  // iterating with `ticket.lines.map` reads the input twice: an array carrying
+  // an own `map` (or a hostile iterator) can report one line to the limit check
+  // and hand thirteen to the loop. `Array.prototype.slice` reads length and
+  // indices directly, and everything downstream uses only the snapshot.
+  const ticketLines = Array.prototype.slice.call(ticket.lines);
+  if (ticketLines.length === 0) fail('INVALID_TICKET', 'Ticket must carry at least one line', '$.lines');
+  if (ticketLines.length > LIMITS.maxLinesPerTicket) {
     fail('INVALID_TICKET', 'Ticket exceeds the published line limit', '$.lines');
   }
   const perm = transcript.permutation;
@@ -575,7 +581,7 @@ export function settleTicket(transcript, ticket) {
   // it here is also what makes the maximum-credit optimisation in
   // docs/MATH.md section 8 a true maximum rather than a lower bound.
   const claims = new Set();
-  const lines = ticket.lines.map((line, index) => {
+  const lines = ticketLines.map((line, index) => {
     const path = `$.lines[${index}]`;
     if (typeof line !== 'object' || line === null) fail('INVALID_TICKET', 'Ticket line must be an object', path);
     const family = assertBetFamily(line.code);

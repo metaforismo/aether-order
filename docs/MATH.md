@@ -210,12 +210,27 @@ the number players can calibrate against without doing arithmetic.
 
 **Why exactly 96% and not 95.5% or 96.3%.** Three concrete reasons:
 
-1. **Exactness.** `ρ = 24/25` makes every multiplier in both variants a fraction
-   with denominator dividing 25. Every one of them terminates at exactly two
-   decimal places (`1.92`, `2.40`, `3.36`, `4.80`, `6.72`, `19.20`, `40.32`,
-   `115.20`, `4838.40`). Nothing in the paytable needs rounding to display, and
-   §6 shows nothing needs rounding to *pay* either. An RTP like `0.955` would put
-   a factor of 2 and a factor of 19 into denominators and force truncation.
+1. **Exactness — and 24/25 is uniquely good here.** Pricing every bet at
+   `ρ / p` makes the least common denominator of the multipliers the *required
+   stake quantum*: a stake must clear every denominator for payouts to stay
+   exact integers (§6). It also fixes how many decimals the paytable needs.
+   Computed over the nine distinct probabilities across both variants
+   (`tools/enumerate.mjs` prints this table):
+
+   | Candidate ρ | Stake quantum | Display decimals |
+   | --- | --- | --- |
+   | 94.000% = 47/50 | 100 chips (1.00 credits) | 4 |
+   | 95.000% = 19/20 | 40 chips (0.40 credits) | 4 |
+   | 95.500% = 191/200 | 400 chips (4.00 credits) | 6 |
+   | **96.000% = 24/25** | **25 chips (0.25 credits)** | **2** |
+   | 97.000% = 97/100 | 200 chips (2.00 credits) | 5 |
+
+   `24/25` is the only candidate in the band that yields a 0.25 minimum step —
+   an ordinary casino chip — with every multiplier terminating at two decimals
+   (`1.92`, `2.40`, `3.36`, `4.80`, `6.72`, `19.20`, `40.32`, `115.20`,
+   `4838.40`). Nothing needs rounding to display, and §6 shows nothing needs
+   rounding to *pay*. At 95.5% the minimum bet would have to be 4.00 credits and
+   chips would read `2.3875×`.
 2. **Legibility.** "96%, on every bet" is a single sentence a player can hold.
 3. **Uniformity is a player-protection property.** Craps, Sic Bo and American
    roulette all pay a materially worse edge on their most attractive-looking

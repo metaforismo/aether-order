@@ -526,6 +526,59 @@ export function proveTicketInvariance(variantId, tickets) {
   });
 }
 
+/**
+ * Proof 9 — why 24/25 and not a neighbouring RTP.
+ *
+ * For a candidate rho, price every bet type at rho / p and report two things:
+ * the least common denominator of the resulting multipliers (which IS the
+ * required stake quantum in chips, since a stake must clear every denominator
+ * for payouts to stay exact integers), and the number of decimal places needed
+ * to display them without rounding. The justification in docs/MATH.md §5 is
+ * therefore computed, not asserted.
+ */
+export function rtpCandidateProfile(rho, variantIds = ['classic', 'seven']) {
+  const probabilities = [];
+  for (const variantId of variantIds) {
+    for (const row of enumerateVariant(variantId).rows) {
+      if (!probabilities.some((p) => eq(p, row.probability))) probabilities.push(row.probability);
+    }
+  }
+  let quantum = 1n;
+  let decimals = 0;
+  let terminating = true;
+  for (const probability of probabilities) {
+    const multiplier = div(rho, probability);
+    quantum = (quantum * multiplier.d) / gcdBig(quantum, multiplier.d);
+    let residue = multiplier.d;
+    let places = 0;
+    while (residue % 2n === 0n) {
+      residue /= 2n;
+      places += 1;
+    }
+    while (residue % 5n === 0n) {
+      residue /= 5n;
+      places += 1;
+    }
+    if (residue !== 1n) terminating = false;
+    decimals = Math.max(decimals, places);
+  }
+  return Object.freeze({
+    rho,
+    percent: approxDecimal(mul(rho, rational(100n)), 3),
+    distinctProbabilities: probabilities.length,
+    stakeQuantumChips: quantum,
+    displayDecimals: terminating ? decimals : Number.POSITIVE_INFINITY,
+    allTerminating: terminating,
+  });
+}
+
+function gcdBig(a, b) {
+  let x = a < 0n ? -a : a;
+  let y = b < 0n ? -b : b;
+  while (y !== 0n) [x, y] = [y, x % y];
+  return x;
+}
+
 /** Human-readable rendering helpers shared by the CLI and the docs generator. */
 export const render = Object.freeze({
   fraction: fmt,

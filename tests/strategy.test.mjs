@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest';
 
 import { proveCoverTickets, proveTicketInvariance, enumerateVariant, render } from '../tools/lib/analysis.mjs';
 import { BET_FAMILIES, getFamily } from '../tools/lib/bets.mjs';
-import { exactChips } from '../tools/lib/derive.mjs';
+import { exactChips, makeTranscript } from '../tools/lib/derive.mjs';
 import { STAKE_LADDER, TARGET_RTP, VARIANT_IDS, getVariant } from '../tools/lib/model.mjs';
 import { allPermutations, factorialBig, permutationRank, positionsOf } from '../tools/lib/permutations.mjs';
 import { cmp, div, eq, mul, rational } from '../tools/lib/rational.mjs';
@@ -191,11 +191,46 @@ describe('Theorem 3: adaptive sequential play cannot change the RTP', () => {
 });
 
 describe('presentational choices cannot reach the outcome', () => {
-  it('the derivation input set excludes every UI concern', () => {
-    // The transcript's declared inputs, per docs/ENGINE.md §7. Anything not in
-    // this set is by construction incapable of changing the permutation.
-    const declaredInputs = ['serverSeed', 'clientSeed', 'roundId', 'nonce', 'variantId'];
-    const uiConcerns = ['skip', 'mute', 'haptics', 'skin', 'latency', 'deviceTier', 'reducedMotion', 'locale'];
-    for (const concern of uiConcerns) expect(declaredInputs).not.toContain(concern);
+  const SEED = 'd'.repeat(64);
+  const base = { variantId: 'classic', roundId: 'ui-1', clientSeed: 'axiom', nonce: 0 };
+  // The values a client might plausibly leak into a context object.
+  const uiConcerns = {
+    skip: true,
+    mute: true,
+    haptics: false,
+    skin: 'abyss',
+    latency: 412,
+    deviceTier: 'low',
+    reducedMotion: true,
+    locale: 'it-IT',
+    timestamp: 1_753_000_000_000,
+  };
+
+  it('extra UI fields in the context change neither the permutation nor the commitment', () => {
+    // Exercised through the real derivation, not by comparing two hard-coded
+    // lists: an implementation that mixed `skip` into the sampler would fail.
+    const reference = makeTranscript(SEED, base);
+    for (const [key, value] of Object.entries(uiConcerns)) {
+      const polluted = makeTranscript(SEED, { ...base, [key]: value });
+      expect(polluted.permutation, `${key} changed the permutation`).toEqual(reference.permutation);
+      expect(polluted.commitment, `${key} changed the commitment`).toBe(reference.commitment);
+      expect(polluted.seedCommitment).toBe(reference.seedCommitment);
+    }
+    // All of them at once, for good measure.
+    const all = makeTranscript(SEED, { ...base, ...uiConcerns });
+    expect(all.permutation).toEqual(reference.permutation);
+    expect(all.commitment).toBe(reference.commitment);
+  });
+
+  it('a declared input, by contrast, does change the commitment', () => {
+    // The control: proves the test above is capable of detecting a change.
+    const reference = makeTranscript(SEED, base);
+    expect(makeTranscript(SEED, { ...base, clientSeed: 'other' }).commitment).not.toBe(reference.commitment);
+    expect(makeTranscript(SEED, { ...base, nonce: 1 }).commitment).not.toBe(reference.commitment);
+  });
+
+  it('the transcript exposes only the declared inputs', () => {
+    const transcript = makeTranscript(SEED, { ...base, ...uiConcerns });
+    for (const key of Object.keys(uiConcerns)) expect(Object.keys(transcript)).not.toContain(key);
   });
 });

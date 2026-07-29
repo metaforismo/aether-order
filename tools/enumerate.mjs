@@ -35,6 +35,7 @@ import {
   proveStakeQuantum,
   proveTicketInvariance,
   render,
+  rtpCandidateProfile,
 } from './lib/analysis.mjs';
 import { BET_FAMILIES } from './lib/bets.mjs';
 import { canonicalJson } from './lib/canonical.mjs';
@@ -52,6 +53,7 @@ import {
 } from './lib/model.mjs';
 import { derivePermutation, makeTranscript, verifyTranscript, ZERO_COMMITMENT } from './lib/derive.mjs';
 import { permutationRank, positionsOf } from './lib/permutations.mjs';
+import { rational } from './lib/rational.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -450,6 +452,43 @@ for (const variantId of variantIds) {
   }
   markdown.push(`<!-- paytable:${variantId}:end -->`);
   markdown.push('');
+}
+
+/* --- Target RTP justification, computed ----------------------- */
+if (variantIds.length === VARIANT_IDS.length) {
+  say('-'.repeat(72));
+  say('TARGET RTP — why 24/25 and not a neighbour');
+  say('-'.repeat(72));
+  say('Pricing every bet at rho/p makes the least common denominator of the');
+  say('multipliers the required stake quantum, and fixes the decimals needed.');
+  say();
+  const head = ['candidate', 'rho', 'quantum (chips)', 'credits', 'decimals'];
+  const widths = [12, 10, 18, 10, 10];
+  const row = (cells) => cells.map((cell, i) => String(cell).padEnd(widths[i])).join('');
+  say(`  ${row(head)}`);
+  say(`  ${widths.map((w) => '-'.repeat(w - 1)).join(' ')}`);
+  const candidates = [rational(47n, 50n), rational(19n, 20n), rational(191n, 200n), TARGET_RTP, rational(97n, 100n)];
+  let best = null;
+  for (const rho of candidates) {
+    const profile = rtpCandidateProfile(rho);
+    if (best === null || profile.stakeQuantumChips < best.stakeQuantumChips) best = profile;
+    say(
+      `  ${row([
+        `${profile.percent}%`,
+        render.fraction(rho),
+        profile.stakeQuantumChips,
+        render.approx(rational(profile.stakeQuantumChips, CHIPS_PER_CREDIT), 2),
+        profile.displayDecimals,
+      ])}`,
+    );
+  }
+  say();
+  check(
+    'the shipped target RTP minimises the stake quantum and the decimals',
+    best !== null && best.stakeQuantumChips === STAKE_QUANTUM && best.displayDecimals === 2,
+    `24/25 -> quantum ${STAKE_QUANTUM} chips, 2 decimals`,
+  );
+  say();
 }
 
 say('='.repeat(72));
