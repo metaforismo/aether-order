@@ -37,7 +37,7 @@ import {
   verifyTranscript,
   ZERO_COMMITMENT,
 } from '../tools/lib/derive.mjs';
-import { ADAPTER_VERSION, VARIANT_IDS, getVariant } from '../tools/lib/model.mjs';
+import { ADAPTER_VERSION, LIMITS, VARIANT_IDS, getVariant } from '../tools/lib/model.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES = JSON.parse(readFileSync(join(ROOT, 'tests', 'fixtures', 'transcripts.json'), 'utf8'));
@@ -198,6 +198,107 @@ describe('frozen wire-format fixtures', () => {
     const result = verifyTranscript(second.serverSeed, forged);
     expect(result.ok).toBe(false);
     expect(result.code).toBe('COMMITMENT_MISMATCH');
+  });
+
+  /**
+   * The oracle has to cover the shapes it is the oracle FOR.
+   *
+   * docs/ENGINE.md §10 designates these vectors as the port-conformance test:
+   * "If a single commitment digest differs, the port is wrong." Round 4 froze
+   * eight vectors of one shape — three lines, always first/before/slot, always
+   * 175 chips — so eight of eleven codes never appeared, the whole ORDER tier
+   * was absent, and nothing froze the ticket, settlement or receipt encoding for
+   * `full`, for `podium`, or for a ticket wide enough to exercise the canonical
+   * line sort. These tests fail the build if that coverage narrows again.
+   */
+  describe('coverage of the port-conformance oracle', () => {
+    const lineCodes = (vector) => vector.ticket.lines.map((line) => line.code);
+    const codesIn = (vector) => new Set(lineCodes(vector));
+    const allCodes = new Set(FIXTURES.vectors.flatMap(lineCodes));
+
+    it('freezes every bet code the catalogue defines', () => {
+      for (const family of BET_FAMILIES) {
+        expect(allCodes.has(family.code), `no frozen vector carries a ${family.code} line`).toBe(true);
+      }
+    });
+
+    it.each(VARIANT_IDS)('%s freezes every bet code on its own, not only across variants', (variantId) => {
+      const forVariant = new Set(
+        FIXTURES.vectors.filter((vector) => vector.context.variantId === variantId).flatMap(lineCodes),
+      );
+      for (const family of BET_FAMILIES) {
+        expect(forVariant.has(family.code), `${variantId} has no ${family.code} vector`).toBe(true);
+      }
+    });
+
+    it('freezes the highest-liability bet both winning and losing', () => {
+      const fullVectors = FIXTURES.vectors.filter((vector) => codesIn(vector).has('full'));
+      expect(fullVectors.length).toBeGreaterThanOrEqual(2 * VARIANT_IDS.length);
+      const verdicts = new Set(
+        fullVectors.flatMap((vector) =>
+          vector.settlement.lines.filter((line) => line.code === 'full').map((line) => line.won),
+        ),
+      );
+      expect(verdicts).toEqual(new Set([true, false]));
+    });
+
+    it("freezes the FULL ORDER parameter in its readable form, matching its round", () => {
+      for (const vector of FIXTURES.vectors) {
+        for (const line of vector.ticket.lines) {
+          if (line.code !== 'full') continue;
+          expect(Object.keys(line.params)).toEqual(['order']);
+          const settled = vector.settlement.lines.find(
+            (candidate) => candidate.code === 'full' && candidate.params.order === line.params.order,
+          );
+          // A won FULL ORDER line's parameter IS the transcript's permutation,
+          // which is the whole point of spelling it this way.
+          expect(settled.won).toBe(line.params.order === vector.transcript.permutation.join('-'));
+        }
+      }
+    });
+
+    it('freezes the three-parameter shape and a ticket at the line limit', () => {
+      expect(FIXTURES.vectors.some((vector) => codesIn(vector).has('podium'))).toBe(true);
+      const widest = Math.max(...FIXTURES.vectors.map((vector) => vector.ticket.lines.length));
+      expect(widest).toBe(LIMITS.maxLinesPerTicket);
+      // More than one width, or the sort is never exercised at scale.
+      expect(new Set(FIXTURES.vectors.map((vector) => vector.ticket.lines.length)).size).toBeGreaterThanOrEqual(3);
+    });
+
+    it('every frozen ticket is in canonical order and re-digests to its frozen value', () => {
+      for (const vector of FIXTURES.vectors) {
+        const seedContext = {
+          variantId: vector.context.variantId,
+          roundId: vector.context.roundId,
+          nonce: vector.context.nonce,
+        };
+        const lines = vector.ticket.lines.map((line) => ({ ...line, stakeChips: BigInt(line.stakeChips) }));
+        const reopened = openTicket(seedContext, { lines });
+        expect(reopened.ticketDigest, vector.context.roundId).toBe(vector.ticket.ticketDigest);
+        expect(reopened.idempotencyKey).toBe(vector.ticket.idempotencyKey);
+        // Frozen in canonical order already: reopening must not reorder them.
+        expect(reopened.lines.map((line) => line.code)).toEqual(lines.map((line) => line.code));
+      }
+    });
+
+    it('every frozen settlement re-settles to the same money and the same flags', () => {
+      for (const vector of FIXTURES.vectors) {
+        const lines = vector.ticket.lines.map((line) => ({ ...line, stakeChips: BigInt(line.stakeChips) }));
+        const settlement = settleTicket(vector.transcript, { lines });
+        expect(settlement.totalStakeChips).toBe(BigInt(vector.settlement.totalStakeChips));
+        expect(settlement.grossChips).toBe(BigInt(vector.settlement.grossChips));
+        expect(settlement.creditedChips).toBe(BigInt(vector.settlement.creditedChips));
+        expect(settlement.lines.map((line) => line.won)).toEqual(vector.settlement.lines.map((line) => line.won));
+      }
+    });
+
+    it('the frozen settlements include mixed win/lose flags, not only clean sweeps', () => {
+      const mixed = FIXTURES.vectors.filter((vector) => {
+        const flags = new Set(vector.settlement.lines.map((line) => line.won));
+        return flags.size === 2;
+      });
+      expect(mixed.length).toBeGreaterThanOrEqual(VARIANT_IDS.length);
+    });
   });
 });
 

@@ -38,7 +38,7 @@ import {
   render,
   rtpCandidateProfile,
 } from './lib/analysis.mjs';
-import { BET_FAMILIES, fullOrderParamsByRank } from './lib/bets.mjs';
+import { BET_FAMILIES, fullOrderParams, fullOrderParamsByRank } from './lib/bets.mjs';
 import { canonicalJson } from './lib/canonical.mjs';
 import { assertAdapterConforms, claimAliasReport } from './lib/conform.mjs';
 import { credits, roundPresentation, ticketStripFigures } from './lib/presentation.mjs';
@@ -253,9 +253,10 @@ function factorialNumber(n) {
 }
 
 /**
- * A deterministic three-line ticket for the protocol round trip and the frozen
- * receipt fixtures. Two lines are chosen to win against the round's own
- * permutation so the settlement is non-trivial; all three are distinct claims.
+ * A deterministic three-line ticket for the protocol round trip and the first
+ * frozen fixture of each variant. Two lines are chosen to win against the
+ * round's own permutation so the settlement is non-trivial; all three are
+ * distinct claims.
  */
 function demoTicketFor(transcript, n) {
   const perm = transcript.permutation;
@@ -267,6 +268,84 @@ function demoTicketFor(transcript, n) {
     ],
   };
 }
+
+/**
+ * The frozen fixtures' ticket shapes.
+ *
+ * docs/ENGINE.md §10 designates `tests/fixtures/transcripts.json` as the
+ * port-conformance oracle: "If a single commitment digest differs, the port is
+ * wrong." Round 4 froze eight vectors of ONE shape — three lines, always
+ * `first`/`before`/`slot`, always 175 chips — so eight of eleven bet codes never
+ * appeared, the entire ORDER tier was absent, and nothing froze the ticket,
+ * settlement or receipt bytes for `full` (the highest-liability bet, and the
+ * only family whose parameters depend on a convention), for `podium` (the only
+ * three-parameter shape), or for a ticket wide enough to exercise the canonical
+ * line sort at scale. Catalogue-level divergence was still caught, because the
+ * catalogue digest is bound into every commitment through the fingerprint —
+ * what was unfrozen was the ticket/settlement/receipt encoding for those shapes.
+ *
+ * Four shapes per variant now, chosen so that between them they cover all
+ * eleven codes, both a winning and a losing `full`, `podium` twice, an
+ * eight-line ticket and a ticket at the twelve-line limit.
+ */
+function fixtureTicketFor(transcript, n, index) {
+  const perm = transcript.permutation;
+  const shapes = [
+    // 0 — the original three-line shape, kept so the existing vectors' meaning
+    //     is continuous with what round 4 froze.
+    () => demoTicketFor(transcript, n),
+
+    // 1 — the ORDER tier at the top of the liability: every line wins, and the
+    //     `full` line is spelled with the order that actually settled.
+    () => ({
+      lines: [
+        { code: 'full', params: fullOrderParams(perm), stakeChips: 5000n },
+        { code: 'podium', params: { a: perm[0], b: perm[1], c: perm[2] }, stakeChips: 2500n },
+        { code: 'opening', params: { a: perm[0], b: perm[1] }, stakeChips: 1000n },
+      ],
+    }),
+
+    // 2 — eight lines across FLOW and FORM, with deliberate losers, so a
+    //     settlement digest with mixed `won` flags is frozen too.
+    () => ({
+      lines: [
+        { code: 'early', params: { c: perm[0] }, stakeChips: 25n },
+        { code: 'late', params: { c: perm[n - 1] }, stakeChips: 25n },
+        { code: 'link-any', params: minMaxPair(perm[0], perm[1]), stakeChips: 25n },
+        { code: 'last', params: { c: perm[n - 1] }, stakeChips: 50n },
+        { code: 'link', params: { a: perm[0], b: perm[1] }, stakeChips: 50n },
+        { code: 'slot', params: { c: perm[1], k: 1 }, stakeChips: 25n },
+        { code: 'before', params: { a: perm[1], b: perm[0] }, stakeChips: 25n },
+        { code: 'first', params: { c: perm[1] }, stakeChips: 25n },
+      ],
+    }),
+
+    // 3 — the twelve-line limit, every code once plus a second SLOT, all at the
+    //     minimum stake. Parameters here are FIXED rather than derived from the
+    //     permutation, so this vector also freezes a mostly-losing settlement
+    //     and exercises the canonical (code, params) sort across every family.
+    () => ({
+      lines: [
+        { code: 'before', params: { a: 0, b: 1 }, stakeChips: 25n },
+        { code: 'early', params: { c: 0 }, stakeChips: 25n },
+        { code: 'late', params: { c: n - 1 }, stakeChips: 25n },
+        { code: 'link-any', params: { a: 0, b: 1 }, stakeChips: 25n },
+        { code: 'first', params: { c: 0 }, stakeChips: 25n },
+        { code: 'last', params: { c: n - 1 }, stakeChips: 25n },
+        { code: 'slot', params: { c: 2, k: 2 }, stakeChips: 25n },
+        { code: 'slot', params: { c: 3, k: 3 }, stakeChips: 25n },
+        { code: 'link', params: { a: 0, b: 1 }, stakeChips: 25n },
+        { code: 'opening', params: { a: 0, b: 1 }, stakeChips: 25n },
+        { code: 'podium', params: { a: 0, b: 1, c: 2 }, stakeChips: 25n },
+        { code: 'full', params: fullOrderParamsByRank(n, 0), stakeChips: 25n },
+      ],
+    }),
+  ];
+  return shapes[index % shapes.length]();
+}
+
+/** `link-any` enumerates unordered pairs as (a < b); a ticket must match that. */
+const minMaxPair = (x, y) => ({ a: Math.min(x, y), b: Math.max(x, y) });
 
 /** Three lines that CAN all hit at once — rank 0 is the identity permutation. */
 function demoCompatibleLines(n) {
@@ -891,11 +970,16 @@ if (wantWrite) {
       };
       const previous = index === 0 ? ZERO_COMMITMENT : fixtures.vectors[fixtures.vectors.length - 1].transcript.commitment;
       const transcript = makeTranscript(serverSeed, context, previous);
-      const ticket = demoTicketFor(transcript, n);
+      const ticket = fixtureTicketFor(transcript, n, index);
       const opened = openTicket(context, ticket);
-      const settlement = settleTicket(transcript, ticket);
+      // Settle the OPENED ticket, so the frozen settlement's lines are in the
+      // same canonical order as the frozen ticket's. The digests are
+      // order-independent either way — they sort first — but a port comparing
+      // the two structures element by element should not have to reorder them,
+      // and round 4's fixtures froze the two in different orders.
+      const settlement = settleTicket(transcript, opened);
       const receipt = signReceipt(
-        makeReceipt({ transcript, ticket, settlement, signerId: fixtures.operatorSignerId }),
+        makeReceipt({ transcript, ticket: opened, settlement, signerId: fixtures.operatorSignerId }),
         operator.privateKey,
       );
       fixtures.vectors.push({ serverSeed, context, transcript, ticket: opened, settlement, receipt });

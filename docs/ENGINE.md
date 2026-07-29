@@ -17,6 +17,19 @@ produce **byte-identical** commitments, ticket digests, receipt digests and
 signatures, and `tests/fixtures/transcripts.json` freezes eight complete rounds —
 transcript, ticket, settlement and signed receipt — that prove it.
 
+**Those eight cover the shapes they are the oracle for.** Four per variant:
+the three-line FORM/FLOW shape, the ORDER tier at the top of the liability
+(`full` + `podium` + `opening`, all winning), an eight-line ticket across FLOW
+and FORM with deliberate losers, and a twelve-line ticket at the line limit that
+carries every one of the eleven codes and exercises the canonical line sort.
+Between them every bet code appears **in each variant**, `full` appears both
+winning and losing, and settlements with mixed `won` flags are frozen rather
+than only clean sweeps. Round 4 froze eight vectors of one shape — always
+`first`/`before`/`slot`, always 175 chips — so eight of eleven codes never
+appeared and nothing froze the ticket, settlement or receipt encoding for the
+game's highest-liability bet. `tests/derivation.test.mjs` now fails the build if
+that coverage narrows again.
+
 Every function signature in this document is machine-checked against the
 reference implementation's real signature by `tests/design.test.mjs`. A
 declaration here that has drifted from the code is a build failure, not a
