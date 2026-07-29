@@ -519,12 +519,30 @@ export type VerificationResult =
   | { readonly ok: false; readonly code: PermutationErrorCode;
       readonly message: string; readonly path: string };
 
+/**
+ * A receipt verification is a TRI-state, and only one of the three is `ok`.
+ *
+ * `ok: true` requires the signature to have been checked and to have verified.
+ * A verifier given no public key returns `ok: false` with
+ * `code: 'SIGNATURE_UNCHECKED'` and `bindingsVerified: true`, because the
+ * receipt's whole purpose is the signature: without it the object is a
+ * self-consistent bundle the operator produced, and `.ok` — the field every
+ * other path answers with — must not say otherwise. `bindingsVerified` is the
+ * separate field a device with no Ed25519 implementation reads to show
+ * docs/DESIGN.md §7.3's "signature not checked on this device" state.
+ */
 export type ReceiptVerificationResult =
   | { readonly ok: true;  readonly digest: string;
-      readonly signatureChecked: boolean; readonly signatureValid: boolean | null }
+      readonly signatureChecked: true; readonly signatureValid: true;
+      readonly bindingsVerified: true }
+  | { readonly ok: false; readonly code: 'SIGNATURE_UNCHECKED';
+      readonly message: string; readonly path: string; readonly digest: string;
+      readonly signatureChecked: false; readonly signatureValid: null;
+      readonly bindingsVerified: true }
   | { readonly ok: false; readonly code: PermutationErrorCode;
       readonly message: string; readonly path: string;
-      readonly signatureChecked: boolean };
+      readonly signatureChecked: boolean; readonly signatureValid: boolean | null;
+      readonly bindingsVerified: boolean };
 
 /* --- functions ---------------------------------------------------------- */
 
@@ -816,9 +834,21 @@ transcripts.json` freezes eight of them under a published test key.
 A verifier holding `(receipt, transcript, ticket, settlement)` must recompute
 `ticketDigest`, `settlementDigest` and `receiptDigest`, compare the receipt's
 `seedCommitment` and `commitment` against the transcript's, compare the money
-totals against the settlement, and only then check the signature. A verifier
-given no public key must report `signatureChecked: false` rather than an
-unqualified pass.
+totals against the settlement, and only then check the signature.
+
+**A verifier given no public key must return `ok: false`.** Round 4 of this
+document said it "must report `signatureChecked: false` rather than an
+unqualified pass" and the reference implemented that as `ok: true` beside
+`signatureChecked: false` — which *is* the unqualified pass, qualified only by a
+sibling field a caller has to know to read. `.ok` is the branch every other
+failure path uses, so the fail-open case was the one shaped like success. The
+required result is `ok: false`, `code: 'SIGNATURE_UNCHECKED'`,
+`bindingsVerified: true`: the bindings were all checked and they all held, and
+the guarantee the receipt exists to provide was not obtained. A client with no
+Ed25519 implementation branches on `bindingsVerified`, never on `ok`.
+
+This is the same rule as §7.10 point 5, applied to the other half of the
+fairness model: absent evidence is a rejection, never a skipped check.
 
 ### 7.9 Round snapshot
 
@@ -947,6 +977,14 @@ a receipt that does not bind the supplied ticket or settlement is
 `COMMITMENT_MISMATCH`, and one carrying an unknown schema is
 `UNSUPPORTED_VERSION`. Integrations branch on `code`, so a new code would be a
 breaking change where a reused one is not.
+
+It gains exactly one code of its own, because no existing code says the right
+thing and reusing one that means "this receipt is wrong" for a case where the
+receipt may be perfectly good would be worse than adding a code:
+
+| Code | Raised when |
+| --- | --- |
+| `SIGNATURE_UNCHECKED` | `verifyReceipt` was given no operator public key. Every binding was recomputed and held (`bindingsVerified: true`); the signature was not checked, so the result is not a pass — §7.8 |
 
 Module additions to `ENGINE_LIMITS`:
 

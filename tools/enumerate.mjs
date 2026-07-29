@@ -548,6 +548,12 @@ for (const variantId of variantIds) {
     publicKey: operatorKey.publicKey,
   });
   check('a receipt rejects a ticket whose stake was edited after the fact', !restaked.ok, restaked.code);
+  const unchecked = verifyReceipt(receipt, { transcript, ticket: demoTicket, settlement: demoSettlement });
+  check(
+    'a receipt with no operator key does NOT verify, however intact its bindings',
+    !unchecked.ok && unchecked.code === 'SIGNATURE_UNCHECKED' && unchecked.bindingsVerified === true,
+    `${unchecked.code}, bindingsVerified=${unchecked.bindingsVerified}`,
+  );
   say('      Commit-reveal proves the draw. The receipt proves the bet — and it is');
   say('      an operator signature, so it is non-repudiation, not verification from');
   say('      first principles. docs/ENGINE.md section 11 states that boundary.');

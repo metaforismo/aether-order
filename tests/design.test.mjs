@@ -292,6 +292,16 @@ describe('the repudiation boundary is stated wherever fairness is claimed', () =
   it('the README does not overstate the receipt as verification from first principles', () => {
     expect(README).toContain('needs the operator');
   });
+
+  it('the verifier fails closed with no key, in the code and in the document', () => {
+    // The reference and the spec must agree that "no key supplied" is not a
+    // pass. Round 4 shipped ok:true here, which made the one fail-open path in
+    // the module the one shaped like success.
+    const ENGINE_TABLE = ENGINE.slice(ENGINE.indexOf('## 9. Errors and limits'));
+    expect(ENGINE_TABLE).toContain('`SIGNATURE_UNCHECKED`');
+    expect(ENGINE).toContain('bindingsVerified');
+    expect(ENGINE).toMatch(/A verifier given no public key must return `ok: false`/u);
+  });
 });
 
 /* ------------------------------------------------------------------ *

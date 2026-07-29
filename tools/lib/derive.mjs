@@ -1004,14 +1004,46 @@ export function signReceipt(receipt, privateKey) {
 /**
  * Verify a receipt against the round it claims to describe.
  *
- * Recomputes every digest through the production code path and, when a public
- * key is supplied, checks the operator signature. Returns a typed result rather
- * than throwing, exactly like `verifyTranscript`, and reports
- * `signatureChecked: false` when no key was given rather than implying the
- * signature was accepted.
+ * Recomputes every digest through the production code path and then checks the
+ * operator signature. Returns a typed result rather than throwing, exactly like
+ * `verifyTranscript`.
+ *
+ * **No key, no pass.** Round 4 of this specification returned `ok: true` with a
+ * sibling `signatureChecked: false` when the caller supplied no public key. That
+ * is a fail-open verifier: `.ok` is the natural branch — it is what every other
+ * path in this function answers with, and what the test suite asserted — so a
+ * caller reading it accepted as verified a receipt whose signature was never
+ * checked, including one whose `signature` was `null`. The receipt is the ONLY
+ * mechanism binding a bet to a round; without the signature check it is a
+ * self-consistent bundle the operator produced and it proves nothing about what
+ * was staked. docs/ENGINE.md §7.10 point 5 already says a missing field is "a
+ * rejection, never a skipped check"; an unqualified `ok: true` qualified only by
+ * a sibling field is exactly the skipped check it bans.
+ *
+ * So the result is a tri-state and the third state is not `ok`:
+ *
+ *   - bindings good, signature good   -> `ok: true,  signatureChecked: true`
+ *   - bindings good, no key supplied  -> `ok: false, code: 'SIGNATURE_UNCHECKED',
+ *                                        bindingsVerified: true`
+ *   - anything else                   -> `ok: false, bindingsVerified: false`
+ *
+ * `bindingsVerified` is what a device with no Ed25519 implementation reads to
+ * show docs/DESIGN.md §7.3's honest *"signature not checked on this device"*
+ * state. It is deliberately a different field from `ok`, because the two answer
+ * different questions and only one of them means "this receipt is evidence".
  */
 export function verifyReceipt(receipt, { transcript, ticket, settlement, publicKey } = {}) {
-  const reject = (code, message, path) => Object.freeze({ ok: false, code, message, path, signatureChecked: false });
+  const reject = (code, message, path, extra = {}) =>
+    Object.freeze({
+      ok: false,
+      code,
+      message,
+      path,
+      signatureChecked: false,
+      signatureValid: null,
+      bindingsVerified: false,
+      ...extra,
+    });
   try {
     if (typeof receipt !== 'object' || receipt === null) return reject('INVALID_TICKET', 'Receipt must be an object', '$');
     if (receipt.schema !== RECEIPT_SCHEMA) return reject('UNSUPPORTED_VERSION', 'Unknown receipt schema', '$.schema');
@@ -1056,10 +1088,19 @@ export function verifyReceipt(receipt, { transcript, ticket, settlement, publicK
       return reject('COMMITMENT_MISMATCH', 'Receipt digest does not cover its own fields', '$.digest');
     }
     if (publicKey === undefined || publicKey === null) {
-      return Object.freeze({ ok: true, digest: recomputedDigest, signatureChecked: false, signatureValid: null });
+      // Every binding checked out; the one guarantee the receipt exists to give
+      // did not. That is not a pass, and it must not be spelled like one.
+      return reject(
+        'SIGNATURE_UNCHECKED',
+        'Receipt bindings are intact but no operator key was supplied, so the signature was not checked',
+        '$.signature',
+        { digest: recomputedDigest, bindingsVerified: true },
+      );
     }
     if (typeof receipt.signature !== 'string' || !/^[0-9a-f]+$/u.test(receipt.signature)) {
-      return reject('INVALID_TICKET', 'Receipt is unsigned or the signature is malformed', '$.signature');
+      return reject('INVALID_TICKET', 'Receipt is unsigned or the signature is malformed', '$.signature', {
+        bindingsVerified: true,
+      });
     }
     const signatureValid = cryptoVerify(
       null,
@@ -1075,9 +1116,16 @@ export function verifyReceipt(receipt, { transcript, ticket, settlement, publicK
         path: '$.signature',
         signatureChecked: true,
         signatureValid: false,
+        bindingsVerified: true,
       });
     }
-    return Object.freeze({ ok: true, digest: recomputedDigest, signatureChecked: true, signatureValid: true });
+    return Object.freeze({
+      ok: true,
+      digest: recomputedDigest,
+      signatureChecked: true,
+      signatureValid: true,
+      bindingsVerified: true,
+    });
   } catch (error) {
     if (error instanceof AetherOrderError) return reject(error.code, error.message, error.path);
     return reject('INVALID_TICKET', 'Receipt verification failed', '$');

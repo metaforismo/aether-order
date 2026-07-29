@@ -508,8 +508,19 @@ tap from the result at all times**; it is never buried in settings.
 
 Below the transcript, a second card headed **YOUR BET** shows the signed receipt
 (`docs/ENGINE.md` §6.1): ticket digest, settlement digest, receipt digest,
-signer id, and a `SIGNATURE VERIFIED` state checked against the operator's
-published key. The card carries one sentence that must not be softened:
+signer id, and the receipt state checked against the operator's published key.
+That state has **three** values, not two, because the verifier does
+(`docs/ENGINE.md` §7.8):
+
+| Verifier result | Card state | Treatment |
+| --- | --- | --- |
+| `ok: true` | `SIGNATURE VERIFIED` | green, gold-eligible |
+| `code: 'SIGNATURE_UNCHECKED'`, `bindingsVerified: true` | `SIGNATURE NOT CHECKED ON THIS DEVICE` | neutral `--ink-dim`, never green, with a one-tap *"check it elsewhere"* that copies the receipt |
+| any other failure | `RECEIPT DOES NOT MATCH THIS ROUND` | error state, with the failing `path` shown verbatim |
+
+The middle row is the one a build gets wrong: it is not a pass, it is not an
+error, and drawing it in the same colour as either is the defect. The card
+carries one sentence that must not be softened:
 *"The transcript proves the draw was fair. This receipt is the operator's
 signature on what you staked and what you were paid — a different kind of
 guarantee, and one that depends on their key."* `COPY RECEIPT` sits beside
@@ -949,8 +960,11 @@ of §13.2. It is a lane on the existing transport, one screen, and a clock.
 The verifier is small because SHA-256 and HMAC come from `crypto.subtle`; only
 the canonical field encoder, the Fisher–Yates re-derivation and the receipt
 comparison are ours. Ed25519 verification also comes from WebCrypto where
-available, and is skipped with an honest *"signature not checked on this
-device"* where it is not.
+available. Where it is not, the client shows an honest *"signature not checked
+on this device"* — and it reaches that state by reading `bindingsVerified` on
+the verification result, **never** by reading `ok`, which is `false` in that
+case (`docs/ENGINE.md` §7.8). A receipt whose signature nobody checked is not a
+verified receipt, and the UI may not draw it as one.
 
 **What is explicitly not built:** SPH or grid fluid, soft-body spheres,
 real-time refraction of the full scene, per-sphere 3D meshes, cloth, or any

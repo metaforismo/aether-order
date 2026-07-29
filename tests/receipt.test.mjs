@@ -138,11 +138,47 @@ describe.each(VARIANT_IDS)('receipts — %s', (variantId) => {
     expect(result.digest).toBe(receipt.digest);
   });
 
-  it('reports honestly that the signature was not checked when no key is supplied', () => {
+  it('does NOT pass when no operator key is supplied, however intact the bindings', () => {
+    // The round-4 defect. This path returned ok:true with signatureChecked:false
+    // beside it, so a caller branching on `.ok` — which is what every other path
+    // here answers with — accepted a receipt whose signature was never checked,
+    // including one whose `signature` was null. The receipt is the only thing
+    // binding the bet to the round; unsigned it proves nothing about the stake.
     const result = verifyReceipt(receipt, { transcript, ticket, settlement });
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('SIGNATURE_UNCHECKED');
     expect(result.signatureChecked).toBe(false);
     expect(result.signatureValid).toBeNull();
+    // The bindings really were all checked, and that is a different field.
+    expect(result.bindingsVerified).toBe(true);
+    expect(result.digest).toBe(receipt.digest);
+  });
+
+  it('an unsigned receipt cannot reach even the bindings-verified state', () => {
+    const unsigned = makeReceipt({ transcript, ticket, settlement, signerId: 'axiom-games/test' });
+    const withKey = verifyReceipt(unsigned, { transcript, ticket, settlement, publicKey: KEY.publicKey });
+    expect(withKey.ok).toBe(false);
+    // And with no key at all it is the same answer as a signed one would get:
+    // not ok. Nothing about `signature: null` may soften the verdict.
+    const withoutKey = verifyReceipt(unsigned, { transcript, ticket, settlement });
+    expect(withoutKey.ok).toBe(false);
+    expect(withoutKey.code).toBe('SIGNATURE_UNCHECKED');
+  });
+
+  it('every failure path reports whether the bindings were checked', () => {
+    const results = [
+      verifyReceipt(receipt, { transcript, ticket, settlement }),
+      verifyReceipt(receipt, { transcript, ticket, settlement, publicKey: OTHER_KEY.publicKey }),
+      verifyReceipt({ ...receipt, gameId: 'other-game' }, { transcript, ticket, settlement }),
+    ];
+    for (const result of results) {
+      expect(typeof result.bindingsVerified, JSON.stringify(result)).toBe('boolean');
+      expect(result.ok).toBe(false);
+    }
+    // A wrong adapter is rejected before any binding is recomputed.
+    expect(results[2].bindingsVerified).toBe(false);
+    // A wrong key means the bindings held and the signature did not.
+    expect(results[1].bindingsVerified).toBe(true);
   });
 
   it('binds the pre-round publication and the round commitment', () => {
