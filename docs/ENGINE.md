@@ -167,10 +167,13 @@ export interface PermutationRiskPolicy {
 }
 
 /**
- * Speed of play. Deliberately NOT part of the adapter fingerprint: pacing is a
- * client and RGS obligation, and tightening it must not invalidate an open
- * liability. It is nonetheless adapter-published, so the client and the server
- * cannot hold different numbers.
+ * Speed of play and session controls. Deliberately NOT part of the adapter
+ * fingerprint: pacing is a client and RGS obligation, and TIGHTENING it must not
+ * invalidate an open liability. It is nonetheless adapter-published, so the
+ * client and the server cannot hold different numbers.
+ *
+ * The two directions are not symmetric, and the asymmetry is handled rather
+ * than left implicit — see `permutationPlayPolicyDigest` below.
  *
  * `minRoundCycleMs` is measured COMMIT to COMMIT and enforced server-side; a
  * COMMIT that arrives early is rejected, not queued. SKIP compresses the
@@ -179,10 +182,49 @@ export interface PermutationRiskPolicy {
 export interface PermutationPlayPolicy {
   readonly minRoundCycleMs: number;
   readonly maxRoundsPerRollingHour: number;
+  /** Fixed early checks, in minutes of elapsed session time. */
   readonly realityCheckMinutes: readonly number[];
+  /**
+   * The interval that repeats forever after the last fixed check. Required:
+   * an array alone cannot express "then hourly", and a client reading only the
+   * array would stop checking after the last entry.
+   */
+  readonly realityCheckRecurrenceMinutes: number;
   /** Must be true. A skip control that shortens the cycle is a slam stop. */
   readonly skipShortensPresentationOnly: true;
+  /**
+   * Autoplay mode. `'none'` is the only value this specification defines, and
+   * it is a value rather than a prose rule because prose is what shipped a
+   * self-contradiction: a ban on autoplay-through-losses followed by a licence
+   * for a count-bounded autoplay with no loss limit. A conforming autoplay
+   * needs a player-set loss limit AND a single-win threshold AND stop-on-either
+   * AND a one-tap cancel; that is a feature, not a field. See
+   * docs/DESIGN.md §10.
+   */
+  readonly autoplay: 'none';
 }
+
+/**
+ * A digest of the live play policy, stamped into every round snapshot.
+ *
+ * The fingerprint exclusion above covers only one direction. Tightening a limit
+ * is safe to leave outside the fingerprint. LOOSENING one — raising
+ * `maxRoundsPerRollingHour`, cutting `minRoundCycleMs`, dropping a reality
+ * check — is the direction that costs the player, and a transcript can never
+ * evidence it: nothing in a settled round says how fast the operator let
+ * somebody bet. docs/MATH.md §10.1 argues that the number of rounds is the only
+ * lever on expected loss at all, and that speed of play therefore belongs
+ * beside the RTP; if it belongs beside the RTP it should leave a trace like the
+ * RTP does.
+ *
+ * So the policy is digested into `RoundSnapshot.playPolicyDigest`. It touches
+ * no commitment and invalidates no open liability, and a round settled under a
+ * loosened policy is nonetheless distinguishable from one settled under the
+ * published one. It is evidence, not enforcement: pacing enforcement is a
+ * licence condition and no hash substitutes for it. What the digest removes is
+ * the ability to loosen silently.
+ */
+export function permutationPlayPolicyDigest(policy: PermutationPlayPolicy): string;
 
 export interface PermutationGameDefinition {
   readonly apiVersion: typeof ENGINE_API_VERSION;
@@ -239,18 +281,42 @@ AETHER ORDER supplies two definitions, `classic` (`n = 5`) and `seven`
 
 **Cost of the behavioural fingerprint.** Reproduce with `node tools/bench.mjs`,
 which prints the machine it ran on so the figures are falsifiable rather than
-folklore. On an Apple M3 (8 cores, 16 GB, macOS, Node 25.8.2):
+folklore. The table below is the **median of 5** samples from
+`node tools/bench.mjs --repeat=5` on an Apple M3 (8 cores, 16 GB, macOS,
+Node 25.8.2), with the observed run-to-run range beside it:
 
-| Measurement | Per operation |
-| --- | --- |
-| Catalogue digest, cold, `n = 5` (35,400 predicate evaluations) | 0.98 ms |
-| Catalogue digest, cold, `n = 7` (27.6M predicate evaluations) | 214 ms |
-| Transcript build, `n = 7`, warm | 59 µs |
-| Transcript verify, `n = 7`, warm | 60 µs |
-| Ticket settle, `n = 7`, three lines, warm | 85 µs |
+| Measurement | Median | Range over 5 runs |
+| --- | --- | --- |
+| Catalogue digest, cold, `n = 5` (35,400 predicate evaluations) | 1.0 ms | 0.89 – 1.2 ms |
+| Catalogue digest, cold, `n = 7` (27.6M predicate evaluations) | 280 ms | 222 – 303 ms |
+| Transcript build, `n = 5`, warm | 46 µs | 38 – 48 µs |
+| Transcript verify, `n = 5`, warm | 47 µs | 39 – 52 µs |
+| Ticket settle, `n = 5`, three lines, warm | 8.1 µs | 7.2 – 8.6 µs |
+| Transcript build, `n = 7`, warm | 59 µs | 58 – 66 µs |
+| Transcript verify, `n = 7`, warm | 63 µs | 56 – 79 µs |
+| Ticket settle, `n = 7`, three lines, warm | 8.9 µs | 7.9 – 9.5 µs |
 
-Expect a factor of two or three either way on other hardware. The conclusion is
-insensitive to that: the digest is paid once per process at adapter
+**Round 2 published this table with ticket settle at 85 µs.** It measures about
+9 µs on the exact machine the document named — a factor of ten, on the one
+number in this repository explicitly offered as falsifiable, and the one number
+with no test behind it. CI ran the benchmark and labelled it *informational*.
+
+That is fixed in both directions. The figures above come from a real run and
+carry their spread rather than a single sample dressed as a constant, and
+`tests/bench.test.mjs` now asserts **bands**, on whatever hardware runs it:
+
+| Band | Value | Headroom on the reference machine |
+| --- | --- | --- |
+| Any warm per-round operation | < 2 ms | ~30× |
+| Cold catalogue digest, `n = 5` | < 200 ms | ~190× |
+| Cold catalogue digest, `n = 7` | < 20,000 ms | ~70× |
+| Cold digest ÷ ticket settle | > 100 | ~31,000 |
+
+The bands are deliberately loose because a shared CI runner is not a laptop and
+a flaky performance assertion is how an unasserted benchmark gets rationalised
+in the first place. What they catch is a regression of *kind* — a per-round path
+that started touching the catalogue digest — which is exactly the claim the
+table exists to support: the digest is paid once per process at adapter
 construction, and nothing on a round path touches it.
 
 ---
@@ -769,6 +835,12 @@ Phase invariants, enforced on construction and on parse: a `TICKETED` or
 transcript. A half-written snapshot is rejected rather than restored, because a
 restored round missing its transcript is a round that cannot be verified.
 
+Every snapshot also carries **`playPolicyDigest`**, the digest of the pacing and
+session policy that was live when the round ran (§4). It is required on parse
+and fails closed: a snapshot without one is rejected rather than defaulted,
+because stamping the *current* policy onto a snapshot that never carried one
+would manufacture exactly the evidence the field exists to provide.
+
 ### 7.10 Verification
 
 A verifier holding `(serverSeed, transcript)` and the adapter must:
@@ -913,7 +985,10 @@ export const PERMUTATION_LIMITS = Object.freeze({
 | `serializeTranscript` / `deserializeTranscript` and size bounds | implemented | `tools/lib/derive.mjs` |
 | Round snapshots: build, serialise, parse, revive money fields | implemented | `tools/lib/derive.mjs` |
 | Celebration gate and best-possible-outcome figure | implemented | `tools/lib/presentation.mjs` |
-| Reproducible cost measurements for §4 | implemented | `tools/bench.mjs` |
+| Play-policy digest stamped into every round snapshot | implemented | `tools/lib/derive.mjs` |
+| Line resolution track: `decisiveLock`, `resolutionTrack` | implemented | `tools/lib/resolution.mjs` |
+| Per-pass frame budget behind docs/DESIGN.md §7.1 | implemented | `tools/lib/framebudget.mjs` |
+| Reproducible cost measurements for §4, with asserted bands | implemented | `tools/bench.mjs` |
 | `definePermutationGame` validating factory | **specified only** (the reference freezes literals in `model.mjs` and validates them through `assertAdapterConforms`) | — |
 | Operator key custody, rotation and publication | **out of scope** — operator responsibility, §11 | — |
 | Round-cycle floor and rolling ceiling enforcement | **specified only** — RGS/session state, which this repository has none of | — |

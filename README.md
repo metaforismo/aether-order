@@ -32,6 +32,14 @@ receipt* core, plus the packaged conformance runner, with frozen wire-format
 fixtures and a test suite that asserts the published paytable against the
 enumeration on every commit.
 
+Three of the player-facing rules are code rather than prose, because a rule with
+no implementation is a rule that can be contradicted by the paragraph beneath
+it: the celebration gate (`tools/lib/presentation.mjs`), the line-resolution
+track that keeps a dead bet from being kept alive to look close
+(`tools/lib/resolution.mjs`), and the renderer's frame budget
+(`tools/lib/framebudget.mjs`). All three are asserted against the documents that
+quote them.
+
 **What is specified but not implemented here:** the validating
 `definePermutationGame` factory, and the round-cycle floor and rolling-hour
 ceiling — both of which need session state this repository does not have.
@@ -57,9 +65,13 @@ integration.
    time, bottom to top, over about two and a half seconds. This is choreography
    playing back the result — it is not the draw.
 5. **Each line resolves at the lock that decides it**, not at the end. FIRST is
-   settled the moment the first sphere locks; PODIUM at the third; LAST at the
-   top. A line that can no longer win says so immediately instead of being kept
-   alive to look close.
+   settled the moment the first sphere locks; PODIUM by the third; LAST the
+   moment your colour lands somewhere else — and **never later than the
+   second-to-last sphere**, because once one sphere is left there is only one
+   slot it can go in. A line that can no longer win says so immediately instead
+   of being kept alive to look close. The final fall is a finish, not a reveal:
+   by then the round is already decided, and we show it that way rather than
+   pretending otherwise.
 6. **The result is reported.** If the round returned more than it cost, it is
    celebrated. If it returned less, it says so plainly — *"returned 1.92 of
    12.00"* — with no win sound and no balance counting upward. A losing round is
@@ -69,10 +81,10 @@ integration.
    shows a green *verified locally* chip. One tap shows the full transcript and
    your signed receipt.
 
-Total: about four seconds, and at least 2.5 seconds before the next bet can be
-placed — a floor we enforce rather than a pace we optimise. There is a skip
-button; it shortens the animation, changes nothing about the outcome, and does
-not let you bet any faster.
+Total: 3.6 to 4.8 seconds depending on variant and result, and at least 2.5
+seconds before the next bet can be placed — a floor we enforce rather than a
+pace we optimise. There is a skip button; it shortens the animation, changes
+nothing about the outcome, and does not let you bet any faster.
 
 ## The bets
 
@@ -163,14 +175,16 @@ npm test               # asserts the published paytable in docs/MATH.md matches
 
 `npm run enumerate` walks all 120 (and 5,040) permutations, evaluates all 5,769
 legal bet instances against every one of them, and prints each bet's exact
-probability, multiplier and RTP as reduced fractions — plus the shuffle
-bijection proof, the sampler uniformity proof, the cap-headroom proof, the
-zero-rounding proof, a commit-reveal round trip, a signed-receipt round trip,
-proof that the ticket strip's headline figure is a real maximum, proof that no
-losing round can be celebrated, and all twelve adapter conformance checks. Add
-`--monte-carlo=200000` for a sanity cross-check; it never sets a published
-number. `npm run bench` reproduces the cost figures in `docs/ENGINE.md` §4 on
-your own hardware.
+probability, multiplier, RTP and median rounds-to-first-hit as reduced fractions
+and exact integers — plus the shuffle bijection proof, the sampler uniformity
+proof, the cap-headroom proof, the zero-rounding proof, a commit-reveal round
+trip, a signed-receipt round trip, proof that the ticket strip's headline figure
+is a real maximum, proof that no losing round can be celebrated, proof that no
+bet is ever left undecided past the second-to-last sphere, and all twelve
+adapter conformance checks. Add `--monte-carlo=200000` for a sanity
+cross-check; it never sets a published number. `npm run bench` reproduces the
+cost figures in `docs/ENGINE.md` §4 on your own hardware and fails if any of
+them leaves its published band.
 
 ## Documentation
 
@@ -194,17 +208,22 @@ The gate is one comparison, implemented once, in
 enforced server-side; maximum 900 rounds per rolling hour. The skip button
 shortens the animation and never the cycle — it is not a slam stop.
 
-No double-up or gamble feature. No autoplay through losses. No jackpot, loyalty
-multiplier or mission with a wagering requirement — all of them would break the
-uniform 96%. No offer, bonus or prompt triggered by a loss or a losing streak.
-No streak counters or "hot colour" displays. No manufactured near-misses — a
-losing round has no dramatic beats at all, enforced at the render layer, and
-lines that can no longer win say so immediately rather than being kept alive to
-look close. No skill or prediction framing in any copy. Every money decision
-happens before commit, with no countdown that can expire into a bet, so a slow
-connection never costs value. Session time and net position are always visible;
-limits and the verifier are two taps away. The full rules are in
-[`docs/DESIGN.md`](docs/DESIGN.md) §10.
+**No autoplay.** Not a bounded one, not a stop-on-win one — none. The published
+play policy carries `autoplay: "none"` as a value the tests assert, because a
+sentence about autoplay is exactly what the previous draft got wrong twice in
+one paragraph. Its only function is unattended wagering, and one-tap rebet
+against a 2.5-second floor already does everything else it is sold as.
+
+No double-up or gamble feature. No jackpot, loyalty multiplier or mission with a
+wagering requirement — all of them would break the uniform 96%. No offer, bonus
+or prompt triggered by a loss or a losing streak. No streak counters or "hot
+colour" displays. No manufactured near-misses — a losing round has no dramatic
+beats at all, enforced at the render layer, and lines that can no longer win say
+so immediately rather than being kept alive to look close. No skill or
+prediction framing in any copy. Every money decision happens before commit, with
+no countdown that can expire into a bet, so a slow connection never costs value.
+Session time and net position are always visible; limits and the verifier are
+two taps away. The full rules are in [`docs/DESIGN.md`](docs/DESIGN.md) §10.
 
 ---
 

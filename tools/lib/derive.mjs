@@ -37,6 +37,8 @@ import {
   IDEMPOTENCY_DOMAIN,
   LIMITS,
   MODULE_VERSION,
+  PLAY_POLICY,
+  PLAY_POLICY_DOMAIN,
   RECEIPT_DOMAIN,
   RECEIPT_SCHEMA,
   ROUND_SNAPSHOT_SCHEMA,
@@ -1190,10 +1192,46 @@ const SNAPSHOT_PHASES = Object.freeze(['COMMITTED', 'TICKETED', 'SETTLED']);
  * every phase carries exactly the fields that phase has produced, so a
  * half-written snapshot cannot be mistaken for a complete round.
  */
-export function makeRoundSnapshot({ phase, seedContext, seedCommitment: commitmentHex, transcript, ticket, settlement, receipt }) {
+/**
+ * The digest of the speed-of-play policy that was live when a round ran.
+ *
+ * Pacing is deliberately outside the adapter fingerprint (docs/ENGINE.md §4):
+ * tightening a limit must not invalidate an open liability. But the asymmetry
+ * cuts the other way too — *loosening* a limit is the change that costs the
+ * player, and without this digest it would leave no per-round trace at all,
+ * because a transcript cannot evidence how fast the operator let someone bet.
+ *
+ * So the policy is digested into every round snapshot: it does not touch the
+ * commitment, it cannot invalidate anything already open, and a round settled
+ * under a loosened policy is nonetheless distinguishable from one settled under
+ * the published one. It is evidence, not enforcement; enforcement is a licence
+ * condition and no hash substitutes for it.
+ */
+export function playPolicyDigest(policy = PLAY_POLICY) {
+  if (typeof policy !== 'object' || policy === null) {
+    fail('INVALID_TRANSCRIPT', 'Play policy must be an object', '$.playPolicy');
+  }
+  return sha256Hex(
+    encodeFields([
+      PLAY_POLICY_DOMAIN,
+      MODULE_VERSION,
+      GAME_ID,
+      String(policy.minRoundCycleMs),
+      String(policy.maxRoundsPerRollingHour),
+      Array.prototype.slice.call(policy.realityCheckMinutes ?? []).join(','),
+      String(policy.realityCheckRecurrenceMinutes),
+      String(policy.skipShortensPresentationOnly === true),
+      String(policy.autoplay),
+    ]),
+  );
+}
+
+export function makeRoundSnapshot({ phase, seedContext, seedCommitment: commitmentHex, transcript, ticket, settlement, receipt, playPolicyDigest: policyDigestHex }) {
   if (!SNAPSHOT_PHASES.includes(phase)) fail('INVALID_TRANSCRIPT', 'Unknown round phase', '$.phase');
   const ctx = assertSeedContext(seedContext);
   assertCommitmentHex(commitmentHex, '$.seedCommitment');
+  const policyDigest = policyDigestHex ?? playPolicyDigest();
+  assertCommitmentHex(policyDigest, '$.playPolicyDigest');
   if (phase !== 'COMMITTED' && (typeof ticket !== 'object' || ticket === null)) {
     fail('INVALID_TICKET', 'A TICKETED or SETTLED snapshot must carry its ticket', '$.ticket');
   }
@@ -1209,6 +1247,8 @@ export function makeRoundSnapshot({ phase, seedContext, seedCommitment: commitme
     roundId: ctx.roundId,
     nonce: ctx.nonce,
     seedCommitment: commitmentHex,
+    /** Which pacing policy was live. Evidence of loosening; see above. */
+    playPolicyDigest: policyDigest,
     transcript: transcript ?? null,
     ticket: ticket ?? null,
     settlement: settlement ?? null,
@@ -1241,10 +1281,18 @@ export function deserializeRoundSnapshot(input) {
   }
   if (value.schema !== ROUND_SNAPSHOT_SCHEMA) fail('UNSUPPORTED_VERSION', 'Unknown snapshot schema', '$.schema');
   if (value.moduleVersion !== MODULE_VERSION) fail('UNSUPPORTED_VERSION', 'Unknown module version', '$.moduleVersion');
+  // Fail closed rather than defaulting. A snapshot with no policy digest is a
+  // snapshot that cannot evidence the pacing it ran under, and silently
+  // stamping the *current* policy onto it would manufacture exactly the
+  // evidence the field exists to provide.
+  if (typeof value.playPolicyDigest !== 'string') {
+    fail('INVALID_TRANSCRIPT', 'Snapshot must carry the play-policy digest it ran under', '$.playPolicyDigest');
+  }
   return makeRoundSnapshot({
     phase: value.phase,
     seedContext: { variantId: value.variantId, roundId: value.roundId, nonce: value.nonce },
     seedCommitment: value.seedCommitment,
+    playPolicyDigest: value.playPolicyDigest,
     transcript: value.transcript ?? undefined,
     ticket: reviveChips(value.ticket) ?? undefined,
     settlement: reviveChips(value.settlement) ?? undefined,

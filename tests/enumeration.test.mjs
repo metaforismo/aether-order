@@ -164,7 +164,10 @@ describe.each(VARIANT_IDS)('variant %s', (variantId) => {
       params: winner.params,
       stakeChips: LIMITS.maxLineStakeChips,
     }));
-    const bad = optimalityWitness(variant, winners, badLines, LIMITS.maxTicketStakeChips);
+    /** All lines hit: the co-satisfiability the maximum is taken at. */
+    const allWon = (lines) => ({ lines: lines.map(() => ({ won: true })) });
+
+    const bad = optimalityWitness(variant, winners, badLines, LIMITS.maxTicketStakeChips, allWon(badLines));
     expect(bad.optimal).toBe(false);
     expect(bad.noBetterUnchosen).toBe(false);
     expect(bad.matchesIndependentSelection).toBe(false);
@@ -176,7 +179,39 @@ describe.each(VARIANT_IDS)('variant %s', (variantId) => {
       params: winner.params,
       stakeChips: LIMITS.maxLineStakeChips,
     }));
-    expect(optimalityWitness(variant, winners, goodLines, LIMITS.maxTicketStakeChips).optimal).toBe(true);
+    const good = optimalityWitness(variant, winners, goodLines, LIMITS.maxTicketStakeChips, allWon(goodLines));
+    expect(good.optimal).toBe(true);
+    expect(good.coSatisfiable).toBe(true);
+  });
+
+  it('the optimality witness refuses a selection whose lines cannot all hit together', () => {
+    // The step round 2 left implicit. Greedy over ALL distinct claims could
+    // select mutually exclusive lines — two FULL ORDER claims, say — and the
+    // maximum over lines that cannot co-occur is strictly lower than the sum.
+    // The construction avoids it by selecting only among claims that win under
+    // one fixed outcome; the witness has to be able to say when it did not.
+    const winners = [
+      { code: 'full', params: { rank: 0 }, multiplier: variant.multipliers.full },
+      { code: 'full', params: { rank: 1 }, multiplier: variant.multipliers.full },
+      { code: 'full', params: { rank: 2 }, multiplier: variant.multipliers.full },
+      { code: 'full', params: { rank: 3 }, multiplier: variant.multipliers.full },
+    ];
+    const lines = winners.map((winner) => ({
+      code: winner.code,
+      params: winner.params,
+      stakeChips: LIMITS.maxLineStakeChips,
+    }));
+    // Exactly one of four distinct FULL ORDER claims can win on any outcome.
+    const realSettlement = { lines: lines.map((_, index) => ({ won: index === 0 })) };
+    const witness = optimalityWitness(variant, winners, lines, LIMITS.maxTicketStakeChips, realSettlement);
+    expect(witness.noBetterUnchosen).toBe(true);
+    expect(witness.matchesIndependentSelection).toBe(true);
+    expect(witness.budgetExhausted).toBe(true);
+    expect(witness.coSatisfiable).toBe(false);
+    expect(witness.optimal).toBe(false);
+
+    // And with no settlement supplied at all it declines to make the claim.
+    expect(optimalityWitness(variant, winners, lines, LIMITS.maxTicketStakeChips).coSatisfiable).toBe(false);
   });
 
   it('the optimality witness rejects a full line count at minimum stakes', () => {

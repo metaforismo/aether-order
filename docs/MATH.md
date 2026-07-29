@@ -358,14 +358,31 @@ document exists to avoid:
 | FORM | `1/5` = 20% | `1/7` ≈ 14.286% | `1/7 … 1/5` |
 | ORDER | `1/120 … 1/20` ≈ 0.833% … 5% | `1/5040 … 1/42` ≈ 0.0198% … 2.381% | `1/5040 … 1/20` |
 
-Expected rounds between hits on the two rarest chips, with the median in
-brackets (`ln 2 / ln(N/(N-1))`, an approximation given for player-facing honesty
-about what these chips actually feel like):
+Expected rounds between hits on the two rarest chips, with the **median** beside
+it — the honest figure for what a chip feels like, since the mean of a geometric
+distribution is dragged upward by its own tail:
 
 | Chip | CLASSIC | SEVEN |
 | --- | --- | --- |
-| PODIUM | 60 rounds (median ≈ 41) | 210 rounds (median ≈ 145) |
-| FULL ORDER | 120 rounds (median ≈ 83) | 5,040 rounds (median ≈ 3,494) |
+| PODIUM | mean 60 rounds, median 42 | mean 210 rounds, median 146 |
+| FULL ORDER | mean 120 rounds, median 83 | mean 5,040 rounds, median 3,494 |
+
+**These medians are exact, not rounded.** The median is defined as the smallest
+`R` with `P(at least one hit in R rounds) ≥ 1/2`, which is the smallest `R`
+satisfying
+
+```
+((N-1)/N)^R ≤ 1/2        ⟺        2 · (N-1)^R ≤ N^R
+```
+
+— one BigInt comparison per step, computed by `medianRoundsToFirstHit` in
+`tools/lib/analysis.mjs` and published per bet in `docs/paytable.json`. The
+earlier draft quoted `ln 2 / ln(N/(N-1))` under no consistent rounding rule:
+three figures were rounded to nearest and one was not, and two of the four came
+out *below* the true median, making a rare chip look less rare than it is. This
+document's stated standard is that a hit rate rounded in the house's favour is
+exactly the kind of small dishonesty it exists to avoid, so the approximation is
+gone rather than repaired.
 
 ---
 
@@ -410,12 +427,40 @@ settlement path:
 | CLASSIC | 4 lines (`full`, `podium`, `opening`, `slot`) at 50.00 each | 200.00 credits | 9,840.00 credits | 49.20× |
 | SEVEN | 4 lines (`full`, `podium`, `opening`, `slot`) at 50.00 each | 200.00 credits | 254,352.00 credits | 1,271.76× |
 
-Because the objective is linear in the stakes under a budget plus a per-line
-ceiling, and lines must be distinct, greedy-by-multiplier is optimal — any other
-selection improves by exchanging a chosen line for an unchosen one with a larger
-multiplier. These are therefore true maxima, and the enumerator asserts the
-optimality witness (the chosen multipliers are the largest available and the
-budget is fully spent) rather than merely reporting a legal ticket.
+**Why that is a maximum, in four steps rather than two.** The first two are the
+easy ones and were the only two the earlier draft stated; the last two are what
+make the argument close.
+
+1. **Linearity and exchange.** The objective is linear in the stakes under a
+   budget plus a per-line ceiling, and lines must be distinct, so
+   greedy-by-multiplier is optimal *among the claims considered*: any other
+   selection improves by exchanging a chosen line for an unchosen one with a
+   larger multiplier.
+2. **Nothing left to buy.** Every chosen line sits at the 50.00 per-line ceiling
+   and the 200.00 budget is exactly spent, so no reallocation improves it
+   either.
+3. **Co-satisfiability.** Greedy over *all* distinct claims could select
+   mutually exclusive lines — four FULL ORDER claims, say — and for such a set
+   the maximum over outcomes is strictly lower than the sum, because no single
+   permutation satisfies them all. The construction avoids this by fixing one
+   outcome `ω` first and selecting only among the claims that win under it, so
+   co-satisfiability holds *by construction*. `proveMaxRoundCredit` settles the
+   resulting ticket through the production settlement path and the witness
+   requires every line to have won; `tests/enumeration.test.mjs` feeds it four
+   mutually exclusive FULL ORDER lines and requires it to refuse them.
+4. **Fixing `ω` is without loss of generality.** The catalogue is symmetric
+   under relabelling of the colours — every family's instance set is closed
+   under relabelling and the alias structure (`first ≡ slot @ 1`,
+   `last ≡ slot @ n`) is too — so the best ticket for any settled order is the
+   relabelling of the best ticket for any other. Rather than assert that,
+   `proveMaxIsOutcomeInvariant` recomputes the entire maximum — winning claims,
+   behavioural dedup, greedy selection, production settlement — under other
+   outcomes and requires an identical credit: **exhaustively over all 120
+   outcomes in CLASSIC**, and over a fixed 24-outcome sample in SEVEN, where
+   each outcome costs a sweep of all 5,474 instances.
+
+The identity permutation is the `ω` the code fixes, for no better reason than
+that it is the easiest to read in a failure message.
 
 ### 8.1 The figure the player sees before committing
 

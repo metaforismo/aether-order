@@ -33,7 +33,11 @@ jobs:
       - name: Tests
         run: npm test
 
-      - name: Reference timings (informational; docs/ENGINE.md §4)
+      # Not informational. tools/bench.mjs exits non-zero when a published band
+      # in docs/ENGINE.md §4 is breached. Round 2 ran this step and asserted
+      # nothing, which is how the one figure offered as falsifiable became the
+      # one figure that did not reproduce.
+      - name: Reference timings, against the published bands (docs/ENGINE.md §4)
         run: npm run bench
 
   crosscheck:

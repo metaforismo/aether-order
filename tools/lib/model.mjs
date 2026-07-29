@@ -24,6 +24,7 @@ export const TICKET_DIGEST_DOMAIN = 'aether-order/ticket-digest-v1';
 export const SETTLEMENT_DIGEST_DOMAIN = 'aether-order/settlement-digest-v1';
 export const RECEIPT_DOMAIN = 'aether-order/receipt-v1';
 export const IDEMPOTENCY_DOMAIN = 'aether-order/idempotency-v1';
+export const PLAY_POLICY_DOMAIN = 'aether-order/play-policy-v1';
 
 /** Target theoretical return to player, exact: 24/25 = 96.000%. */
 export const TARGET_RTP = rational(24n, 25n);
@@ -64,22 +65,42 @@ export const LIMITS = Object.freeze({
 });
 
 /**
- * Speed-of-play policy. NOT part of the adapter fingerprint: pacing is a
- * client/RGS obligation and changing it must not invalidate an open liability.
- * It is published here so docs/DESIGN.md §10 can be machine-checked against the
- * shipped numbers instead of asserting them in prose.
+ * Speed-of-play and session policy. NOT part of the adapter fingerprint: pacing
+ * is a client/RGS obligation and *tightening* it must not invalidate an open
+ * liability. It is published here so docs/DESIGN.md §10 can be machine-checked
+ * against the shipped numbers instead of asserting them in prose, and it is
+ * digested into every round snapshot (`playPolicyDigest`) so that *loosening*
+ * it — the direction that matters for player protection — leaves a per-round
+ * trace. See docs/ENGINE.md §4 for why those two directions are treated
+ * differently.
  *
  * `minRoundCycleMs` is measured COMMIT to COMMIT and enforced server-side. SKIP
  * compresses the presentation only; it can never shorten the cycle. The rolling
  * ceiling is a hard stop, not a nudge: at the ceiling COMMIT is disabled until
  * the trailing 60-minute window frees a slot.
+ *
+ * `realityCheckMinutes` are the fixed early checks; `realityCheckRecurrenceMinutes`
+ * is the interval that repeats forever after the last of them. An array alone
+ * cannot express "then hourly", and a client reading only the array would stop
+ * checking after 60 minutes — which is precisely what the prose promised not to
+ * do.
+ *
+ * `autoplay` is `'none'`, and it is a value rather than a sentence because a
+ * sentence is what let round 2 ship a self-contradiction: a clause banning
+ * autoplay that continues through losses, followed by a clause permitting a
+ * count-bounded autoplay with no loss limit. See docs/DESIGN.md §10.
  */
 export const PLAY_POLICY = Object.freeze({
   minRoundCycleMs: 2500,
   maxRoundsPerRollingHour: 900,
   realityCheckMinutes: Object.freeze([30, 60]),
+  realityCheckRecurrenceMinutes: 60,
   skipShortensPresentationOnly: true,
+  autoplay: 'none',
 });
+
+/** The only legal value of `PLAY_POLICY.autoplay` in this specification. */
+export const AUTOPLAY_MODES = Object.freeze(['none']);
 
 /** Element identity is shared across variants; SEVEN appends two elements. */
 export const ELEMENTS = Object.freeze([

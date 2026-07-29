@@ -22,7 +22,7 @@ import { describe, expect, it } from 'vitest';
 
 import * as derive from '../tools/lib/derive.mjs';
 import * as conform from '../tools/lib/conform.mjs';
-import { ELEMENTS, PLAY_POLICY } from '../tools/lib/model.mjs';
+import { AUTOPLAY_MODES, ELEMENTS, PLAY_POLICY } from '../tools/lib/model.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (name) => readFileSync(join(ROOT, name), 'utf8');
@@ -107,15 +107,17 @@ describe('docs/DESIGN.md palette and contrast', () => {
     }
   });
 
-  it('names the true worst colour pair rather than the assumed one', () => {
+  it('quotes every close-pair ratio correctly, including the two inside CLASSIC', () => {
     const byId = Object.fromEntries(ELEMENTS.map((element) => [element.id, element.hex]));
-    const indigoViolet = contrast(byId.indigo, byId.violet);
-    const roseCoral = contrast(byId.rose, byId.coral);
-    expect(indigoViolet).toBeLessThan(roseCoral);
+    // Round 2 named INDIGO/VIOLET as the weakest pair in the set. It is fourth.
+    expect(contrast(byId.amber, byId.aqua).toFixed(2)).toBe('1.10');
+    expect(contrast(byId.coral, byId.violet).toFixed(2)).toBe('1.14');
+    expect(contrast(byId.indigo, byId.violet).toFixed(2)).toBe('1.24');
+    expect(contrast(byId.rose, byId.coral).toFixed(2)).toBe('1.34');
+    expect(DESIGN).toContain('AMBER↔AQUA at 1.10:1');
+    expect(DESIGN).toContain('CORAL↔VIOLET at 1.14:1');
     expect(DESIGN).toContain('INDIGO↔VIOLET at 1.24:1');
     expect(DESIGN).toContain('ROSE↔CORAL at 1.34:1');
-    expect(indigoViolet.toFixed(2)).toBe('1.24');
-    expect(roseCoral.toFixed(2)).toBe('1.34');
   });
 });
 
@@ -150,6 +152,17 @@ describe('the speed-of-play policy is quoted consistently everywhere', () => {
     expect(PLAY_POLICY.skipShortensPresentationOnly).toBe(true);
   });
 
+  it('the reality-check recurrence is representable, not merely promised in prose', () => {
+    // docs/DESIGN.md §10 says "then every 60 minutes". An array of fixed checks
+    // cannot express that, and a client reading only the array would stop at 60.
+    expect(PLAY_POLICY.realityCheckMinutes).toEqual([30, 60]);
+    expect(PLAY_POLICY.realityCheckRecurrenceMinutes).toBe(60);
+    const published = JSON.parse(read('docs/paytable.json')).playPolicy;
+    expect(published.realityCheckRecurrenceMinutes).toBe(PLAY_POLICY.realityCheckRecurrenceMinutes);
+    expect(DESIGN).toContain('realityCheckRecurrenceMinutes');
+    expect(ENGINE).toContain('realityCheckRecurrenceMinutes');
+  });
+
   it('docs/DESIGN.md quotes both numbers', () => {
     expect(DESIGN).toContain(`${PLAY_POLICY.minRoundCycleMs.toLocaleString('en-US')} ms`);
     expect(DESIGN).toContain(`${PLAY_POLICY.maxRoundsPerRollingHour} rounds per rolling 60 minutes`);
@@ -174,6 +187,83 @@ describe('the speed-of-play policy is quoted consistently everywhere', () => {
     expect(published.minRoundCycleMs).toBe(PLAY_POLICY.minRoundCycleMs);
     expect(published.maxRoundsPerRollingHour).toBe(PLAY_POLICY.maxRoundsPerRollingHour);
     expect(published.skipShortensPresentationOnly).toBe(true);
+  });
+});
+
+describe('autoplay is a published value, not a paragraph', () => {
+  it('the policy says none, in the model and in the published paytable', () => {
+    expect(PLAY_POLICY.autoplay).toBe('none');
+    expect(AUTOPLAY_MODES).toEqual(['none']);
+    expect(JSON.parse(read('docs/paytable.json')).playPolicy.autoplay).toBe('none');
+  });
+
+  it('the two documents agree that the feature does not exist', () => {
+    // The exact regression: DESIGN.md permitted a count-bounded autoplay in the
+    // sentence after banning autoplay through losses, while README.md stated an
+    // outright ban. Two published documents, opposite answers, one paragraph.
+    expect(DESIGN).toContain('**No autoplay. At all.**');
+    expect(README).toContain('**No autoplay.**');
+    expect(DESIGN).not.toMatch(/count-bounded, stops on any single win/u);
+    expect(DESIGN).not.toMatch(/If autoplay ships at all/u);
+  });
+
+  it('states what a conforming autoplay would have required, rather than half of it', () => {
+    // A stop-on-big-win rule without a loss limit is not a partial control; it
+    // is the wrong control. If the ban is ever lifted, this is the checklist.
+    expect(DESIGN).toMatch(/loss limit/u);
+    expect(DESIGN).toMatch(/single-win\s+threshold/u);
+    expect(ENGINE).toContain("readonly autoplay: 'none';");
+  });
+});
+
+describe('the play policy leaves a per-round trace when it is loosened', () => {
+  it('a snapshot carries the digest of the policy it ran under', () => {
+    const digest = derive.playPolicyDigest();
+    expect(digest).toMatch(/^[0-9a-f]{64}$/u);
+    const snapshot = derive.makeRoundSnapshot({
+      phase: 'COMMITTED',
+      seedContext: { variantId: 'classic', roundId: 'policy-trace', nonce: 0 },
+      seedCommitment: derive.seedCommitment('11'.repeat(32), {
+        variantId: 'classic',
+        roundId: 'policy-trace',
+        nonce: 0,
+      }),
+    });
+    expect(snapshot.playPolicyDigest).toBe(digest);
+  });
+
+  it('loosening any published limit changes the digest', () => {
+    const base = derive.playPolicyDigest();
+    const looser = [
+      { ...PLAY_POLICY, minRoundCycleMs: 1000 },
+      { ...PLAY_POLICY, maxRoundsPerRollingHour: 3600 },
+      { ...PLAY_POLICY, realityCheckMinutes: [30] },
+      { ...PLAY_POLICY, realityCheckRecurrenceMinutes: 240 },
+      { ...PLAY_POLICY, autoplay: 'bounded' },
+    ];
+    for (const policy of looser) expect(derive.playPolicyDigest(policy)).not.toBe(base);
+  });
+
+  it('a snapshot with no policy digest is rejected rather than defaulted', () => {
+    const snapshot = derive.makeRoundSnapshot({
+      phase: 'COMMITTED',
+      seedContext: { variantId: 'classic', roundId: 'policy-trace', nonce: 0 },
+      seedCommitment: derive.seedCommitment('11'.repeat(32), {
+        variantId: 'classic',
+        roundId: 'policy-trace',
+        nonce: 0,
+      }),
+    });
+    const stripped = JSON.parse(derive.serializeRoundSnapshot(snapshot));
+    delete stripped.playPolicyDigest;
+    expect(() => derive.deserializeRoundSnapshot(stripped)).toThrow(/play-policy digest/u);
+  });
+
+  it('docs/ENGINE.md justifies the direction it used to ignore', () => {
+    const section = ENGINE.slice(ENGINE.indexOf('export interface PermutationPlayPolicy'));
+    expect(section).toContain('LOOSENING');
+    expect(section).toContain('a transcript can never');
+    expect(section).toContain('playPolicyDigest');
   });
 });
 
@@ -291,6 +381,7 @@ const SURFACE = [
   ['deserializeTranscript', derive.deserializeTranscript],
   ['serializeRoundSnapshot', derive.serializeRoundSnapshot],
   ['deserializeRoundSnapshot', derive.deserializeRoundSnapshot],
+  ['permutationPlayPolicyDigest', derive.playPolicyDigest],
   ['assertPermutationAdapterConforms', conform.assertAdapterConforms],
 ];
 

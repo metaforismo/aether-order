@@ -27,6 +27,7 @@ import { createHash } from 'node:crypto';
 
 import {
   enumerateVariant,
+  medianRoundsToFirstHit,
   proveCapHeadroom,
   proveCoverTickets,
   proveMaxRoundCredit,
@@ -60,14 +61,16 @@ import {
   makeReceipt,
   makeTranscript,
   openTicket,
+  playPolicyDigest,
   settleTicket,
   signReceipt,
   verifyReceipt,
   verifyTranscript,
   ZERO_COMMITMENT,
 } from './lib/derive.mjs';
-import { permutationRank, positionsOf } from './lib/permutations.mjs';
+import { allPermutations, permutationRank, positionsOf } from './lib/permutations.mjs';
 import { rational } from './lib/rational.mjs';
+import { completionsAfterPenultimateLock, resolutionTable } from './lib/resolution.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -107,6 +110,36 @@ function check(label, condition, detail = '') {
 
 /** Deterministic 32-byte seed from a label. Fixtures must be reproducible. */
 const seedFrom = (label) => createHash('sha256').update(`aether-order/fixture/${label}`).digest('hex');
+
+/**
+ * The outcome sample the resolution sweep uses when n > 5.
+ *
+ * The resolution track's cost is `(n - k)!` at the lock that decides a line, so
+ * SEVEN's 5,474 instances against all 5,040 outcomes is not an enumeration this
+ * repository can afford to run on every push. A fixed, reproducible spread of
+ * 40 outcomes is; the universal bound it is checking against is proved
+ * structurally rather than by sampling, and the extremes are attained.
+ */
+const RESOLUTION_SAMPLE_SIZE = 40;
+const resolutionRankCache = new Map();
+
+function resolutionSampleRanks(n) {
+  if (resolutionRankCache.has(n)) return resolutionRankCache.get(n);
+  const bound = factorialNumber(n);
+  const ranks = new Set();
+  let state = 12345;
+  while (ranks.size < RESOLUTION_SAMPLE_SIZE) {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    ranks.add(state % bound);
+  }
+  resolutionRankCache.set(n, ranks);
+  return ranks;
+}
+
+function resolutionSamplePermutations(n) {
+  const all = allPermutations(n);
+  return [...resolutionSampleRanks(n)].map((rank) => all[rank]);
+}
 
 /** xorshift32 — deterministic ticket generator for the invariance sweep. */
 function xorshift32(state) {
@@ -252,8 +285,18 @@ const machine = {
     minRoundCycleMs: PLAY_POLICY.minRoundCycleMs,
     maxRoundsPerRollingHour: PLAY_POLICY.maxRoundsPerRollingHour,
     realityCheckMinutes: [...PLAY_POLICY.realityCheckMinutes],
+    /**
+     * The interval that repeats after the last fixed check, forever. Without
+     * it a client reading `realityCheckMinutes` alone would stop checking at
+     * 60 minutes while the specification promised hourly thereafter.
+     */
+    realityCheckRecurrenceMinutes: PLAY_POLICY.realityCheckRecurrenceMinutes,
     skipShortensPresentationOnly: PLAY_POLICY.skipShortensPresentationOnly,
+    /** Not shipped. See docs/DESIGN.md section 10. */
+    autoplay: PLAY_POLICY.autoplay,
   },
+  /** Stamped into every round snapshot so loosening the policy leaves a trace. */
+  playPolicyDigest: playPolicyDigest(),
   variants: {},
 };
 const markdown = [];
@@ -360,14 +403,26 @@ for (const variantId of variantIds) {
   /* --- Volatility ---------------------------------------------- */
   say('[4] Volatility — exact variance of the return per unit staked');
   say();
-  const vHead = ['code', 'tier', 'probability', 'variance (exact)', 'sd (approx)'];
-  const vWidths = [10, 6, 14, 22, 12];
+  const vHead = ['code', 'tier', 'probability', 'variance (exact)', 'sd (approx)', 'median rounds'];
+  const vWidths = [10, 6, 14, 22, 12, 14];
   const vRow = (cells) => cells.map((cell, i) => String(cell).padEnd(vWidths[i])).join('');
   say(`  ${vRow(vHead)}`);
   say(`  ${vWidths.map((w) => '-'.repeat(w - 1)).join(' ')}`);
   for (const row of analysis.rows) {
-    say(`  ${vRow([row.code, row.tier, render.fraction(row.probability), render.fraction(row.variance), render.sd(row.variance)])}`);
+    say(
+      `  ${vRow([
+        row.code,
+        row.tier,
+        render.fraction(row.probability),
+        render.fraction(row.variance),
+        render.sd(row.variance),
+        medianRoundsToFirstHit(row.probability).toLocaleString('en-US'),
+      ])}`,
+    );
   }
+  say('      "median rounds" is the smallest R with P(at least one hit in R) >= 1/2,');
+  say('      computed exactly as the least R satisfying 2*(N-1)^R <= N^R. No');
+  say('      logarithm, no rounding rule, and so no direction to round in.');
   say();
 
   /* --- Proof 4: cap headroom ----------------------------------- */
@@ -564,9 +619,47 @@ for (const variantId of variantIds) {
   }
   say();
 
+  /* --- Proof 13: the resolution track has no near-miss ---------- */
+  say('[14] Resolution track — no line is kept alive past the lock that decides it');
+  check(
+    'after n-1 locks exactly one completion of the tube remains',
+    completionsAfterPenultimateLock(analysis.n) === 1,
+    `so every line is decided by lock ${analysis.n - 1}; the final fall carries no information`,
+  );
+  const resolution =
+    analysis.n <= 5
+      ? resolutionTable(variantId, { permutations: allPermutations(analysis.n) })
+      : resolutionTable(variantId, {
+          permutations: resolutionSamplePermutations(analysis.n),
+          instanceFilter: (family, instance) =>
+            family.code !== 'full' || resolutionSampleRanks(analysis.n).has(instance.params.rank),
+        });
+  say(
+    `      ${analysis.n <= 5 ? 'exhaustive over every instance x every outcome' : `sampled: ${resolution.rows.reduce((sum, row) => sum + row.pairs, 0).toLocaleString('en-US')} (instance, outcome) pairs`}`,
+  );
+  const rHead = ['chip', 'earliest lock', 'latest lock'];
+  const rWidths = [12, 16, 14];
+  const rRow = (cells) => cells.map((cell, i) => String(cell).padEnd(rWidths[i])).join('');
+  say(`  ${rRow(rHead)}`);
+  say(`  ${rWidths.map((w) => '-'.repeat(w - 1)).join(' ')}`);
+  for (const row of resolution.rows) say(`  ${rRow([row.code, row.earliestLock, row.latestLock])}`);
+  check(
+    'no chip resolves later than lock n-1',
+    resolution.rows.every((row) => row.latestLock <= analysis.n - 1),
+    `worst chip resolves at lock ${Math.max(...resolution.rows.map((row) => row.latestLock))} of ${analysis.n}`,
+  );
+  check(
+    'no chip is decided before the first lock',
+    resolution.rows.every((row) => row.earliestLock >= 1),
+    'a claim decided at lock 0 would be true (or false) of every permutation',
+  );
+  say('      docs/DESIGN.md section 2.1 publishes this table; tests/resolution.test.mjs');
+  say('      fails the build if the document and this enumeration disagree.');
+  say();
+
   /* --- Monte Carlo cross-check --------------------------------- */
   if (monteCarloRounds > 0) {
-    say(`[14] Monte Carlo cross-check — ${monteCarloRounds.toLocaleString('en-US')} derived rounds (sanity only)`);
+    say(`[15] Monte Carlo cross-check — ${monteCarloRounds.toLocaleString('en-US')} derived rounds (sanity only)`);
     const results = monteCarlo(variantId, monteCarloRounds);
     for (const result of results) {
       const row = analysis.rows.find((candidate) => candidate.code === result.code);
@@ -616,7 +709,11 @@ for (const variantId of variantIds) {
       decimal: `${render.multiplierDecimal(row.multiplier)}x`,
       rtp: render.fraction(row.expectedValue),
       variance: render.fraction(row.variance),
+      /** Exact: least R with P(at least one hit in R rounds) >= 1/2. */
+      medianRoundsToFirstHit: medianRoundsToFirstHit(row.probability),
     })),
+    /** The lock after which no line on any ticket can still be undecided. */
+    latestResolutionLock: analysis.n - 1,
   };
 
   markdown.push(`<!-- paytable:${variantId}:start -->`);

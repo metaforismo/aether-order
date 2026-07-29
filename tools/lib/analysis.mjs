@@ -398,15 +398,15 @@ export function proveCoverTickets(analysis) {
  * pay a player, and the returned `optimal` flag records that the selected
  * multipliers really are the largest available.
  */
-export function proveMaxRoundCredit(variantId) {
-  const variant = getVariant(variantId);
+/**
+ * The distinct claims that win under one fixed outcome, deduplicated
+ * behaviourally: `first {c:0}` and `slot {c:0,k:0}` are the same claim and
+ * cannot both sit on a ticket.
+ */
+function winningClaimsUnder(variant, perm) {
   const { n } = variant;
-  const perm = Array.from({ length: n }, (_, i) => i); // identity: the easiest to reason about
   const ctx = Object.freeze({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n });
   const permutationCount = factorial(n);
-
-  // Every winning claim, deduplicated behaviourally: `first {c:0}` and
-  // `slot {c:0,k:0}` are the same claim and cannot both sit on a ticket.
   const winners = [];
   const seenClaims = new Set();
   for (const family of BET_FAMILIES) {
@@ -418,8 +418,12 @@ export function proveMaxRoundCredit(variantId) {
       winners.push({ code: family.code, params: instance.params, multiplier: variant.multipliers[family.code] });
     }
   }
-  const ranked = [...winners].sort((a, b) => cmp(b.multiplier, a.multiplier));
+  return winners;
+}
 
+/** Greedy-by-multiplier under the budget and the per-line ceiling. */
+function greedyTicket(winners) {
+  const ranked = [...winners].sort((a, b) => cmp(b.multiplier, a.multiplier));
   const lines = [];
   let budget = LIMITS.maxTicketStakeChips;
   for (const winner of ranked) {
@@ -428,11 +432,27 @@ export function proveMaxRoundCredit(variantId) {
     lines.push({ code: winner.code, params: winner.params, stakeChips: stake });
     budget -= stake;
   }
+  return lines;
+}
+
+export function proveMaxRoundCredit(variantId, { symmetryOutcomes } = {}) {
+  const variant = getVariant(variantId);
+  const { n } = variant;
+  // WLOG the identity. Fixing one outcome is licensed by the relabelling
+  // symmetry of the catalogue, and that licence is checked below rather than
+  // assumed: `outcomeInvariance` recomputes the whole maximum under other
+  // outcomes and requires the same credit.
+  const perm = Array.from({ length: n }, (_, i) => i);
+
+  const winners = winningClaimsUnder(variant, perm);
+  const lines = greedyTicket(winners);
 
   const settlement = settleTicket({ permutation: perm, variantId }, { lines });
   const roundMultiple = rational(settlement.creditedChips, settlement.totalStakeChips);
 
-  const witness = optimalityWitness(variant, winners, lines, settlement.totalStakeChips);
+  const witness = optimalityWitness(variant, winners, lines, settlement.totalStakeChips, settlement);
+
+  const outcomeInvariance = proveMaxIsOutcomeInvariant(variant, settlement.creditedChips, symmetryOutcomes);
 
   return Object.freeze({
     lines: lines.length,
@@ -443,9 +463,63 @@ export function proveMaxRoundCredit(variantId) {
     roundMultiple,
     capped: settlement.capped,
     allLinesWon: settlement.lines.every((line) => line.won),
-    optimal: witness.optimal,
+    optimal: witness.optimal && outcomeInvariance.invariant,
     witness,
+    outcomeInvariance,
   });
+}
+
+/**
+ * The step §8 used to leave implicit: fixing `ω` to the identity is without
+ * loss of generality.
+ *
+ * The catalogue is symmetric under relabelling of the colours, so the best
+ * ticket for any settled order is the relabelling of the best ticket for any
+ * other. Rather than assert that, recompute the whole maximum — winning claims,
+ * behavioural dedup, greedy selection, production settlement — under other
+ * outcomes and require an identical credit.
+ *
+ * CLASSIC gets every one of its 120 outcomes. SEVEN gets a deterministic
+ * sample, because each outcome costs a sweep of all 5,474 instances and 5,040
+ * of those would duplicate the catalogue digest for no additional information.
+ */
+export function proveMaxIsOutcomeInvariant(variant, expectedCreditChips, outcomes) {
+  const { n } = variant;
+  const permutations = allPermutations(n);
+  const chosen =
+    outcomes ??
+    (n <= 5
+      ? permutations
+      : deterministicSample(permutations, 24));
+
+  let invariant = true;
+  let firstDeviation = null;
+  for (const perm of chosen) {
+    const winners = winningClaimsUnder(variant, perm);
+    const lines = greedyTicket(winners);
+    const settlement = settleTicket({ permutation: perm, variantId: variant.id }, { lines });
+    if (settlement.creditedChips !== expectedCreditChips) {
+      invariant = false;
+      firstDeviation = { rank: permutationRank(perm), creditedChips: settlement.creditedChips };
+      break;
+    }
+  }
+
+  return Object.freeze({
+    invariant,
+    outcomesChecked: chosen.length,
+    outcomeSpace: permutations.length,
+    exhaustive: chosen.length === permutations.length,
+    firstDeviation,
+  });
+}
+
+/** A fixed, reproducible spread of outcomes. No RNG, no clock. */
+function deterministicSample(items, count) {
+  const stride = Math.max(1, Math.floor(items.length / count));
+  const out = [];
+  for (let i = 0; i < items.length && out.length < count; i += stride) out.push(items[i]);
+  return out;
 }
 
 /**
@@ -463,14 +537,32 @@ export function proveMaxRoundCredit(variantId) {
  *  2. **Independent selection.** Recompute the top-k multipliers from the
  *     *unsorted* winner list by repeated max-extraction — a different algorithm
  *     from `Array.prototype.sort` — and require the same sequence.
+ *  3. **Co-satisfiability.** Every chosen line must actually win under the one
+ *     outcome the maximum is taken at. This is the step round 2 left implicit
+ *     and it is not decoration: greedy-by-multiplier over *all* distinct claims
+ *     could select mutually exclusive lines, and the maximum over a set of
+ *     lines that cannot all hit together is strictly lower than the sum. The
+ *     construction avoids that by selecting only among claims that win under a
+ *     fixed `ω`, and this check is what proves the construction did so.
+ *
+ * The fourth step — that fixing `ω` costs nothing — is not a property of one
+ * selection and lives in `proveMaxIsOutcomeInvariant`.
  *
  * Exported so the test suite can feed it a deliberately bad selection and
  * confirm it says no.
  */
-export function optimalityWitness(variant, winners, lines, totalStakeChips) {
+export function optimalityWitness(variant, winners, lines, totalStakeChips, settlement) {
   const key = (entry) => `${entry.code}|${JSON.stringify(entry.params)}`;
   const chosen = lines.map((line) => variant.multipliers[line.code]);
-  if (chosen.length === 0) return Object.freeze({ optimal: false, noBetterUnchosen: false, matchesIndependentSelection: false, budgetExhausted: false });
+  if (chosen.length === 0) {
+    return Object.freeze({
+      optimal: false,
+      noBetterUnchosen: false,
+      matchesIndependentSelection: false,
+      budgetExhausted: false,
+      coSatisfiable: false,
+    });
+  }
 
   const chosenKeys = new Set(lines.map(key));
   const unchosen = winners.filter((winner) => !chosenKeys.has(key(winner)));
@@ -497,13 +589,56 @@ export function optimalityWitness(variant, winners, lines, totalStakeChips) {
     totalStakeChips === LIMITS.maxTicketStakeChips ||
     (lines.length === LIMITS.maxLinesPerTicket && everyLineAtCeiling);
 
+  // Co-satisfiability: read off the production settlement, not off the
+  // selection that produced it. If a settlement was not supplied the witness
+  // cannot make the claim and says so rather than assuming it.
+  const coSatisfiable =
+    typeof settlement === 'object' &&
+    settlement !== null &&
+    Array.isArray(settlement.lines) &&
+    settlement.lines.length === lines.length &&
+    settlement.lines.every((line) => line.won === true);
+
   return Object.freeze({
-    optimal: noBetterUnchosen && matchesIndependentSelection && budgetExhausted,
+    optimal: noBetterUnchosen && matchesIndependentSelection && budgetExhausted && coSatisfiable,
     noBetterUnchosen,
     matchesIndependentSelection,
     budgetExhausted,
     everyLineAtCeiling,
+    coSatisfiable,
   });
+}
+
+/**
+ * Median rounds to a first hit, computed exactly.
+ *
+ * Round 2 published `ln 2 / ln(N/(N-1))` rounded by no consistent rule: three
+ * figures were round-to-nearest and one was not, and two of the four were
+ * therefore short of the true median — in the direction that makes a rare chip
+ * look less rare than it is. There is no need to approximate at all. The median
+ * is the smallest `R` with
+ *
+ *     P(at least one hit in R rounds) >= 1/2   <=>   ((N-1)/N)^R <= 1/2
+ *
+ * and that is one BigInt comparison per step: `2 * (N-1)^R <= N^R`. No float,
+ * no rounding rule, no direction to be wrong in.
+ *
+ * @param {{n: bigint, d: bigint}} probability the per-round win probability
+ * @returns {number} the exact median number of rounds
+ */
+export function medianRoundsToFirstHit(probability) {
+  const p = probability;
+  if (p.n <= 0n || p.n > p.d) throw new RangeError('medianRoundsToFirstHit needs a probability in (0, 1]');
+  const missNumerator = p.d - p.n;
+  let numerator = 1n;
+  let denominator = 1n;
+  for (let rounds = 0; rounds <= 1_000_000; rounds += 1) {
+    if (2n * numerator <= denominator) return rounds;
+    numerator *= missNumerator;
+    denominator *= p.d;
+  }
+  /* c8 ignore next 2 -- unreachable for any probability the catalogue prices. */
+  throw new RangeError('median exceeded the search bound');
 }
 
 /**

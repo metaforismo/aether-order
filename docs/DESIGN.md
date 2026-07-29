@@ -19,7 +19,20 @@ A new player opens the game and sees, in this order:
 1. **Five glowing spheres** suspended in a dark, faintly cyan liquid column.
 2. **A tube with five numbered slots**, empty, running up the middle.
 3. **One line of copy:** *"They settle in a random order. Bet on the order."*
-4. **Chips with multipliers on them.** `1.92×`, `2.40×`, `4.80×`, `115.20×`.
+4. **The FORM tier's chips, already open.** `4.80×`, `4.80×`, `4.80×`, `4.80×` —
+   FIRST, LAST, SLOT, LINK, four different claims at one price.
+5. **One line under the rail:** *"Every bet pays 96%. The tiers are how wild the
+   ride is, not how good the deal is."*
+
+**The opening screen does not lead with the biggest number.** `115.20×` is real,
+it is the pitch, and it lives one tab away under `ORDER · rare, big`. It is not
+in the first three seconds, for a reason that is the whole product: a first
+impression built around a headline multiplier teaches the thing §10 bans
+everywhere else — that one chip is the good one. Four identical multipliers on
+four different-looking bets teach the opposite, in one glance, with no copy at
+all. §14's first falsification criterion asks whether players leave a first
+session able to say *"every bet pays the same"*; the opening screen is where
+that is either taught or contradicted.
 
 That is the whole game. There is no meter to learn, no ladder, no currency
 beyond the balance, no second screen. If a first-time player cannot place a bet
@@ -37,70 +50,124 @@ influences that transition, because they do not.
 
 ## 2. Round anatomy
 
-One round, start to credited, is about four seconds. The *cycle* — the interval
-in which a player can place another bet — has a hard floor of 2.5 seconds, and
-the two are different things on purpose (§2.2).
+One round, start to credited, is between 3.6 and 4.8 seconds depending on
+variant and outcome. The *cycle* — the interval in which a player can place
+another bet — has a hard floor of 2.5 seconds, and the two are different things
+on purpose (§2.2).
 
 | # | Beat | Duration | What the player sees | What the system does |
 | --- | --- | --- | --- | --- |
 | 0 | **IDLE** | — | Spheres drift; tube empty; seed chip amber | Server seed drawn; the round context (variant, round id, nonce) and `seedCommitment` published and shown |
 | 1 | **BUILD** | player-paced | Chips; running stake and best possible outcome | Nothing random; no timer that can expire into a bet |
 | 2 | **COMMIT** | 120 ms | CTA collapses into the ticket strip | Wallet debited; ticket + client seed frozen; permutation derived; receipt issued |
-| 3 | **CHARGE** | 260 ms | Impeller rings spin up; liquid tint deepens 8% | Choreography and resolution track built from the transcript |
+| 3 | **CHARGE** | 260 ms | Impeller rings spin up; liquid tint deepens 8% | Choreography and resolution track built from the transcript (`resolutionTrack`) |
 | 4 | **AGITATE** | 900 ms | Spheres orbit; bubble field; chamber hum rises | Nothing — purely presentational |
-| 5 | **SETTLE** | 2,110 ms (CLASSIC) / 2,590 ms (SEVEN) | Spheres fall into slots one by one, bottom to top; a gold ring locks each; **each line resolves at the lock that decides it** | Emits `slotLocked` events from the transcript |
-| 6 | **RESOLVE** | 600 ms | Only lines still undecided at the final lock change state here | Settlement already computed; this is display only |
+| 5 | **SETTLE** | 1,690 ms (CLASSIC) / 2,230 ms (SEVEN) | Locks 1 to `n−1`. Spheres fall bottom to top; a gold ring locks each; **every line resolves inside this window** | Emits `slotLocked` events from the transcript |
+| 6 | **THE CLOSE** | 430 ms, or 1,060 ms when celebrated | The last sphere falls into the only slot left. It decides nothing (§2.1) | Settlement and the celebration gate were both known at lock `n−1` |
 | 7 | **STAMP** | 220 ms | Result reported — celebrated *only* if the round returned more than it cost (§10) | Wallet credited |
 | 8 | **REVEAL** | — | Seed chip turns gold: *verified locally* | Server seed revealed; client re-derives and checks both hashes |
 
-Total: ~4.2 s (CLASSIC), ~4.7 s (SEVEN).
+| Round | CLASSIC | SEVEN |
+| --- | --- | --- |
+| Neutral close | 3.62 s | 4.16 s |
+| Celebrated close | 4.25 s | 4.79 s |
+
+SETTLE is `(n−2) × stagger + 340 ms fall + 90 ms rebound`, with the stagger from
+§6.4. The close is one fall plus its rebound, at full speed when the round did
+not win and at 0.35× when it did.
 
 The settle order shown is the transcript's permutation, read bottom to top. A
 player who screenshots the tube has screenshotted the outcome; nothing is hidden
 behind the animation.
 
-### 2.1 Lines resolve when they are decided, not when the tube is full
+### 2.1 Lines resolve when they are decided — and the last fall decides nothing
 
 The format's one natural tension engine is that a permutation reveals itself
-prefix by prefix. Deferring every line to beat 6 throws that away and leaves the
+prefix by prefix. Deferring every line to the end throws that away and leaves the
 player watching a tube whose story they cannot read.
 
 **The rule.** A line changes state at the first lock after which its verdict is
 identical for *every* completion of the tube consistent with the locked prefix.
 That is a pure function of the prefix, and the prefix is already on screen — so
 this reveals nothing the player could not read off the tube themselves, which is
-exactly why it is allowed. With `n ≤ 7` there are at most 720 completions to
-check, and the whole permutation is known at COMMIT, so the resolution track is
-baked into the choreography and nothing is searched at runtime.
+exactly why it is allowed.
 
-What that produces, in practice:
+**The rule has one sharp consequence, and this document states it rather than
+letting a table quietly contradict it.** After `n−1` locks exactly one
+arrangement of the remaining sphere is possible, so **every line is decided by
+lock `n−1`**, in every round, on every ticket, without exception. The final fall
+carries no information at all. Not "usually"; not "except in LOCK-OUT rounds";
+never.
 
-| Chip | Decided at |
-| --- | --- |
-| FIRST | lock 1 |
-| BEFORE `a<b` | whichever of the two locks first |
-| OPENING | lock 2 |
-| EARLY | lock 2 |
-| PODIUM | lock 3 |
-| SLOT `c @ k` | lock `k`, or earlier if `c` lands somewhere else first |
-| LINK, LINK · EITHER | the lock after the first of the pair |
-| LATE | lock `n−2`, or earlier |
-| LAST | lock `n` |
-| FULL ORDER | the first mismatched lock, or lock `n−1` — see LOCK-OUT (§9) |
+Round 2 of this specification published a table saying LAST resolved at lock
+`n`. That is one lock too late, and one lock too late is exactly the
+manufactured near-miss §9 bans: a LAST line that died at lock 1 would have
+stayed lit until the tube was full so the player could be shown how close they
+came. It survived review because the celebration gate is code with tests and
+this rule was a paragraph. It is code now — `tools/lib/resolution.mjs`,
+`decisiveLock` — and the table below is generated from it.
+
+<!-- resolution:start -->
+| Code | Chip · when it changes state | Latest lock, CLASSIC (`n = 5`) | Latest lock, SEVEN (`n = 7`) |
+| --- | --- | --- | --- |
+| `first` | FIRST — the moment the bottom sphere seats | 1 | 1 |
+| `early` | EARLY — lock 1 if the colour lands first, else lock 2 | 2 | 2 |
+| `opening` | OPENING — lock 1 if the bottom sphere is wrong, else lock 2 | 2 | 2 |
+| `podium` | PODIUM — the first mismatched lock, else lock 3 | 3 | 3 |
+| `late` | LATE — the lock the colour lands on, else lock `n−2` | 3 | 5 |
+| `before` | BEFORE — whichever of the two colours lands first | 4 | 6 |
+| `last` | LAST — the lock the colour lands on, else lock `n−1` | 4 | 6 |
+| `slot` | SLOT `c @ k` — the lock `c` lands on, or lock `k`, whichever is first | 4 | 6 |
+| `link` | LINK — the lock after the lower colour lands, or the lock the upper colour lands on | 4 | 6 |
+| `link-any` | LINK · EITHER — the lock after the first of the pair lands | 4 | 6 |
+| `full` | FULL ORDER — the first mismatched lock, else lock `n−1` (§9) | 4 | 6 |
+<!-- resolution:end -->
+
+Every description above is capped by the rule: wherever a formula would give
+lock `n` — SLOT on the top slot, LAST when the colour never lands early, LINK
+when the lower colour is at the top — the answer is lock `n−1`, because by then
+there is nothing left to find out. The two numeric columns are that cap made
+explicit, and they are generated, not typed.
+
+`tools/enumerate.mjs` §14 recomputes this table — exhaustively over all 35,400
+(instance, outcome) pairs in CLASSIC, and over a fixed 40-outcome sample in
+SEVEN, where the full sweep is 27.6M — and `tests/resolution.test.mjs` fails the
+build if a single cell drifts from the document.
+
+**THE CLOSE.** The design has to answer for the consequence rather than hide it,
+so the last fall gets its own beat and its own rules:
+
+- It is **never** framed as a reveal. No held breath, no rising pitch, no
+  slow-down "to build tension", no camera move, no copy that asks a question.
+- Its treatment is chosen by the *same* comparison as everything else,
+  `creditedChips > totalStakeChips`, which is fully determined at lock `n−1`.
+  A winning round's close is the anticipation-collapse set piece in §9. A losing
+  round's close is a sphere falling into a slot at normal speed, and looks
+  identical whether the ticket missed by one position or by five.
+- Because the gate is evaluated one lock early, **there is no beat anywhere in
+  the round whose job is to make an undecided line look close.** There are no
+  undecided lines by then.
+
+This is not a defect dressed as a feature. It is the same property the entire
+production is built on: the round's job is to let the player *watch the outcome
+arrive*, not to withhold it. §9 argues that anticipation collapse is a better
+clip shape than surprise; §2.1 is where that becomes true of every round rather
+than one in six hundred.
 
 **This is the anti-near-miss mechanism, not a near-miss engine.** A FULL ORDER
-line that dies at lock 4 dies *at lock 4*, visibly and immediately, instead of
-being kept nominally alive until beat 6 so the player can be shown how close
-they came. Every state change during SETTLE is rendered with identical weight —
-same 120 ms transition, same easing, no sound of its own, no scale, no camera —
-whether the line resolved won or lost. The only difference is colour and
-opacity, which is the information itself. Drama is reserved for the round-level
-result, and gated (§10).
+line that dies at lock 4 dies *at lock 4*, visibly and immediately. Every state
+change during SETTLE is rendered with identical weight — same 120 ms transition,
+same easing, no sound of its own, no scale, no camera — whether the line
+resolved won or lost. The only difference is colour and opacity, which is the
+information itself. Drama is reserved for the round-level result, and gated
+(§10).
 
 ### 2.2 The cycle floor, and what SKIP actually does
 
-**SKIP** compresses beats 3–6 to ~1.2 s. It is remembered as a preference and it
-changes nothing about the outcome, the settlement or the transcript.
+**SKIP** compresses beats 3 to 6 to ~1.2 s. It is remembered as a preference and it
+changes nothing about the outcome, the settlement or the transcript. A skipped
+round still resolves every line in prefix order — the information arrives in the
+same sequence, faster.
 
 **SKIP does not shorten the round cycle.** The COMMIT control stays disabled
 until 2,500 ms have elapsed since the previous COMMIT, enforced by the RGS and
@@ -115,7 +182,8 @@ Two things make this honest rather than annoying:
 - A skipped round runs COMMIT (120 ms) + compressed presentation (~1,200 ms) +
   STAMP (220 ms) ≈ 1.5 s, so the remaining wait is about a second — roughly the
   time it takes to read the result. In unskipped play the floor never binds at
-  all, because the round itself (4.2 s) is longer than the floor.
+  all: the shortest possible round is a neutral CLASSIC close at 3.62 s, which
+  is already 1.1 s longer than the floor.
 
 Speed of play is the single most consequential regulated property of a game this
 short, and `docs/MATH.md` §10.1 does the arithmetic: at the published ceiling of
@@ -200,7 +268,7 @@ tab.
 | **FULL ORDER** | the whole column | every sphere lands exactly where you said | `115.20×` | `4838.40×` |
 
 The ORDER tier is deliberately a ladder that resolves in sequence: OPENING is
-decided at lock 2, PODIUM at lock 3, FULL ORDER at lock `n−1`. A player holding
+decided by lock 2, PODIUM by lock 3, FULL ORDER by lock `n−1`. A player holding
 all three watches their ticket resolve upward with the tube, which is the whole
 reason this format is worth animating.
 
@@ -254,7 +322,9 @@ return at most 4.80. `docs/MATH.md` §8.1 tabulates the gap and
 
 ## 5. Mobile-first portrait UX
 
-Reference device 390 × 844 (iPhone 14 / Pixel 8 class). Portrait only.
+Reference device 390 × 844 **CSS** pixels (iPhone 14 / Pixel 8 class). Portrait
+only. Every coordinate in this section is a CSS pixel; the device-pixel ratios
+that matter to the renderer are in §7.1.
 
 **Reach.** Every control needed to *play* — tier tabs, chips, picker, stake
 stepper, COMMIT, REBET — sits below y = 552, inside the one-handed thumb zone.
@@ -299,6 +369,11 @@ target during a round.
 - Tier tabs are **labelled with what they mean**: `FLOW · lands often`,
   `FORM · the core game`, `ORDER · rare, big`. Never "low/medium/high risk"
   without the plain-language gloss.
+- **FORM is the default tab on a first run**, which is why the wireframe shows
+  four chips all reading `4.80×`. Four different-looking bets at one price is
+  the fastest way to teach the product's only real claim, and it is the reason
+  §1 does not open on the biggest number in the game. On subsequent sessions the
+  tab is remembered.
 - Tapping a chip opens the picker sheet (S2). Chips already on the ticket show a
   gold count badge and a long-press removes them.
 - The `◈` chip top-right is the fairness state: **amber** = committed,
@@ -312,17 +387,68 @@ target during a round.
 - While the cycle floor is running, the CTA reads `COMMIT` in a dimmed state
   with a hairline filling left to right beneath it. It unlocks; it never expires.
 
-### S2 — PICKER SHEET (bottom sheet, 62% height, drag to dismiss)
+### S2 — PICKER SHEET (bottom sheet, drag to dismiss)
 
-Content depends on the chip's arity, and never more than two taps:
+**One tap per thing you are claiming.** That is the rule the picker is built to,
+and it is the honest version of the "never more than two taps" round 2 promised
+while shipping two chips that cannot be expressed in two taps. A BEFORE line is
+two claims and costs two taps; a FULL ORDER line is a claim about every sphere
+and costs `n−1`. Nothing is ever more taps than it is decisions.
 
-- *one colour*: a row of colour tokens, 56 px, each with its glyph and name.
-- *one colour + one slot*: colour row, then a vertical slot strip that mirrors
-  the real tube — the player picks the slot **on a picture of the tube**, not
-  from a number list. This is the single most important affordance in the game.
-- *two colours, in order*: two ordered wells labelled `FIRST PICK` /
-  `SECOND PICK`, with a live sentence underneath: *"AMBER settles before AQUA."*
-  The sentence is the confirmation, not the icons.
+Five shapes. The first three fill 62% of the screen height; the last two are
+full-height because they contain a tube.
+
+**A. One colour** (EARLY, LATE, FIRST, LAST) — a row of colour tokens, 56 px,
+each with its glyph and its name. One tap. Live sentence: *"AMBER settles
+first."*
+
+**B. One colour + one slot** (SLOT) — colour row, then a vertical slot strip
+that mirrors the real tube: the player picks the slot **on a picture of the
+tube**, not from a number list. Two taps. This is the single most important
+affordance in the game and every other picker inherits from it.
+
+**C. Two colours, ordered or unordered** (BEFORE, LINK, LINK · EITHER, OPENING)
+— two wells labelled `FIRST PICK` / `SECOND PICK` (or `EITHER ORDER` for
+LINK · EITHER, which shows one unordered well pair). Two taps. Live sentence:
+*"AMBER settles before AQUA."* The sentence is the confirmation, not the icons.
+
+**D. Three colours, ordered — PODIUM.** The sheet shows the bottom three slots
+of the tube, labelled `1st` `2nd` `3rd`, above the colour row. Tapping a colour
+drops it into the lowest empty slot; tapping a filled slot empties it and
+returns that colour to the row. Three taps, in the order you mean. Live
+sentence: *"AMBER, then AQUA, then VIOLET — the first three, in that order."*
+No drag is required; the slots are also drag targets for players who prefer it,
+per §11's "every drag has a tap equivalent".
+
+**E. The whole column — FULL ORDER.** The same interaction as D, extended to the
+full tube. The sheet is a full-height picture of the chamber's tube with `n`
+empty slots and the colour row beneath it. Tap a colour, it falls into the
+lowest empty slot with the same 340 ms expo-out the real game uses. Fill the
+tube bottom-up.
+
+- **The last sphere places itself.** When one colour and one slot remain, the
+  client seats it automatically with a 200 ms fade and the caption *"only one
+  left"*. This is the picker teaching the round's own defining property (§2.1):
+  a permutation of `n` things is `n−1` free choices. It is a convenience, not a
+  choice made for the player, and the caption says which.
+- **`RANDOMISE` fills the tube for you.** One tap, drawn from
+  `crypto.getRandomValues`, animated as `n` quick falls. Its label copy is fixed
+  and is not marketing: *"a random order — no better or worse than the one you
+  would have picked."* That is exactly true (`docs/MATH.md` §3.1: every order is
+  `1/n!`), and it is the one place in the product where the fairness thesis and
+  a convenience button are the same object. It carries no luck framing, no
+  sparkle, no "your lucky order", per §10.
+- **`CLEAR` empties the tube.** No confirm; nothing has been staked yet.
+- Portrait-only constraint: at `n = 7` the tube plus the colour row plus the
+  stake bar fit in 844 px with the slot pitch at 58 px (§12). At 200% text
+  scaling the colour row reflows to two rows and the sheet scrolls; the tube
+  never does.
+
+**Why this matters commercially.** §14's second falsification criterion
+pre-registers ORDER-tier attach rate ≥ 15% as the test of whether the format
+works at all, and PODIUM and FULL ORDER are the ORDER tier. An unspecified
+picker for the two chips the thesis rests on is not a detail deferred to build;
+it is the thesis deferred to build.
 
 Stake stepper is pinned to the sheet's bottom bar with the ladder as discrete
 stops. **The stepper never pre-selects a value higher than the previous round's.**
@@ -341,12 +467,17 @@ resolve lock by lock (§2.1). A thin progress hairline under the top rail tracks
 the settle cadence. `SKIP` sits top-right: a 15 px uppercase label inside a
 44 × 44 hit area, no confirm.
 
+The hairline reaches full width at lock `n−1`, not at lock `n`. That is honest —
+it is a progress indicator for the *information*, and there is none left after
+the penultimate lock — and it is also the cue that lets a player who has already
+read their result look away during the close without missing anything.
+
 ### S5 — RESULT
 
 Lines that won light gold; lines that lost fade to 40% opacity. Both stay in
 place — nothing is removed, hidden, reordered or animated away, because the
-record of the round has to stay legible (§10). Most lines have already changed
-state during SETTLE; this beat only finishes the ones the last lock decided.
+record of the round has to stay legible (§10). Every line has already changed
+state during SETTLE (§2.1); this screen is the record, not the reveal.
 
 **The headline is gated on the round's net position, not on whether any line
 won.** The rule is a single comparison, implemented in
@@ -397,9 +528,91 @@ multiplier, plus the alias list (*"these two chips are the same bet"*).
 
 S9 holds session limit, loss limit, reality-check interval, and the
 self-exclusion hand-off. It also states the pacing policy as plain fact —
-*"minimum 2.5 seconds between bets; maximum 900 rounds per hour"* — with rounds
-played in the trailing hour shown as a number, never as a bar filling toward a
-goal. Both screens are reachable from the `⌂` menu in two taps.
+*"minimum 2.5 seconds between bets; maximum 900 rounds per hour; no autoplay"* —
+with rounds played in the trailing hour shown as a number, never as a bar
+filling toward a goal. Both screens are reachable from the `⌂` menu in two taps.
+
+### S10 — SHARED CHAMBER (the lobby; §13.2)
+
+One transcript, many tickets. Same chamber, same choreography, same picker; the
+only structural difference is that the round's clock belongs to the server.
+
+```
+ 54 ┌───────────────────────────────────────────┐
+    │  ←  SHARED CHAMBER        [FREE PLAY]  ◈  │  56  top rail
+110 ├───────────────────────────────────────────┤
+    │  NEXT DRAW  ▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▯▯▯▯▯  4.2s    │  32  cadence bar
+142 ├───────────────────────────────────────────┤
+    │                 ╭─────╮                   │
+    │        ●        │  5  │        ●          │  398  chamber + tube
+    │    ●            │  3  │      ●            │      (crops 32px vs S1)
+    │            ●    │  1  │                   │
+    │                 ╰─────╯                   │
+540 ├───────────────────────────────────────────┤
+552 │  IN THIS DRAW  ·  41 tickets              │  36  presence row
+588 ├───────────────────────────────────────────┤
+    │  ▸ FIRST amber        ▸ LINK aqua>violet  │  76  ticket ticker
+    │  ▸ FULL ORDER ×3      ▸ BEFORE ivory<coral│      (2 rows, scrolls)
+664 ├───────────────────────────────────────────┤
+    │  FLOW · FORM · ORDER      3 lines · 3.00  │  44  tabs + strip
+708 ├───────────────────────────────────────────┤
+    │  ▮▮▮▮▮▮  COMMIT  3.00  (closes in 4.2s)   │  56  primary CTA
+800 └───────────────────────────────────────────┘
+```
+
+- **The cadence bar is the only new control surface, and it never takes a bet.**
+  When it empties, the betting window closes and an uncommitted ticket stays a
+  ticket: it is not placed, not carried over, not auto-committed. The CTA
+  disables and reads `BETTING CLOSED · next draw in 3s`. This is §10's
+  latency rule, and the lobby is the one place it could plausibly be violated.
+- **The presence row shows a count of tickets.** Not balances, not wins, not
+  names, not a leaderboard. The ticker shows *what people bet*, never *how much*
+  and never *how they did* — a leaderboard is a wagering incentive in a social
+  costume, and stake sizes in a shared room are peer pressure with a number on.
+- **`←` returns to solo play at any time**, mid-cadence, with no penalty and no
+  confirmation. Solo is never the worse product.
+- Everything below y = 552 is still in the thumb zone. The chamber crops 32 px
+  to pay for the cadence bar; the tube keeps its slot pitch.
+
+**Cadence, and how it interacts with the money controls.** The draw interval `T`
+is a lobby-wide constant. Each player is still subject to the 2,500 ms cycle
+floor and the 900-rounds rolling ceiling, so:
+
+| Cadence `T` | Draws a player can bet on, per hour | Binding constraint |
+| --- | --- | --- |
+| 4 s | 900 | the rolling ceiling, exactly |
+| 6 s | 600 | the cadence |
+| 8 s | 450 | the cadence |
+| 10 s | 360 | the cadence |
+
+`T` may not go below 4 s, because at 4 s the rolling ceiling starts binding and
+a player would spend part of every hour locked out of a room they are watching —
+a worse experience than a slower room, and a worse one to be *nudged* by. The
+open question in §15 is 6, 8 or 10, all of which are safely cadence-bound.
+
+**Networking, and its budget.** One WebSocket per session, four message kinds,
+all of them small:
+
+| Message | Direction | Size | Cadence |
+| --- | --- | --- | --- |
+| `round.open` — round id, nonce, variant, `seedCommitment`, `settleAtEpochMs` | server → client | ~210 B | once per draw |
+| `presence` — ticket count, up to 8 anonymised claim labels | server → client | ~180 B | 2 Hz while betting is open |
+| `ticket.commit` — the ticket, idempotency key | client → server | ~120–400 B | once per player per draw |
+| `round.reveal` — server seed, settlement, receipt | server → client | ~420 B | once per draw |
+
+At `T = 6 s` that is under 1.5 kB/s down and a few hundred bytes up per player.
+The lobby costs **9 KB gzipped** of client (§7.3), and it is a lane on the
+existing transport, not a second stack.
+
+**Latency, and what a slow connection may not cost.** The choreography is driven
+by `settleAtEpochMs`, a server-published wall-clock instant, not by message
+arrival. A client whose clock or connection is behind starts the choreography
+late and *time-shifts* it — it never skips a lock, never fast-forwards past the
+resolution of a line, and never truncates the close. If the socket drops after
+COMMIT, the round settles server-side and the completed result is restored from
+the round snapshot on reconnect (`docs/ENGINE.md` §7.9). If the socket drops
+*before* COMMIT, nothing was staked. There is no state in which a network
+condition changes what a player is paid.
 
 ---
 
@@ -443,14 +656,44 @@ Spheres — each is a body tint plus an emissive core plus a glyph.
 | INDIGO *(SEVEN)* | `#4C6BFF` | `#B0C0FF` | chevron |
 | ROSE *(SEVEN)* | `#FF7FD1` | `#FFC7EA` | hexagon |
 
-**Colour is never the only channel.** Every sphere carries its glyph etched into
-the body, and every ticket line names the colour in text. The palette is
-deliberately spread across lightness as well as hue so it survives
-protanopia/deuteranopia; the glyphs carry it the rest of the way.
+**Colour is never the only channel — and for this palette, the glyph is the
+colour-blind channel, not a backup for it.** That is a stronger statement than
+round 2 made, and it is forced by arithmetic rather than chosen:
 
-Gold appears in exactly three places: the slot ring at the moment it locks, the
-multiplier stamp, and the fairness chip once verified. Nowhere else, ever. Gold
-means *this is settled and true*.
+Every sphere must clear 4.5:1 against `--void` (§11). A colour at that floor has
+relative luminance ≥ 0.1845, and the brightest possible colour is white, so the
+entire set lives inside a luminance-contrast span of `1.05 / (4.5 × 0.0521)` =
+**4.48:1**. Spread seven colours across that span as evenly as possible and the
+closest adjacent pair is `4.48^(1/6)` = **1.28:1** — and that best case is only
+attained by a set containing pure white and sitting exactly on the floor, which
+leaves no freedom for hue at all. **No seven-colour palette that clears the
+contrast floor can separate its spheres by luminance.** The shipped set's
+closest pairs are AMBER↔AQUA at 1.10:1, CORAL↔VIOLET at 1.14:1,
+INDIGO↔VIOLET at 1.24:1 and ROSE↔CORAL at 1.34:1, so it is within a factor of
+1.2 of a bound nobody can beat. `tests/framebudget.test.mjs` recomputes all of
+it.
+
+The two worst pairs are inside the CLASSIC five, so this was never a SEVEN
+problem, and no hex substitution fixes it. What carries the information instead:
+the glyph etched into every sphere body, repeated on every chip; the colour
+named in text on every ticket line; and the settled order announced as a string
+to the screen reader (§11). Those are required, not recommended.
+
+**Gold means *settled and true*, and appears in exactly six places:**
+
+1. the slot ring at the moment it locks;
+2. the multiplier stamp;
+3. the fairness chip once verified locally;
+4. the count badge on a chip that is already on the ticket;
+5. a line that has resolved *won* (§2.1);
+6. the tube's full-height rim during a celebrated close (§9).
+
+Nowhere else. The list is six rather than "three, ever" because the shorter rule
+was contradicted three times inside this same document, and an art director
+enforcing it literally would have hit all three in a day. Every entry is the
+same semantic: something is settled, and it is true. Gold never appears on
+anything speculative, pending, or merely available — never on an unplaced chip,
+never on a balance, never on a call to action.
 
 ### 6.2 Materials
 
@@ -467,6 +710,17 @@ means *this is settled and true*.
   OLED where the background is true black. No rim light (see reference 3).
 - **Gold** — PVD, warm, low roughness, one thin specular line. Never gradient
   mesh, never a "shiny gold" bevel.
+
+**Resolution, as a material decision.** The chamber's WebGL **backing store is
+capped at DPR 2** even on a DPR 3 panel. This is written here rather than buried
+in the renderer because it is a look decision: the chamber is deliberately
+low-frequency — gradients, bloom, one sprite master, no thin high-contrast edges
+— so at DPR 2 it is indistinguishable from native, and the cap buys back 55% of
+the fill and bandwidth on the highest-density reference device (§7.1). Anything
+that *does* have a hard edge is drawn outside the canvas at native DPR: all
+text, the slot rings, the tube outline, and the 1 px specular line, which are
+DOM and SVG. If a build ever renders type or a ring into the WebGL layer, the
+cap becomes a visible softness and the decision has been broken.
 
 ### 6.3 Lighting
 
@@ -493,11 +747,18 @@ overlapping, organic during agitation; crisp, staggered, snapped during settle.
 | --- | --- | --- | --- |
 | Charge | 260 ms | `cubic-bezier(.4,0,.2,1)` | impeller rings spin up; liquid tint +8% |
 | Agitate | 900 ms | damped sine, 3.2 Hz, ζ = 0.28 | spheres on Lissajous paths, phase-offset per sphere |
-| Settle stagger | 420 ms (CLASSIC) / 360 ms (SEVEN) | — | interval between locks |
+| Settle stagger | 420 ms (CLASSIC) / 360 ms (SEVEN) | — | interval between locks 1 … `n−1` |
 | Fall | 340 ms | `cubic-bezier(.16,1,.3,1)` | expo-out; the sphere never overshoots its slot |
 | Lock rebound | 90 ms | `cubic-bezier(.34,1.56,.64,1)` | 4% overshoot on the *ring*, chamber flexes 2 px |
-| Resolve | 600 ms | `cubic-bezier(.2,.8,.2,1)` | winning lines light in tier order, FLOW → ORDER |
+| Line state change | 120 ms | `cubic-bezier(.2,.8,.2,1)` | identical for won and lost; fires at the deciding lock, never later |
+| Close, neutral | 430 ms | same fall + rebound | the last sphere, at full speed, undramatised |
+| Close, celebrated | 1,060 ms | fall at 0.35× | §9; fires only when `creditedChips > totalStakeChips` |
 | Stamp | 220 ms | `cubic-bezier(0,.7,.2,1)` | multiplier scales 1.18 → 1.00 |
+
+There is no "resolve" beat. Round 2 budgeted 600 ms for *"lines still undecided
+at the final lock"*, a set §2.1's own rule makes permanently empty, and counted
+that 600 ms inside the published round duration. Lines change state as they are
+decided; the deleted beat is why a neutral round is now 3.62 s rather than 4.2 s.
 
 Rules: nothing bounces except the lock ring. Nothing rotates on screen except
 the impellers. No easing curve is linear. `prefers-reduced-motion` replaces
@@ -557,7 +818,10 @@ runtime; everything is evaluated.
    slot, plus a phase offset. The Béziers come from a build-time bake of
    `n × n` canonical paths in normalised tube space; the runtime picks
    `template[startLane][targetSlot]` and time-shifts it. No physics, no solver,
-   no collision. The line-resolution track (§2.1) is baked at the same moment.
+   no collision. The line-resolution track (§2.1) is baked at the same moment,
+   by `resolutionTrack` in `tools/lib/resolution.mjs`: at most a few thousand
+   predicate evaluations for a 12-line ticket, once, inside the 260 ms CHARGE
+   beat. Nothing about which lines are alive is searched during SETTLE.
 2. **The "fluid" is one fragment shader, not a sim.** A single pass over the
    chamber rect does: a two-octave value-noise domain warp for caustics, a
    refraction offset that resamples the sphere layer, and a vertical depth
@@ -586,29 +850,51 @@ runtime; everything is evaluated.
    same transcript replays identically. That is what makes `REPLAY` real and
    what makes the shareable clip (§9) reproducible rather than re-recorded.
 
-### 7.1 The frame budget, including the passes that are easy to forget
+### 7.1 The frame budget, in device pixels
 
-Every pass, at 390 × 430 logical on the reference device:
+**GPUs shade device pixels, not CSS pixels.** Round 2 computed this table at
+"390 × 430 logical" and concluded 20.6 Mfrag/s, which understated the real load
+by a factor of four to nine across the three reference devices — whose
+**device-pixel ratios** are 2 (iPhone SE 2), 2.6 (Pixel 6a) and ~2.75
+(Galaxy A54). The conclusion survived; the arithmetic did not, and this is a
+document whose whole claim is that it states its arithmetic. The table is now
+generated by `tools/lib/framebudget.mjs` and `tests/framebudget.test.mjs` fails
+the build if the document and the module disagree.
 
-| # | Pass | Resolution | Fragments | Note |
+**The assumption, stated:** the chamber's WebGL backing store is **capped at
+DPR 2** (§6.2). Every reference device therefore renders the same 780 × 860
+backing store for a 390 × 430 CSS chamber. UI chrome is not in this canvas —
+it is DOM and SVG at native DPR — so the composite pass composites fluid and
+bloom only.
+
+| # | Pass | Resolution (device px) | Shaded fragments | Note |
 | --- | --- | --- | --- | --- |
-| 1 | Sphere layer → offscreen RT | 0.5× (195 × 215) | 41,925 cleared + ~7,200 shaded | 7 sprites at ~32 px; the refraction source only needs low frequency |
-| 2 | Fluid: caustics + refraction + depth | 0.75× (293 × 323) | 94,639 | samples pass 1 |
-| 3 | Bright-pass + downsample | 0.25× (98 × 108) | 10,584 | bloom threshold 0.78 |
-| 4 | Two separable blurs | 0.25× | 21,168 | 12 px radius at 390 px width |
-| 5 | Composite: fluid + spheres + bloom add + UI chrome | 1.0× (390 × 430) | 167,700 | the only full-resolution pass |
-| | **Total** | | **≈ 301,000 shaded + 42,000 cleared** | ≈ 20.6 Mfrag/s at 60 fps |
+| 1 | Sphere layer → offscreen RT | 0.5× · 390 × 430 | 28,672 (+167,700 cleared) | 7 sprites at 64 CSS px; the refraction source only needs low frequency |
+| 2 | Fluid: caustics + refraction + depth | 0.75× · 585 × 645 | 377,325 | samples pass 1 with a refraction offset |
+| 3 | Bright-pass + downsample | 0.25× · 195 × 215 | 41,925 | bloom threshold 0.78 |
+| 4 | Two separable blurs | 0.25× · 195 × 215 | 83,850 | 9-tap Gaussian each direction, 12 px radius at 390 px width |
+| 5 | Composite: fluid + bloom add | 1.0× · 780 × 860 | 670,800 | the only full-resolution pass; UI chrome is DOM, not this canvas |
+| | **Total** | | **1,202,572 shaded + 167,700 cleared** | **72.2 Mfrag/s** at 60 fps |
 
-Arithmetic is not the constraint — an A13, Mali-G68 or Adreno 619 class part
-does 1–4 Gfrag/s. **Bandwidth is**, which is why bloom is listed as three passes
-rather than hidden in a lighting bullet: at 4 bytes per pixel the round trip is
-roughly 0.7 MB written and ~2.3 MB read per frame, ≈ 180 MB/s at 60 fps, against
-10–25 GB/s of memory bandwidth on those devices. Comfortable, and now stated
-rather than implied.
+Bandwidth, at 4 bytes per pixel: **329 MB/s** of render-target writes and about
+708 MB/s of texture reads, **1,037 MB/s** in total. The read figure is an upper
+bound that assumes every tap misses cache, which a 9-tap separable blur
+emphatically does not.
+
+Against the reference class — an A13, Mali-G78, Mali-G68 or Adreno 619 does
+1–4 Gfrag/s against 10–25 GB/s of memory bandwidth — that is 2–7% of fill and
+4–10% of bandwidth. Comfortable, and now comfortable at the right order of
+magnitude.
+
+**What the cap buys.** Uncapped on the Galaxy A54's ~2.75 ratio the same frame
+is **136.5 Mfrag/s** and 1.96 GB/s: still feasible, and 89% more work for a
+difference no one can see on content with no hard edges in it. The cap is worth
+roughly a watt on a 20-minute session, which is the actual reason for it.
 
 Bloom is the first thing cut: below 50 fps on the rolling average the client
 drops passes 3–4 and composites the emissive layer additively at full
-resolution. That is a visible downgrade and an acceptable one.
+resolution. That is a visible downgrade and an acceptable one. Below 45 fps the
+Canvas2D lane takes over entirely (technique 6).
 
 ### 7.2 What "the same round" means across the two lanes
 
@@ -632,28 +918,32 @@ which lane the player watched.
 | Caustic sheet, 12 frames, 512 × 512 | 180 KB WebP |
 | Subset fonts (display + mono, Latin) | 90 KB WOFF2 |
 | Shaders | 8 KB |
-| JavaScript, gzipped | 167 KB — broken out below |
+| JavaScript, gzipped | 180 KB — broken out below |
 | Audio | 240 KB Opus |
-| **Total** | **≈ 745 KB**, under the 900 KB ceiling |
+| **Total** | **≈ 758 KB**, under the 900 KB ceiling |
 
 The JS line is the one that needs showing, because it has to hold two renderers,
-nine screens, an audio engine, a verifier and a video encoder:
+ten screens, an audio engine, a verifier, a lobby and a video encoder:
 
 | Module | KB gz |
 | --- | --- |
 | Core, state, router | 18 |
-| Nine screens and shared components | 34 |
+| Ten screens and shared components | 38 |
 | WebGL2 renderer + shader loader | 26 |
 | Ticket builder, paytable and alias data | 14 |
 | Audio engine | 12 |
 | Canvas2D fallback renderer | 11 |
 | Choreography + resolution track builder | 9 |
 | Verifier: canonical encoder, re-derivation, receipt check | 9 |
+| Shared chamber: lobby screen, socket transport, cadence clock | 9 |
 | Clip export: fMP4 muxer + orchestration | 13 |
 | i18n runtime + one locale | 8 |
 | Session governor (cycle floor, rolling ceiling, reality checks) | 7 |
 | Polyfills and misc | 6 |
-| **Total** | **167** |
+| **Total** | **180** |
+
+The lobby's 9 KB and the extra 4 KB of screen budget are the whole client cost
+of §13.2. It is a lane on the existing transport, one screen, and a clock.
 
 The verifier is small because SHA-256 and HMAC come from `crypto.subtle`; only
 the canonical field encoder, the Fisher–Yates re-derivation and the receipt
@@ -702,12 +992,25 @@ does not. Mix bed at −18 LUFS with a −6 dB duck under any voice-over.
 
 ---
 
-## 9. The signature moment: LOCK-OUT
+## 9. The close, and its signature case: LOCK-OUT
 
-**The mechanic.** A FULL ORDER ticket resolves one sphere early. Once `n−1`
-spheres have settled in the ticket's order, only one sphere remains and only one
-slot is open — the win is already certain while the last sphere is still in the
-liquid.
+**Every round ends the same way.** By lock `n−1` the settlement is fully
+determined (§2.1), so the last sphere always falls into a foregone conclusion.
+The design does not fight that; it is the format. What varies is the treatment,
+and it varies on exactly one comparison — the same one that gates everything
+else in §10:
+
+| At lock `n−1` | The close |
+| --- | --- |
+| `creditedChips > totalStakeChips` | Celebrated: audio ducks, the fall slows to 0.35×, the tube rim ignites, the chord lands on the lock. 1,060 ms. |
+| anything else | Neutral: one fall at full speed, one lock, no audio event, no colour change. 430 ms. |
+
+A losing round's close is byte-for-byte the same 430 ms whether the ticket
+missed by one sphere or by five. That is the no-near-miss rule doing its work at
+the only moment it could plausibly be broken.
+
+**LOCK-OUT is the maximal celebrated close:** a FULL ORDER ticket already won
+with a sphere still in the liquid.
 
 **The production.** At the instant the `n−1`-th sphere locks and the ticket is
 mathematically already won:
@@ -721,7 +1024,11 @@ mathematically already won:
 5. On lock: full-frequency return, the pentatonic chord, and the multiplier
    stamps over the tube.
 
-Total 3.4 s, portrait, and it ends on the number.
+The set piece itself is 1,280 ms — the 1,060 ms celebrated close plus the
+220 ms stamp — and it ends on the number. The shareable cut is longer: 3.4 s,
+portrait, starting one lock earlier so the viewer sees the penultimate sphere
+seat and understands *why* the outcome is already known. §15 leaves the choice
+between that and a 6 s cut open.
 
 **Why it travels.** The tension resolves *before* the visual does. The viewer
 knows the outcome and still has to watch it arrive — anticipation collapse
@@ -729,18 +1036,25 @@ rather than surprise. That is a fundamentally more shareable shape than a reveal
 because the clip's emotional peak sits at second one, which is where a
 vertical-feed viewer decides whether to keep watching.
 
-**Why it is honest.** LOCK-OUT fires **if and only if the ticket wins.** It is
-never a tease.
+**Why it is honest.** The celebrated close fires **if and only if the round
+returned more than it cost**, and LOCK-OUT is the ORDER-tier voicing of it. It
+is never a tease, because there is nothing left to tease: the outcome was
+determined one lock earlier.
 
 **How often it actually fires.** Conditional on the ticket carrying a FULL ORDER
 line, exactly `1/120` in CLASSIC and `1/5040` in SEVEN. *Unconditionally* it is
 rarer by the attach rate of that chip, and that is the number that matters when
 judging LOCK-OUT as the game's signature moment: at a plausible 20% attach rate
 it is roughly one round in 600 in CLASSIC, and a player who never buys the chip
-never sees it at all. That is a real limitation of resting the whole production
-on one mechanic, and it is the reason §13 gives the rest of the ORDER ladder its
-own moments — OPENING at lock 2 and PODIUM at lock 3 both resolve early, with
-the same anticipation shape at a fraction of the rarity.
+never sees it at all.
+
+That is a real limitation of resting a production on one mechanic, and it is why
+LOCK-OUT is now framed as the top of a ladder rather than as the whole show.
+Every winning round gets the slow close — a FLOW win at 1.92× gets it too, in a
+quieter voicing (§8) — so the anticipation-collapse shape lands on one single-
+line BEFORE round in two and one single-line FORM round in five, rather than one
+round in six hundred. §13 does the rest: OPENING resolves by lock 2 and PODIUM
+by lock 3, with the same shape at a fraction of the rarity.
 
 **Hard rule — no manufactured near-miss.** The client must not add emphasis,
 sound, colour, camera or slow-motion to partial progress on a **losing** ticket.
@@ -765,7 +1079,7 @@ That is a load-bearing distribution claim, so here is what it costs.
 | Muxer | Inline fragmented-MP4 writer, ~7 KB gzipped. No external library, no WASM. |
 | Audio | `AudioEncoder` → AAC-LC 96 kbps, muxed alongside. If unavailable, the clip ships silent rather than failing. |
 | Frames | 180 (6 s × 30 fps), rendered offscreen at 1080 × 1920 through the same choreography track. |
-| Render cost | ≈ 2.07 Mfrag/frame × 180 ≈ 373 Mfrag, i.e. tenths of a second of GPU time; ~2–4 s wall clock on the reference devices including readback. |
+| Render cost | **3.68 Mfrag/frame** × 180 ≈ **663 Mfrag** — every pass at export resolution, not just the composite, which is what the old 2.07 figure counted. Tenths of a second of GPU time; ~2–4 s wall clock on the reference devices including readback. |
 | Encode cost | Hardware encoder, 3–8× realtime on A13 / SD 6-series → ~1–2 s. |
 | Total time | ≤ 6 s behind a progress sheet with a cancel button. |
 | File size | ≈ 3.75 MB video + ~70 KB audio, inside the 4 MB target. |
@@ -845,11 +1159,40 @@ product, and `docs/MATH.md` §10.1 does the arithmetic.
   loss 7,200 credits/hour. Those numbers are published in `docs/MATH.md` §10.1
   rather than left for someone else to compute.
 
-**No loss-chasing mechanics.**
+**No autoplay. At all.**
+
+`PLAY_POLICY.autoplay` is the string `'none'`, it is published in
+`docs/paytable.json`, and `tests/design.test.mjs` asserts it. It is a value
+rather than a sentence because a sentence is what went wrong: round 2 of this
+document banned "autoplay that continues through losses" and then, in the next
+clause, permitted a count-bounded autoplay that stops only on a single win above
+20×. A count-bounded autoplay with no loss limit *is* an autoplay that continues
+through losses. Two clauses, one paragraph, opposite meanings — under a heading
+declaring that violating any of them is a release blocker.
+
+Why banned outright rather than specified properly:
+
+- A compliant autoplay is not one control. The UKGC RTS pattern this section is
+  modelled on requires the player to set **both** a loss limit and a single-win
+  threshold before a run starts, requires the run to stop at **either**, requires
+  a one-tap cancel, requires the running total to stay visible, and requires the
+  settings not to persist silently across sessions. That is a feature with its
+  own screen, its own state machine and its own test surface.
+- Its only function is unattended wagering. Everything else it is sold as —
+  fewer taps, less waiting — is already handled by one-tap `REBET` against a
+  2,500 ms cycle floor that autoplay cannot go faster than anyway. Autoplay
+  cannot increase this product's throughput; it can only remove the human from
+  it.
+- A game whose stated retention model is *frequency of short sessions* (§13.7)
+  has no coherent reason to ship the one control designed for long unattended
+  ones.
+
+If a jurisdiction or an operator later requires autoplay, it is a new
+specification with the full RTS control set, a policy value other than `'none'`,
+and its own review. It is not a paragraph.
+
+**No other loss-chasing mechanics.**
 - No double-up, gamble ladder, or "risk your win" feature. Anywhere.
-- No autoplay that continues through losses. If autoplay ships at all, it is
-  count-bounded, stops on any single win above 20×, and is cancellable in one
-  tap.
 - No offer, bonus, prompt, or free round is ever triggered by a loss, a losing
   streak, or a balance drop. Triggers are time- and session-based only.
 - `REBET` never pre-selects a stake higher than the previous round's. The
@@ -889,9 +1232,15 @@ product, and `docs/MATH.md` §10.1 does the arithmetic.
 **Session tools, always available.**
 - Session elapsed time and **net position in currency** are visible in S7 and in
   the reality-check card. Never "wins", never a streak.
-- Reality check at 30 and 60 minutes, then hourly: a modal showing time played,
-  total staked, and net, with `KEEP PLAYING` and `TAKE A BREAK`. Neither button
-  is pre-focused or visually louder than the other.
+- Reality check at 30 and 60 minutes, then every 60 minutes for as long as the
+  session lasts: a modal showing time played, total staked, and net, with
+  `KEEP PLAYING` and `TAKE A BREAK`. Neither button is pre-focused or visually
+  louder than the other. The recurrence is a published field, not a sentence:
+  `realityCheckMinutes: [30, 60]` **plus** `realityCheckRecurrenceMinutes: 60`.
+  An array alone cannot express "then hourly", and a client reading only the
+  array — which is what `docs/paytable.json` publishes for exactly this reason —
+  would have stopped checking at 60 minutes while this paragraph promised
+  otherwise.
 - Session limit, loss limit and self-exclusion hand-off live in S9, reachable in
   two taps from anywhere.
 - The fairness/verify screen is one tap from every result.
@@ -957,7 +1306,8 @@ re-prices**, because every probability except BEFORE's `1/2` depends on `n`:
 
 Production notes:
 - Tube grows to seven slots at 58 px each; the chamber crops 40 px tighter.
-- Settle stagger tightens to 360 ms so the round stays under 4.7 s.
+- Settle stagger tightens to 360 ms so a celebrated round stays under 4.8 s
+  (§2): 4.16 s neutral, 4.79 s celebrated.
 - The pentatonic set extends to seven notes; the rising phrase gets longer,
   which is exactly the escalation the variant wants.
 - SEVEN is a **toggle in the top rail, not a separate product**, and switching
@@ -970,15 +1320,37 @@ Production notes:
 ## 13. Session-level design
 
 **The problem, stated plainly.** Every round is the same four-second
-choreography with the same rising phrase. The signature moment (§9) fires at
-`1/120` *conditional on the player holding a FULL ORDER chip* — roughly one round
-in six hundred at a plausible attach rate, and never at all for a player who does
-not buy that chip. A game with one set piece that rare and no layer above the
-round is a very pretty lottery, and pretending otherwise would be the same kind
-of dishonesty this document spends §10 avoiding.
+choreography with the same rising phrase. LOCK-OUT (§9) fires at `1/120`
+*conditional on the player holding a FULL ORDER chip* — roughly one round in six
+hundred at a plausible attach rate, and never at all for a player who does not
+buy that chip. A game with one set piece that rare and no layer above the round
+is a very pretty lottery, and pretending otherwise would be the same kind of
+dishonesty this document spends §10 avoiding.
 
-Four layers answer it. Each is constrained by §10, which rules out most of what
-the category reaches for first.
+**And the watch-value comparison is not flattering.** Evolution's Marble Race is
+ninety seconds of hosted physical draw with lanes, bonuses, a presenter and an
+audience. AETHER ORDER is roughly two seconds of falls whose final beat is, by
+construction, informationally dead (§2.1). No amount of glass and bloom closes
+that gap, and this document is not going to claim it does.
+
+What the format actually has instead is a **different axis**: eleven distinct
+claim shapes at one uniform price, resolving in an order the player chose. A
+lottery draw is the same event for everyone holding a ticket. Here the round's
+shape is a consequence of the ticket — that is 13.1, it is real, it is specified,
+and it is the strongest idea in this document. The bet is that *ticket-dependent
+round shape at four seconds* beats *identical round shape at ninety*, for a
+player deciding whether to play once more. It is a bet, not a finding, and §14
+pre-registers what would falsify it.
+
+Four layers answer the problem. Each is constrained by §10, which rules out most
+of what the category reaches for first, and each is honestly rated:
+
+| Layer | Status | Carries how much |
+| --- | --- | --- |
+| 13.1 round shape varies with the ticket | specified, costs nothing, provably RTP-neutral | most of it |
+| 13.2 SHARED CHAMBER | specified: screen S10, protocol, cadence arithmetic, 9 KB | second most |
+| 13.3 THE LEDGER | specified; a retention bet with no evidence behind it, and labelled as one | unknown |
+| 13.4 THE ALMANAC | default **no** | none unless research says otherwise |
 
 **13.1 The round's shape varies with the ticket, not with a trigger.**
 Early resolution (§2.1) is the cheapest variety in the product and it costs
@@ -996,19 +1368,30 @@ a committed seed. A lobby shows a live chamber on a fixed cadence; everyone
 watching bets on the same settle, sees the same tube, and verifies the same
 transcript.
 
+It is specified rather than gestured at: **§5 S10** gives the screen and its
+wireframe, the cadence arithmetic against the cycle floor and the rolling
+ceiling, the four-message protocol with byte sizes, the latency rule, and the
+reconnect path. **§7.3** carries its 9 KB in the payload budget alongside the
+extra 4 KB of screen. Round 2 answered the "pretty lottery" problem with one
+paragraph and five constraints, which is not an answer; a layer with no screen,
+no protocol and no payload line is a hope.
+
 Constraints, all of which fall straight out of §10:
 
 - The lobby timer's expiry means **no bet**, never an auto-bet, never a
-  carried-over ticket.
-- The draw cadence is a floor, not a target: no cadence may put a player's cycle
-  below 2,500 ms, so a shared chamber runs at 6 s or slower.
-- The player list shows **tickets**, never balances, never wins, never a
-  leaderboard. A visible leaderboard is a wagering incentive wearing a social
-  costume.
+  carried-over ticket. The CTA disables; the ticket stays on screen, unplaced.
+- The draw cadence is bounded below by the money controls, not by taste: below
+  4 s the rolling ceiling starts binding and a player would spend part of every
+  hour locked out of a room they are watching. §15 chooses between 6, 8 and 10.
+- The presence row shows a **count of tickets** and a ticker of **what** people
+  bet — never balances, never stakes, never wins, never a leaderboard. A visible
+  leaderboard is a wagering incentive wearing a social costume, and a visible
+  stake is peer pressure with a number on it.
 - No chat in v1. A chat channel in a gambling lobby is a tipping and
   loss-chasing surface, and moderating it is a product in itself.
 - Solo play is never worse: identical paytable, identical derivation, identical
-  everything. The lobby is company, not an edge.
+  everything, and `←` leaves mid-cadence with no penalty. The lobby is company,
+  not an edge.
 
 **13.3 THE LEDGER — the session layer, and the retention bet.** The retained
 ritual is *verification*, not accumulation. At any point the player can run one
@@ -1116,27 +1499,37 @@ the evidence, and this document will not imply otherwise.
 
 Deliberately unresolved; each needs a decision before content lock.
 
-1. **Shared chamber cadence.** §13.2 settles the semantics (expiry = no bet, no
-   cadence below the cycle floor). What is open is the number: 6 s, 8 s or 10 s
-   between draws, which trades lobby energy against how much of the hour a
-   watching player can spend betting.
+1. **Shared chamber cadence.** §5 S10 and §13.2 settle the semantics, the
+   screen, the protocol and the bound (`T ≥ 4 s`, or the rolling ceiling starts
+   binding). What is open is the number: 6 s, 8 s or 10 s between draws, which
+   trades lobby energy against how much of the hour a watching player can spend
+   betting. Decide by testing, not by argument.
 2. **Chamber skins.** Presentational only, but they must not encode any
    information. If skins ship, add a test asserting skin state is absent from
    the transcript input set.
 3. **Slot labelling direction.** Slot 1 at the bottom matches the physical
    fiction (the tube fills upward) but reads top-down in the ticket strip. User
-   test both before locking the picker.
-4. **SEVEN colour separation.** Recomputed against `--void`: INDIGO `#4C6BFF` is
-   the weakest sphere in the set at 4.66:1 and only just clears the 4.5:1 floor.
-   The two closest *pairs* are INDIGO↔VIOLET at 1.24:1 and ROSE↔CORAL at 1.34:1
-   — note that INDIGO↔VIOLET, not ROSE↔CORAL, is the worse of the two, which the
-   earlier draft had backwards. Validate both with protanopia and deuteranopia
-   simulations on real hardware; the glyphs carry the difference either way, but
-   if either pair fails, move ROSE toward `#FF6FB0` and INDIGO toward `#3D8BFF`
-   and re-check every ratio.
+   test both — and note that the FULL ORDER picker (§5 S2 E) now fills
+   bottom-up, so the two must agree or one of them must change.
+4. **SEVEN colour separation — the colour remedy is withdrawn, and the reason is
+   arithmetic.** Round 2 prescribed moving ROSE toward `#FF6FB0` and INDIGO
+   toward `#3D8BFF`. Both substitutions make the pair they were meant to repair
+   *worse*: `#3D8BFF` against VIOLET is 1.05:1 (down from 1.24) and `#FF6FB0`
+   against CORAL is 1.19:1 (down from 1.34). More importantly the whole approach
+   was wrong — §6.1 shows that seven colours clearing 4.5:1 against `--void`
+   cannot be separated by more than 1.28:1 in the best case anyone can
+   construct, so luminance is not an available channel here at all and no hex
+   substitution makes it one. The palette stays. **What is open is the glyph
+   channel, not the colour one:** validate glyph discriminability at 24 px, at
+   200% text scale, and under protanopia/deuteranopia simulation on real
+   hardware. If a glyph pair fails, change a glyph.
 5. **Clip length.** 3.4 s LOCK-OUT versus a 6 s cut that includes the ticket
    build. Test retention on both.
 6. **Whether THE ALMANAC ships at all** (§13.4). The default is no.
 7. **Server-render endpoint for clip export** (§9.1 fallback 2). It is a real
    backend with a real cost, and the alternative — a still result card — may be
    enough. Decide before committing to the infrastructure.
+8. **`RANDOMISE` in the FULL ORDER picker** (§5 S2 E). It is specified and it is
+   honest, but it is untested against the comprehension goal: a player who taps
+   it every time never internalises that they are claiming a specific order.
+   Watch for it in the first-session test and consider a first-run gate.
