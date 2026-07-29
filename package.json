@@ -15,11 +15,21 @@
     "enumerate:write": "node tools/enumerate.mjs --write",
     "enumerate:montecarlo": "node tools/enumerate.mjs --monte-carlo=200000",
     "bench": "node tools/bench.mjs",
+    "dev": "node --import tsx src/server/main.ts",
+    "build": "node --import tsx -e \"import('./src/server/build-client.ts').then((m) => m.buildClient())\"",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "npm run enumerate && npm test"
+    "verify": "npm run enumerate && npm run typecheck && npm test"
   },
   "devDependencies": {
+    "@types/node": "^26.1.2",
+    "esbuild": "^0.28.1",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@axiom-games/reveal-engine": "file:vendor/axiom-games-reveal-engine-0.4.0.tgz"
   }
 }
