@@ -2,7 +2,7 @@
   "name": "@axiom-games/aether-order",
   "version": "0.1.0",
   "private": true,
-  "description": "AETHER ORDER — a premium permutation draw built on Reveal Engine. Specification, exact enumeration and proofs.",
+  "description": "AETHER ORDER \u2014 a premium permutation draw built on Reveal Engine. Specification, exact enumeration and proofs.",
   "license": "UNLICENSED",
   "type": "module",
   "engines": {
@@ -18,7 +18,7 @@
     "dev": "node --import tsx src/server/main.ts",
     "build": "node --import tsx -e \"import('./src/server/build-client.ts').then((m) => m.buildClient())\"",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.bench.config.ts",
     "test:watch": "vitest",
     "verify": "npm run enumerate && npm run typecheck && npm test"
   },

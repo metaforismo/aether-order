@@ -38,7 +38,12 @@ describe('the packaged adapter', () => {
     expect(report.checks.map((check) => check.id)).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
     ]);
-  }, 60_000);
+    // No inline timeout. This test used to carry its own 60 s, which was the
+    // right instinct applied to one file out of nine — and once vitest.config.ts
+    // set 120 s for every file, the inline value became a *lower* bound that
+    // undercut it. The n = 7 sweep here legitimately runs for over a minute on
+    // a loaded machine.
+  });
 
   it('publishes a play policy that cannot be loosened by a player', () => {
     const policy = GAMES.classic.play;
