@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: enumerate + test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Exhaustive enumeration (the proof)
+        run: npm run enumerate
+
+      - name: Tests
+        run: npm test
+
+  crosscheck:
+    name: monte carlo cross-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Monte Carlo sanity pass
+        run: npm run enumerate:montecarlo
+
+  fixtures:
+    name: fixtures are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Regenerate published paytable and frozen vectors
+        run: npm run enumerate:write
+      - name: Fail if anything drifted
+        run: |
+          if ! git diff --exit-code -- docs/paytable.json tests/fixtures; then
+            echo "::error::docs/paytable.json or tests/fixtures is stale. Run 'npm run enumerate:write' and commit."
+            exit 1
+          fi
