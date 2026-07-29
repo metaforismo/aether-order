@@ -383,6 +383,25 @@ describe('commitments', () => {
     claimSignature('classic', { code: 'first', resolve: () => false }, { params: { c: 0 }, label: 'f0' });
     expect(claimSignature('classic', first, { code: 'first', params: { c: 0 }, label: 'f0' })).toBe(honest);
 
+    // A stateful `params` getter that answers one way for the cache key and
+    // another for the predicate must not desync them. Both now read the
+    // adapter's own frozen instance.
+    let reads = 0;
+    claimSignature('classic', 'first', {
+      code: 'first',
+      label: 'f0',
+      get params() {
+        reads += 1;
+        return reads === 1 ? { c: 0 } : { c: 1 };
+      },
+    });
+    expect(claimSignature('classic', first, { code: 'first', params: { c: 0 }, label: 'f0' })).toBe(honest);
+    expect(claimSignature('classic', first, { code: 'first', params: { c: 1 }, label: 'f1' })).not.toBe(honest);
+
+    // Parameters that name no legal instance are rejected, not silently hashed.
+    expect(() => claimSignature('classic', first, { code: 'first', params: { c: 99 } })).toThrow(AetherOrderError);
+    expect(() => claimSignature('classic', first, { code: 'first' })).toThrow(AetherOrderError);
+
     // Behavioural aliases across families share a signature; near-misses do not.
     expect(claimSignature('classic', slot, { code: 'slot', params: { c: 0, k: 0 }, label: '0@0' })).toBe(honest);
     expect(claimSignature('classic', slot, { code: 'slot', params: { c: 0, k: 1 }, label: '0@1' })).not.toBe(honest);

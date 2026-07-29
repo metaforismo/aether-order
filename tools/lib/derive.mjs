@@ -188,22 +188,30 @@ function canonicalParams(params) {
  */
 export function claimSignature(variantId, family, instance) {
   const variant = assertVariant(variantId);
-  // The predicate always comes from the ADAPTER, looked up by code — never from
-  // the caller's object. A caller-supplied family with a matching code but a
-  // different `resolve` would otherwise write a signature for a claim it does
-  // not define, and the cache would hand that wrong value to settlement.
+  // Nothing the caller supplies reaches the bitmap. The family is looked up by
+  // code and the instance is resolved to the adapter's own frozen instance, so
+  // neither a substituted `resolve` nor a stateful `params` getter — one that
+  // answers `{c:0}` for the cache key and `{c:1}` for the predicate — can write
+  // a signature for a claim it does not name. The caller's `params` is read
+  // exactly once, and only to find the real instance.
   const canonical = assertBetFamily(typeof family === 'string' ? family : family?.code);
-  // Key on what determines the bitmap — the family code and the canonical
-  // parameters — never on the label. A label is adapter-authored metadata;
-  // keying on it would let an instance whose label disagreed with its params
-  // poison the cache entry for the real instance.
-  const key = `${variant.id}|${canonical.code}|${canonicalParams(instance.params)}`;
+  if (typeof instance !== 'object' || instance === null || typeof instance.params !== 'object' || instance.params === null) {
+    fail('UNKNOWN_INSTANCE', 'Bet instance must carry a params object', '$.params');
+  }
+  const requested = { ...instance.params };
+  const legal = canonical.instances(variant.n, { permutationCount: factorialNumber(variant.n) });
+  const canonicalInstance = legal.find((candidate) => sameParams(candidate.params, requested));
+  if (!canonicalInstance) fail('UNKNOWN_INSTANCE', 'Bet parameters are not a legal instance', '$.params');
+
+  // Key on what determines the bitmap — the family code and the adapter's own
+  // canonical parameters — never on the label, which is authored metadata.
+  const key = `${variant.id}|${canonical.code}|${canonicalParams(canonicalInstance.params)}`;
   const cached = claimSignatureCache.get(key);
   if (cached) return cached;
   const views = viewsFor(variant.id);
   const bitmap = Buffer.alloc(Math.ceil(views.length / 8));
   for (let p = 0; p < views.length; p += 1) {
-    if (canonical.resolve(instance, views[p]) === true) bitmap[p >> 3] |= 1 << (p & 7);
+    if (canonical.resolve(canonicalInstance, views[p]) === true) bitmap[p >> 3] |= 1 << (p & 7);
   }
   const signature = sha256Hex(bitmap);
   claimSignatureCache.set(key, signature);
