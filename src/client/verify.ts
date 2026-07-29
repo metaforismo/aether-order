@@ -18,8 +18,11 @@
 
 const MODULE_VERSION = 'reveal-engine/permutation-v1';
 const TRANSCRIPT_SCHEMA = 'reveal-engine/permutation-transcript-v1';
+const TICKET_SCHEMA = 'reveal-engine/permutation-ticket-v1';
 const RECEIPT_SCHEMA = 'reveal-engine/permutation-receipt-v1';
 const SEED_COMMIT_DOMAIN = 'aether-order/seed-commit-v1';
+const TICKET_DIGEST_DOMAIN = 'aether-order/ticket-digest-v1';
+const SETTLEMENT_DIGEST_DOMAIN = 'aether-order/settlement-digest-v1';
 const RECEIPT_DOMAIN = 'aether-order/receipt-v1';
 const GAME_ID = 'aether-order';
 const RANGE = 1n << 256n;
@@ -225,20 +228,63 @@ export interface LocalVerification {
   commitment: string;
 }
 
+/** The adapter the verifier holds, to check the transcript belongs to it. */
+export interface ExpectedAdapter {
+  gameId: string;
+  adapterVersion: string;
+  adapterFingerprint: string;
+  n: number;
+}
+
+function isPermutationOf(value: unknown, n: number): value is number[] {
+  if (!Array.isArray(value) || value.length !== n) return false;
+  const seen = new Array<boolean>(n).fill(false);
+  for (const element of value) {
+    if (!Number.isInteger(element) || element < 0 || element >= n) return false;
+    if (seen[element as number]) return false;
+    seen[element as number] = true;
+  }
+  return true;
+}
+
 /**
- * docs/ENGINE.md §7.10, in the order it lists: fail closed on an unknown schema,
- * re-derive, and require the pre-round seed commitment rather than treating a
- * missing one as nothing to check.
+ * docs/ENGINE.md §7.10, in the order it lists: fail closed on an unknown schema;
+ * reject a mismatched game, adapter version or fingerprint; validate that
+ * `permutation` is a genuine permutation of `[0, n)`; re-derive and compare
+ * element by element; require the pre-round seed commitment rather than treating
+ * a missing one as nothing to check; recompute the round commitment.
+ *
+ * Steps 2 and 3 are the ones a verifier is tempted to skip because the hashes
+ * "would catch it anyway". They would not: a transcript can be internally
+ * consistent — its own commitment opening to its own seed — while describing a
+ * round of a different game under a different paytable.
  */
 export async function verifyTranscriptLocally(
   serverSeedHex: string,
   transcript: TranscriptLike,
+  expected?: ExpectedAdapter,
 ): Promise<LocalVerification> {
   const empty = { derivedPermutation: [] as number[], seedCommitment: '', commitment: '' };
   if (transcript.schema !== TRANSCRIPT_SCHEMA || transcript.moduleVersion !== MODULE_VERSION)
     return { ok: false, code: 'UNSUPPORTED_VERSION', detail: '$.schema', ...empty };
+  if (expected) {
+    if (transcript.gameId !== expected.gameId)
+      return { ok: false, code: 'ADAPTER_MISMATCH', detail: '$.gameId', ...empty };
+    if (transcript.adapterVersion !== expected.adapterVersion)
+      return { ok: false, code: 'ADAPTER_MISMATCH', detail: '$.adapterVersion', ...empty };
+    if (transcript.adapterFingerprint !== expected.adapterFingerprint)
+      return { ok: false, code: 'ADAPTER_MISMATCH', detail: '$.adapterFingerprint', ...empty };
+    if (transcript.n !== expected.n)
+      return { ok: false, code: 'INVALID_TRANSCRIPT', detail: '$.n', ...empty };
+  }
+  if (!Number.isInteger(transcript.n) || transcript.n < 2 || transcript.n > 12)
+    return { ok: false, code: 'INVALID_TRANSCRIPT', detail: '$.n', ...empty };
+  if (!isPermutationOf(transcript.permutation, transcript.n))
+    return { ok: false, code: 'INVALID_TRANSCRIPT', detail: '$.permutation', ...empty };
   if (!/^[0-9a-f]{64}$/u.test(transcript.seedCommitment))
     return { ok: false, code: 'INVALID_TRANSCRIPT', detail: '$.seedCommitment', ...empty };
+  if (!/^[0-9a-f]{64}$/u.test(transcript.previousCommitment))
+    return { ok: false, code: 'INVALID_TRANSCRIPT', detail: '$.previousCommitment', ...empty };
 
   const derived = await derivePermutation(serverSeedHex, transcript.n, {
     gameId: transcript.gameId,
@@ -278,6 +324,111 @@ export interface ReceiptLike {
   signerId: string;
   digest: string;
   signature: string | null;
+}
+
+/* ------------------------------------------------------------------------- *
+ * The ticket and settlement digests — docs/ENGINE.md §7.6.
+ *
+ * A verifier that recomputes only the receipt's own digest proves the receipt is
+ * internally consistent and nothing else. §7.8 is explicit: a verifier holding
+ * (receipt, transcript, ticket, settlement) must recompute the ticket digest and
+ * the settlement digest too, and compare the money totals. Without that, a
+ * perfectly valid signed receipt sits beside a settlement screen showing numbers
+ * it does not cover, and the card still reads SIGNATURE VERIFIED.
+ * ------------------------------------------------------------------------- */
+
+export interface DisplayedLine {
+  code: string;
+  params: Record<string, unknown>;
+  stakeChips: string;
+  won: boolean | null;
+  grossChips: string | null;
+}
+
+export interface DisplayedSettlement {
+  totalStakeChips: string;
+  grossChips: string;
+  creditedChips: string;
+  netChips: string;
+  capped: boolean;
+}
+
+export interface RoundIdentity {
+  gameId: string;
+  variantId: string;
+  roundId: string;
+  nonce: number;
+}
+
+/** Sorted `key=value` pairs, joined by `,`. The adapter's own rendering. */
+function canonicalParams(params: Record<string, unknown>): string {
+  return Object.keys(params)
+    .sort()
+    .map((key) => `${key}=${String(params[key])}`)
+    .join(',');
+}
+
+/** Ascending by code, then by the canonical parameter rendering. */
+function canonicalOrder(lines: readonly DisplayedLine[]): DisplayedLine[] {
+  return [...lines].sort((left, right) => {
+    if (left.code !== right.code) return left.code < right.code ? -1 : 1;
+    const a = canonicalParams(left.params);
+    const b = canonicalParams(right.params);
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+}
+
+export async function ticketDigestOf(
+  identity: RoundIdentity,
+  lines: readonly DisplayedLine[],
+): Promise<string> {
+  const ordered = canonicalOrder(lines);
+  const fields: Field[] = [
+    TICKET_DIGEST_DOMAIN,
+    TICKET_SCHEMA,
+    MODULE_VERSION,
+    identity.gameId,
+    identity.variantId,
+    identity.roundId,
+    identity.nonce,
+    ordered.length,
+  ];
+  let totalStake = 0n;
+  for (const line of ordered) {
+    fields.push(line.code, canonicalParams(line.params), BigInt(line.stakeChips));
+    totalStake += BigInt(line.stakeChips);
+  }
+  fields.push(totalStake);
+  return sha256Hex(encodeFields(fields));
+}
+
+export async function settlementDigestOf(
+  identity: Pick<RoundIdentity, 'gameId' | 'variantId'>,
+  settlement: DisplayedSettlement,
+  lines: readonly DisplayedLine[],
+): Promise<string> {
+  const ordered = canonicalOrder(lines);
+  const fields: Field[] = [
+    SETTLEMENT_DIGEST_DOMAIN,
+    MODULE_VERSION,
+    identity.gameId,
+    identity.variantId,
+    BigInt(settlement.totalStakeChips),
+    BigInt(settlement.grossChips),
+    BigInt(settlement.creditedChips),
+    settlement.capped ? 1 : 0,
+    BigInt(settlement.netChips),
+    ordered.length,
+  ];
+  for (const line of ordered)
+    fields.push(
+      line.code,
+      canonicalParams(line.params),
+      BigInt(line.stakeChips),
+      line.won ? 1 : 0,
+      BigInt(line.grossChips ?? '0'),
+    );
+  return sha256Hex(encodeFields(fields));
 }
 
 function receiptCore(receipt: ReceiptLike): Uint8Array {
@@ -325,6 +476,7 @@ export async function verifyReceiptLocally(
   receipt: ReceiptLike,
   transcript: TranscriptLike,
   publicKeyHex: string | null,
+  bet?: { lines: readonly DisplayedLine[]; settlement: DisplayedSettlement },
 ): Promise<LocalReceiptVerification> {
   const fail = (code: string, path: string): LocalReceiptVerification => ({
     ok: false,
@@ -349,6 +501,27 @@ export async function verifyReceiptLocally(
     receipt.adapterFingerprint !== transcript.adapterFingerprint
   )
     return fail('ADAPTER_MISMATCH', '$.adapterFingerprint');
+
+  // Does this receipt cover the ticket and the settlement on this screen?
+  if (bet) {
+    const identity = {
+      gameId: receipt.gameId,
+      variantId: receipt.variantId,
+      roundId: receipt.roundId,
+      nonce: receipt.nonce,
+    };
+    if ((await ticketDigestOf(identity, bet.lines)) !== receipt.ticketDigest)
+      return fail('TRANSCRIPT_MISMATCH', '$.ticketDigest');
+    if (
+      (await settlementDigestOf(identity, bet.settlement, bet.lines)) !== receipt.settlementDigest
+    )
+      return fail('TRANSCRIPT_MISMATCH', '$.settlementDigest');
+    if (
+      BigInt(receipt.totalStake) !== BigInt(bet.settlement.totalStakeChips) ||
+      BigInt(receipt.credited) !== BigInt(bet.settlement.creditedChips)
+    )
+      return fail('TRANSCRIPT_MISMATCH', '$.credited');
+  }
 
   const digest = await sha256Hex(receiptCore(receipt));
   if (digest !== receipt.digest) return fail('COMMITMENT_MISMATCH', '$.digest');

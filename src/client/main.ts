@@ -799,6 +799,7 @@ async function openHistorySheet(): Promise<void> {
           sessionId: (state.session as SessionState).id,
           round: loaded.round,
           operatorKeyHex: state.operatorKeyHex,
+          adapter: expectedAdapter(loaded.round.variantId),
         }),
       );
     },
@@ -833,6 +834,30 @@ function openSeedSheet(): void {
   });
 }
 
+/**
+ * The adapter this client holds, taken from the published catalogue.
+ *
+ * docs/ENGINE.md §7.10 step 2: a verifier rejects a transcript belonging to
+ * another game, adapter version or fingerprint. Without it a transcript can open
+ * its own commitment honestly while describing a round under a different
+ * paytable.
+ */
+function expectedAdapter(variantId: 'classic' | 'seven'): {
+  gameId: string;
+  adapterVersion: string;
+  adapterFingerprint: string;
+  n: number;
+} {
+  const catalogue = state.catalogue as Catalogue;
+  const info = catalogue.variants[variantId];
+  return {
+    gameId: catalogue.gameId,
+    adapterVersion: catalogue.adapterVersion,
+    adapterFingerprint: info.adapterFingerprint,
+    n: info.n,
+  };
+}
+
 async function openFairnessForLast(): Promise<void> {
   const session = state.session as SessionState;
   const round = state.round;
@@ -859,6 +884,7 @@ async function openFairnessForLast(): Promise<void> {
     sessionId: session.id,
     round,
     operatorKeyHex: state.operatorKeyHex,
+    adapter: expectedAdapter(round.variantId),
     onVerified: () => {
       state.verified = true;
       const chip = app().querySelector('[data-fairness]') as HTMLElement;

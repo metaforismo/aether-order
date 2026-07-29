@@ -198,6 +198,7 @@ round and receipt is gone.
 | `npm run typecheck` | `tsc --noEmit` over the service and the client |
 | `npm test` | the whole suite, including the API-level playthrough |
 | `AETHER_DEV=1 npm run dev` | additionally enables `POST /api/dev/skew`, a test hook that shifts *session elapsed time* so the reality-check schedule can be seen without waiting 30 minutes. It changes no policy and is off by default. |
+| `AETHER_CONFORMANCE=1 npm run dev` | additionally runs `docs/ENGINE.md` §8's twelve checks at startup (~7 s at `n = 7`). They run on every build in `tests/adapter-conformance.test.ts`, which is where §8 says they belong; the *fingerprint* cross-check against `docs/paytable.json` runs at every startup regardless, and a mismatch refuses to serve. |
 
 **The engine is consumed as a package, not copied.** `dependencies` carries
 `@axiom-games/reveal-engine` as a `file:` install of
@@ -229,6 +230,16 @@ reimplemented. The round lifecycle is §5's, in §5's order:
 
 Pacing is server-side and hard: a COMMIT inside the 2,500 ms floor is rejected
 with `CYCLE_FLOOR` and the stake is unspent, never queued.
+
+**Pacing is per session, and in a free-play graybox a session is free to mint.**
+`docs/ENGINE.md` §5 states the floor and the ceiling "for the same session",
+which is what this service enforces — but it has no accounts, so anyone can
+`POST /api/session` and get a fresh 2,500 ms clock and a fresh rolling hour. That
+is not a defence of the gap: it is the gap, and closing it needs the thing this
+repository explicitly does not have, an authenticated player identity that
+pacing state hangs off instead of a session. A deployment must key both controls
+to the account, and no hash substitutes for that — §4's `playPolicyDigest` is
+evidence that the published policy was the live one, never enforcement of it.
 
 ### What the client is
 

@@ -19,7 +19,11 @@ import { glyphSvg } from './glyphs.js';
 import { credits, signedCredits } from './money.js';
 import type { Catalogue, HistoryRow, RoundView, SessionState, VariantInfo } from './types.js';
 import { esc, html, on, openModal, openSheet, toast } from './ui.js';
-import { verifyReceiptLocally, verifyTranscriptLocally } from './verify.js';
+import {
+  verifyReceiptLocally,
+  verifyTranscriptLocally,
+  type ExpectedAdapter,
+} from './verify.js';
 
 const short = (hash: string, keep = 16): string =>
   hash.length <= keep ? hash : `${hash.slice(0, keep / 2)}…${hash.slice(-keep / 2)}`;
@@ -111,6 +115,8 @@ export async function openFairness(options: {
   sessionId: string;
   round: RoundView;
   operatorKeyHex: string | null;
+  /** The adapter this client holds, so a transcript from another one fails. */
+  adapter: ExpectedAdapter;
   onVerified?: () => void;
 }): Promise<void> {
   let round = options.round;
@@ -126,11 +132,20 @@ export async function openFairness(options: {
 
   const transcript = round.transcript;
   const local = transcript && round.serverSeed
-    ? await verifyTranscriptLocally(round.serverSeed, transcript)
+    ? await verifyTranscriptLocally(round.serverSeed, transcript, options.adapter)
     : null;
+  // The receipt is checked against the ticket and the settlement THIS SCREEN is
+  // showing, not merely against itself (docs/ENGINE.md §7.8).
   const receiptResult =
     round.receipt && transcript
-      ? await verifyReceiptLocally(round.receipt, transcript, options.operatorKeyHex)
+      ? await verifyReceiptLocally(
+          round.receipt,
+          transcript,
+          options.operatorKeyHex,
+          round.settlement
+            ? { lines: round.lines, settlement: round.settlement }
+            : undefined,
+        )
       : null;
 
   if (local?.ok) options.onVerified?.();

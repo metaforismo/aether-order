@@ -21,6 +21,7 @@ const app = createApp({
   clientDir: CLIENT_OUT_DIR,
   lobby: true,
   dev,
+  conformance: process.env.AETHER_CONFORMANCE === '1',
 });
 
 const server = createServer(app.handler);

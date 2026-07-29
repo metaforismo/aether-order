@@ -158,8 +158,17 @@ export class SharedChamber {
     draw.settled = true;
     this.#previousCommitment = transcript.commitment;
     for (const entry of draw.entries.values()) {
-      entry.round.seedRevealed = true;
-      this.#store.finishRound(entry.session, entry.round, transcript);
+      try {
+        // Settle and credit BEFORE the seed becomes readable on that round.
+        // Reversing the two would publish the seed for a ticket that is still
+        // debited and unsettled, which is the one ordering §5 forbids.
+        this.#store.finishRound(entry.session, entry.round, transcript);
+        entry.round.seedRevealed = true;
+      } catch {
+        // One player's settlement must not strand the rest of the room, and
+        // must not stop the next draw from opening.
+        entry.round.seedRevealed = false;
+      }
     }
     this.#emit({ type: 'round.reveal', draw });
     this.#open();

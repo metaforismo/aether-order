@@ -29,6 +29,19 @@ export interface AppOptions {
   readonly lobbyCadenceMs?: number;
   /** Enables `POST /api/dev/skew`, a test hook. Never on by default. */
   readonly dev?: boolean;
+  /**
+   * Run docs/ENGINE.md §8's twelve adapter conformance checks at startup.
+   *
+   * Off by default, and that is a considered split rather than a saving. The
+   * fingerprint cross-check below always runs: it is what stops the service
+   * settling rounds under an adapter `docs/paytable.json` does not describe, and
+   * it costs a comparison against a value the engine memoised at construction.
+   * Conformance is a different thing — §8 calls it mechanical evidence and says
+   * to run it in CI — and at `n = 7` it re-derives 27.6M predicate evaluations,
+   * about seven seconds. `tests/adapter-conformance.test.ts` runs it on every
+   * build; a server paying for it on every boot is paying a CI cost at runtime.
+   */
+  readonly conformance?: boolean;
 }
 
 export interface App {
@@ -123,7 +136,7 @@ function parseLines(value: unknown): RawLine[] {
 
 export function createApp(options: AppOptions = {}): App {
   assertPublishedArtefactsMatchEngine();
-  assertAdaptersConform();
+  if (options.conformance) assertAdaptersConform();
 
   const store = new SessionStore(options.now ? { now: options.now } : {});
   const chamber = options.lobby === false ? null : new SharedChamber(store, options.lobbyCadenceMs);

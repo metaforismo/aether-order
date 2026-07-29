@@ -19,6 +19,7 @@ import {
   openTicket,
   seedCommitment as engineSeedCommitment,
   settleTicket,
+  settlementDigest,
   signReceipt,
 } from '@axiom-games/reveal-engine/modules/permutation/aether';
 import { GAMES } from '../src/server/engine.js';
@@ -27,6 +28,8 @@ import {
   derivePermutation,
   encodeFields,
   seedCommitment,
+  settlementDigestOf,
+  ticketDigestOf,
   transcriptCommitment,
   verifyReceiptLocally,
   verifyTranscriptLocally,
@@ -144,6 +147,65 @@ describe('verifyTranscriptLocally', () => {
   });
 });
 
+describe('the verifier rejects what the engine rejects', () => {
+  const game = GAMES.classic;
+  const seed = SEEDS[1] as string;
+  const context = {
+    gameId: game.id,
+    variantId: 'classic',
+    roundId: 'adapter-1',
+    clientSeed: '',
+    nonce: 1,
+  };
+  const transcript = makePermutationTranscript(seed, game, context);
+  const adapter = {
+    gameId: game.id,
+    adapterVersion: game.adapterVersion,
+    adapterFingerprint: transcript.adapterFingerprint,
+    n: game.n,
+  };
+
+  it('accepts the honest round under the adapter it holds', async () => {
+    const result = await verifyTranscriptLocally(seed, wire(transcript) as TranscriptLike, adapter);
+    expect(result.ok).toBe(true);
+  });
+
+  it.each([
+    ['gameId', (value: TranscriptLike) => (value.gameId = 'other-game')],
+    ['adapterVersion', (value: TranscriptLike) => (value.adapterVersion = '9.9.9')],
+    ['adapterFingerprint', (value: TranscriptLike) => (value.adapterFingerprint = 'f'.repeat(64))],
+  ])('rejects a transcript from another adapter (%s)', async (_name, mutate) => {
+    const mutated = wire(transcript) as TranscriptLike;
+    mutate(mutated);
+    const result = await verifyTranscriptLocally(seed, mutated, adapter);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('ADAPTER_MISMATCH');
+  });
+
+  it('rejects a permutation that is not one — even with a matching commitment', async () => {
+    // The attack the check exists for: an internally consistent transcript that
+    // is not a legal round. Both hashes are recomputed from the forgery, so the
+    // only thing standing between it and a gold "verified locally" chip is
+    // §7.10's structural validation.
+    for (const permutation of [[], [0, 0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2, 3, 5]]) {
+      const forged = wire(transcript) as TranscriptLike;
+      forged.permutation = permutation as number[];
+      const result = await verifyTranscriptLocally(seed, forged, adapter);
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe('INVALID_TRANSCRIPT');
+    }
+  });
+
+  it('rejects a transcript with an impossible element count', async () => {
+    const forged = wire(transcript) as TranscriptLike;
+    forged.n = 0;
+    forged.permutation = [];
+    const result = await verifyTranscriptLocally(seed, forged);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('INVALID_TRANSCRIPT');
+  });
+});
+
 describe('verifyReceiptLocally — a tri-state, and only one of the three is a pass', () => {
   const game = GAMES.classic;
   const seed = SEEDS[3] as string;
@@ -212,5 +274,79 @@ describe('verifyReceiptLocally — a tri-state, and only one of the three is a p
     );
     expect(result.ok).toBe(false);
     expect(result.state).toBe('mismatch');
+  });
+
+  /*
+   * The receipt exists to bind the round to THE BET. A verifier that only
+   * recomputes the receipt's own digest proves the receipt is self-consistent
+   * and says nothing about the settlement on screen beside it — so a valid
+   * signed receipt could sit under a payout figure it does not cover.
+   */
+  describe('bound to the ticket and settlement on screen', () => {
+    const displayedLines = settlement.lines.map((line) => ({
+      code: line.code,
+      params: line.params as Record<string, unknown>,
+      stakeChips: line.stake.toString(10),
+      won: line.won,
+      grossChips: line.gross.toString(10),
+    }));
+    const displayedSettlement = {
+      totalStakeChips: settlement.totalStake.toString(10),
+      grossChips: settlement.gross.toString(10),
+      creditedChips: settlement.credited.toString(10),
+      netChips: settlement.net.toString(10),
+      capped: settlement.capped,
+    };
+
+    it('recomputes both digests and passes on the real ticket', async () => {
+      const result = await verifyReceiptLocally(
+        wire(receipt) as unknown as ReceiptLike,
+        wire(transcript) as TranscriptLike,
+        keyPair.publicKeyHex,
+        { lines: displayedLines, settlement: displayedSettlement },
+      );
+      expect(result.ok).toBe(true);
+      expect(result.state).toBe('verified');
+    });
+
+    it('rejects an inflated payout under a genuine signature', async () => {
+      const result = await verifyReceiptLocally(
+        wire(receipt) as unknown as ReceiptLike,
+        wire(transcript) as TranscriptLike,
+        keyPair.publicKeyHex,
+        {
+          lines: displayedLines,
+          settlement: { ...displayedSettlement, creditedChips: '99999' },
+        },
+      );
+      expect(result.ok).toBe(false);
+      expect(result.state).toBe('mismatch');
+      expect(result.path).toBe('$.settlementDigest');
+    });
+
+    it('rejects a ticket line that was edited after settlement', async () => {
+      const edited = displayedLines.map((line) => ({ ...line, stakeChips: '5000' }));
+      const result = await verifyReceiptLocally(
+        wire(receipt) as unknown as ReceiptLike,
+        wire(transcript) as TranscriptLike,
+        keyPair.publicKeyHex,
+        { lines: edited, settlement: displayedSettlement },
+      );
+      expect(result.ok).toBe(false);
+      expect(result.path).toBe('$.ticketDigest');
+    });
+
+    it('agrees with the engine on both digests', async () => {
+      const identity = {
+        gameId: game.id,
+        variantId: game.variantId,
+        roundId: context.roundId,
+        nonce: context.nonce,
+      };
+      expect(await ticketDigestOf(identity, displayedLines)).toBe(ticket.ticketDigest);
+      expect(await settlementDigestOf(identity, displayedSettlement, displayedLines)).toBe(
+        settlementDigest(game, settlement),
+      );
+    });
   });
 });

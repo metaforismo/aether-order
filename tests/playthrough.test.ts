@@ -49,7 +49,9 @@ beforeAll(async () => {
   server = createServer(app.handler);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-});
+  // Constructing the app cross-checks the engine's fingerprint against the
+  // published paytable, which builds the SEVEN catalogue digest.
+}, 60_000);
 
 afterAll(async () => {
   app.close();
@@ -319,6 +321,82 @@ describe('pacing and the wallet', () => {
       playerRealityCheckMinutes: 120,
     });
     expect(loosened.status).toBe(400);
+  });
+});
+
+describe('the defects a review found, pinned so they stay fixed', () => {
+  it('never credits a round twice, even if settlement is driven again', async () => {
+    const sessionId = await newSession();
+    const opened = await call('POST', `/api/session/${sessionId}/round/open`);
+    const committed = await call('POST', `/api/session/${sessionId}/round/commit`, {
+      roundId: opened.json.round.roundId,
+      clientSeed: '',
+      lines: [{ code: 'before', params: { a: 0, b: 1 }, stake: '25' }],
+    });
+    const balance = BigInt(committed.json.session.balanceChips as string);
+    const session = app.store.get(sessionId);
+    const round = session.roundsById.get(opened.json.round.roundId)!;
+    expect(() =>
+      app.store.finishRound(session, round, round.transcript!),
+    ).toThrow(/already been settled/u);
+    expect(session.balanceChips).toBe(balance);
+  });
+
+  it('validates the client seed before the wallet is touched', async () => {
+    const sessionId = await newSession();
+    const opened = await call('POST', `/api/session/${sessionId}/round/open`);
+    const refused = await call('POST', `/api/session/${sessionId}/round/commit`, {
+      roundId: opened.json.round.roundId,
+      clientSeed: 'line\nbreak',
+      lines: [{ code: 'first', params: { c: 0 }, stake: '25' }],
+    });
+    expect(refused.status).toBeGreaterThanOrEqual(400);
+    expect(app.store.get(sessionId).balanceChips).toBe(OPENING_BALANCE_CHIPS);
+
+    // And the round is still open for a well-formed retry, not poisoned by a
+    // half-recorded idempotency key.
+    const retried = await call('POST', `/api/session/${sessionId}/round/commit`, {
+      roundId: opened.json.round.roundId,
+      clientSeed: 'fine',
+      lines: [{ code: 'first', params: { c: 0 }, stake: '25' }],
+    });
+    expect(retried.status).toBe(200);
+    expect(retried.json.round.phase).toBe('SETTLED');
+    expect(retried.json.replayed).toBe(false);
+  });
+
+  it('chains each settled round to the previous one, across abandoned rounds', async () => {
+    const sessionId = await newSession();
+    const first = await call('POST', `/api/session/${sessionId}/round/open`);
+    const firstCommit = await call('POST', `/api/session/${sessionId}/round/commit`, {
+      roundId: first.json.round.roundId,
+      clientSeed: '',
+      lines: [{ code: 'first', params: { c: 0 }, stake: '25' }],
+    });
+    now += 2_500;
+
+    // Open a round, abandon it by switching variant, come back, and commit.
+    const abandoned = await call('POST', `/api/session/${sessionId}/round/open`);
+    await call('POST', `/api/session/${sessionId}/settings`, { variantId: 'seven' });
+    await call('POST', `/api/session/${sessionId}/settings`, { variantId: 'classic' });
+
+    const stale = await call('POST', `/api/session/${sessionId}/round/commit`, {
+      roundId: abandoned.json.round.roundId,
+      clientSeed: '',
+      lines: [{ code: 'first', params: { c: 1 }, stake: '25' }],
+    });
+    expect(stale.status).toBe(404);
+    expect(stale.json.error.code).toBe('ROUND_NOT_FOUND');
+
+    const second = await call('POST', `/api/session/${sessionId}/round/open`);
+    const secondCommit = await call('POST', `/api/session/${sessionId}/round/commit`, {
+      roundId: second.json.round.roundId,
+      clientSeed: '',
+      lines: [{ code: 'first', params: { c: 1 }, stake: '25' }],
+    });
+    expect(secondCommit.json.round.transcript.previousCommitment).toBe(
+      firstCommit.json.round.transcript.commitment,
+    );
   });
 });
 

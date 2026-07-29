@@ -20,6 +20,7 @@
 import { randomBytes, randomUUID, type KeyObject } from 'node:crypto';
 import {
   ZERO_COMMITMENT,
+  assertClientSeed,
   ed25519KeyPairFromSeed,
   makePermutationTranscript,
   makeReceipt,
@@ -208,12 +209,24 @@ export class SessionStore {
   }
 
   setVariant(session: Session, variantId: VariantId): void {
-    if (session.openRound && session.openRound.phase === 'COMMITTED') {
-      // The open round's seed context is bound to its variant, so switching
-      // discards it and publishes a fresh commitment rather than reusing one.
-      session.openRound = null;
-    }
+    this.#discardOpenRound(session);
     session.variantId = variantId;
+  }
+
+  /**
+   * Abandon an open, unbet round.
+   *
+   * The round is *forgotten*, not merely unlinked: a discarded round left
+   * reachable by id is a round a client can still commit to, and committing it
+   * after a later round has settled would bind a stale `previousCommitment` and
+   * fork the chain (docs/ENGINE.md §5). Nothing was staked on it, so nothing is
+   * lost by dropping it.
+   */
+  #discardOpenRound(session: Session): void {
+    const open = session.openRound;
+    if (!open) return;
+    if (open.phase === 'COMMITTED' && open.ticket === null) session.roundsById.delete(open.roundId);
+    session.openRound = null;
   }
 
   /* ---------------------------------------------------------------- pacing */
@@ -346,6 +359,7 @@ export class SessionStore {
     const existing = session.openRound;
     if (existing && existing.phase === 'COMMITTED' && existing.variantId === session.variantId)
       return existing;
+    this.#discardOpenRound(session);
     const variantId = session.variantId;
     const nonce = session.roundSequence;
     session.roundSequence += 1;
@@ -483,8 +497,21 @@ export class SessionStore {
     return { ticket, replayed: null };
   }
 
-  /** Settle a staged ticket against the round's transcript, and credit. */
+  /**
+   * Settle a staged ticket against the round's transcript, and credit.
+   *
+   * The phase guard is the second half of the idempotency rule: `stageTicket`
+   * stops a ticket being debited twice, and this stops a round being credited
+   * twice. Both halves are needed — a settle path that credits whatever it is
+   * handed is one retry away from paying a round out again.
+   */
   finishRound(session: Session, round: RoundRecord, transcript: PermutationTranscript): RoundRecord {
+    if (round.phase === 'SETTLED')
+      throw new ServiceError(
+        'ROUND_ALREADY_SETTLED',
+        'That round has already been settled and credited',
+        '$.roundId',
+      );
     const game = gameFor(round.variantId);
     const ticket = round.ticket;
     if (!ticket) throw new ServiceError('ROUND_NOT_FOUND', 'Round has no staged ticket', '$.ticket');
@@ -519,11 +546,20 @@ export class SessionStore {
     const round = session.roundsById.get(input.roundId);
     if (!round) throw new ServiceError('ROUND_NOT_FOUND', 'No such round', '$.roundId');
     const game = gameFor(round.variantId);
-    const clientSeed = typeof input.clientSeed === 'string' ? input.clientSeed : '';
+    // Validate the one field the player supplies AFTER the commitment, before
+    // any money moves. `makePermutationTranscript` would reject a malformed
+    // client seed too — but it runs after the debit, and a validation that
+    // happens after the wallet has been touched is a refund path, not a check.
+    const clientSeed = assertClientSeed(typeof input.clientSeed === 'string' ? input.clientSeed : '');
 
     const staged = this.stageTicket(session, round, input.lines);
     if (staged.replayed) return { round: staged.replayed, replayed: true };
 
+    // The chain binds the previous SETTLED round's commitment as of now, not as
+    // of whenever this round happened to be opened: rounds can be opened and
+    // abandoned, and a stale link would fork the chain the format promises.
+    const previousCommitment = session.previousCommitment;
+    round.previousCommitment = previousCommitment;
     const transcript = makePermutationTranscript(
       round.serverSeed,
       game,
@@ -534,7 +570,7 @@ export class SessionStore {
         clientSeed,
         nonce: round.nonce,
       },
-      round.previousCommitment,
+      previousCommitment,
     );
     this.finishRound(session, round, transcript);
     session.previousCommitment = transcript.commitment;
