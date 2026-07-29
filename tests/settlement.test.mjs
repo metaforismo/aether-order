@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AetherOrderError, exactChips, makeTranscript, settleTicket } from '../tools/lib/derive.mjs';
+import { fullOrderParamsByRank } from '../tools/lib/bets.mjs';
 import { LIMITS, STAKE_LADDER, STAKE_QUANTUM, VARIANTS, getVariant } from '../tools/lib/model.mjs';
 import { rational } from '../tools/lib/rational.mjs';
 
@@ -32,7 +33,7 @@ describe('exact payouts', () => {
 
   it('credits a winning FULL ORDER line at exactly 115.20x in CLASSIC', () => {
     const settlement = settleTicket(at('classic', identity(5)), {
-      lines: [{ code: 'full', params: { rank: 0 }, stakeChips: 100n }],
+      lines: [{ code: 'full', params: fullOrderParamsByRank(5, 0), stakeChips: 100n }],
     });
     expect(settlement.lines[0].won).toBe(true);
     expect(settlement.grossChips).toBe(11520n); // 100 chips x 115.20
@@ -43,7 +44,7 @@ describe('exact payouts', () => {
 
   it('credits a winning FULL ORDER line at exactly 4838.40x in SEVEN', () => {
     const settlement = settleTicket(at('seven', identity(7)), {
-      lines: [{ code: 'full', params: { rank: 0 }, stakeChips: 100n }],
+      lines: [{ code: 'full', params: fullOrderParamsByRank(7, 0), stakeChips: 100n }],
     });
     expect(settlement.grossChips).toBe(483840n);
   });
@@ -70,8 +71,8 @@ describe('exact payouts', () => {
     expect(won('link', { a: 2, b: 1 })).toBe(false);
     expect(won('opening', { a: 0, b: 1 })).toBe(true);
     expect(won('opening', { a: 1, b: 0 })).toBe(false);
-    expect(won('full', { rank: 0 })).toBe(true);
-    expect(won('full', { rank: 1 })).toBe(false);
+    expect(won('full', fullOrderParamsByRank(5, 0))).toBe(true);
+    expect(won('full', fullOrderParamsByRank(5, 1))).toBe(false);
   });
 
   it('sums correlated winning lines without interference', () => {
@@ -225,7 +226,7 @@ describe('published limits', () => {
     // Without the distinct-line rule, four maximum-stake copies of the winning
     // FULL ORDER line would pay 200.00 x 115.20 = 23,040.00 credits. The rule
     // makes that ticket illegal, which is what pins the documented maximum.
-    const fullLine = { code: 'full', params: { rank: 0 }, stakeChips: LIMITS.maxLineStakeChips };
+    const fullLine = { code: 'full', params: fullOrderParamsByRank(5, 0), stakeChips: LIMITS.maxLineStakeChips };
     expect(() => settleTicket(t, { lines: [fullLine, { ...fullLine }] })).toThrow(AetherOrderError);
   });
 
@@ -280,7 +281,7 @@ describe('the cap never binds on the shipped paytable', () => {
     const { n } = getVariant(variantId);
     const transcript = at(variantId, identity(n));
     const settlement = settleTicket(transcript, {
-      lines: [{ code: 'full', params: { rank: 0 }, stakeChips: LIMITS.maxLineStakeChips }],
+      lines: [{ code: 'full', params: fullOrderParamsByRank(n, 0), stakeChips: LIMITS.maxLineStakeChips }],
     });
     expect(settlement.capped).toBe(false);
     expect(settlement.creditedChips).toBe(settlement.grossChips);

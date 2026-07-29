@@ -20,12 +20,12 @@ import { proveCoverTickets, proveTicketInvariance, enumerateVariant, render } fr
 import { BET_FAMILIES, getFamily } from '../tools/lib/bets.mjs';
 import { exactChips, makeTranscript } from '../tools/lib/derive.mjs';
 import { STAKE_LADDER, TARGET_RTP, VARIANT_IDS, getVariant } from '../tools/lib/model.mjs';
-import { allPermutations, factorialBig, permutationRank, positionsOf } from '../tools/lib/permutations.mjs';
+import { allPermutations, factorialBig, outcomeViewOf } from '../tools/lib/permutations.mjs';
 import { cmp, div, eq, mul, rational } from '../tools/lib/rational.mjs';
 
 const viewsFor = (n) =>
   allPermutations(n).map((perm) =>
-    Object.freeze({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n }),
+    outcomeViewOf(perm, n),
   );
 
 /** Exact payout of a ticket under one outcome, in chips. */
@@ -137,7 +137,7 @@ describe('Theorem 3: adaptive sequential play cannot change the RTP', () => {
   const round2For = (view1) => {
     const won = view1.pos[0] === 0;
     if (view1.rank === 7) return []; // stopping rule: quit after this outcome
-    if (won) return [{ code: 'full', label: `full#${view1.rank}`, stakeChips: 25n }];
+    if (won) return [{ code: 'full', label: `full:${view1.order}`, stakeChips: 25n }];
     return [{ code: 'first', label: `f${view1.perm[0]}`, stakeChips: 200n }];
   };
 

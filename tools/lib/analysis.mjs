@@ -16,8 +16,8 @@ import {
   factorial,
   factorialBig,
   fisherYates,
+  outcomeViewOf,
   permutationRank,
-  positionsOf,
 } from './permutations.mjs';
 import { BET_FAMILIES, TIERS } from './bets.mjs';
 import {
@@ -139,9 +139,7 @@ function enumerateVariantUncached(variantId) {
     throw new Error('Permutation enumeration disagrees with n!');
   }
 
-  const contexts = permutations.map((perm) =>
-    Object.freeze({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n }),
-  );
+  const contexts = permutations.map((perm) => outcomeViewOf(perm, n));
   // The lexicographic index must equal the computed rank, otherwise `full`
   // instances would not address the permutation they claim to.
   contexts.forEach((ctx, index) => {
@@ -325,9 +323,7 @@ export function proveStakeQuantum(analysis) {
 export function proveCoverTickets(analysis) {
   const { n } = getVariant(analysis.variantId);
   const permutations = allPermutations(n);
-  const views = permutations.map((perm) =>
-    Object.freeze({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n }),
-  );
+  const views = permutations.map((perm) => outcomeViewOf(perm, n));
   const stake = STAKE_QUANTUM;
   const covers = [];
 
@@ -405,7 +401,7 @@ export function proveCoverTickets(analysis) {
  */
 function winningClaimsUnder(variant, perm) {
   const { n } = variant;
-  const ctx = Object.freeze({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n });
+  const ctx = outcomeViewOf(perm, n);
   const permutationCount = factorial(n);
   const winners = [];
   const seenClaims = new Set();
@@ -654,9 +650,7 @@ export function proveTicketInvariance(variantId, tickets) {
   const { n } = variant;
   const permutations = allPermutations(n);
   const permutationCountBig = factorialBig(n);
-  const contexts = permutations.map((perm) =>
-    Object.freeze({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n }),
-  );
+  const contexts = permutations.map((perm) => outcomeViewOf(perm, n));
   const results = tickets.map((ticket, index) => {
     let totalStake = 0n;
     let totalPayout = 0n;

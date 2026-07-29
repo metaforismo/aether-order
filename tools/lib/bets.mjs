@@ -5,14 +5,18 @@
  *  - `instances(n)`   : the complete, finite set of tickets a player can build;
  *  - `resolve(i, ctx)`: a pure predicate of (instance, permutation).
  *
- * `ctx` carries `perm`, its inverse `pos` and its lexicographic `rank`. All
- * three are deterministic functions of the permutation alone, so `resolve`
- * remains a pure function of (instance, outcome) — the property the conformance
- * check and the enumerator rely on.
+ * `ctx` carries `perm`, its inverse `pos`, its lexicographic `rank` and its
+ * printable `order`. All four are deterministic functions of the permutation
+ * alone, so `resolve` remains a pure function of (instance, outcome) — the
+ * property the conformance check and the enumerator rely on. Every view is
+ * built by `outcomeViewOf`, in one place, so a predicate can never be handed
+ * two different shapes.
  *
  * Slots are 0-indexed internally and 1-indexed in every player-facing string.
  * Slot 0 is the first sphere to settle (bottom of the tube).
  */
+
+import { orderKey, unrankPermutation } from './permutations.mjs';
 
 export const TIERS = Object.freeze({
   FLOW: 'FLOW',
@@ -150,13 +154,45 @@ export const BET_FAMILIES = Object.freeze([
     tier: TIERS.ORDER,
     picks: 'the complete order of every colour',
     rule: 'Every sphere settles in exactly the chosen slot.',
+    /**
+     * Parameterised by the ORDER, not by its lexicographic rank.
+     *
+     * Round 4 emitted `{ rank }`, so `canonicalParams` rendered `rank=37` and
+     * that string went into the ticket digest, the settlement digest and the
+     * signed receipt. A player's receipt for the game's largest bet therefore
+     * recorded "code=full, params=rank=37" rather than the colour order they
+     * chose, and was not auditable in a dispute without re-running a ranking
+     * function nobody outside this repository has. docs/ENGINE.md §11 positions
+     * the receipt as the answer to "what did I stake?"; for one of eleven bet
+     * types the answer was an opaque integer.
+     *
+     * `order=3-0-1-2-4` is the same shape as the transcript's `permutation`
+     * array, so verifying a FULL ORDER line by eye is a comparison, not a
+     * computation. Element indices are published in docs/paytable.json.
+     */
     instances: (n, { permutationCount }) =>
-      Array.from({ length: permutationCount }, (_, rank) => inst('full', { rank }, `full#${rank}`)),
-    resolve: (i, { rank }) => rank === i.params.rank,
+      Array.from({ length: permutationCount }, (_, rank) => {
+        const order = orderKey(unrankPermutation(n, rank));
+        return inst('full', { order }, `full:${order}`);
+      }),
+    resolve: (i, { order }) => order === i.params.order,
   }),
 ]);
 
 export const BET_CODES = Object.freeze(BET_FAMILIES.map((family) => family.code));
+
+/**
+ * The params object for a FULL ORDER line claiming a given settled order.
+ *
+ * Callers that used to write `{ rank: 7 }` write `fullOrderParams(perm)` or
+ * `fullOrderParamsByRank(n, 7)`. The point of the change is that a receipt
+ * records the order rather than an index into a ranking function, so the
+ * ranking function should not be the thing every call site reaches for.
+ */
+export const fullOrderParams = (perm) => ({ order: orderKey(perm) });
+
+/** The same, addressed by lexicographic rank. Convenient for fixtures. */
+export const fullOrderParamsByRank = (n, rank) => fullOrderParams(unrankPermutation(n, rank));
 
 export function getFamily(code) {
   const family = BET_FAMILIES.find((candidate) => candidate.code === code);

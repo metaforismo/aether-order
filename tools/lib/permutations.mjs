@@ -70,6 +70,67 @@ export function positionsOf(perm) {
 }
 
 /**
+ * The printable identity of a settled order: element indices, bottom-up,
+ * joined by `-`.
+ *
+ * This is what FULL ORDER is parameterised by, and it is deliberately the same
+ * shape a player can read straight off a transcript's `permutation` array. The
+ * separator is not optional: at `n > 9` a bare digit string would stop being
+ * decodable, and `PERMUTATION_LIMITS.maxElements` is 12.
+ */
+export const orderKey = (perm) => Array.prototype.join.call(perm, '-');
+
+/**
+ * The inverse of `permutationRank`: the `rank`-th permutation of [0, n) in
+ * lexicographic order, i.e. `allPermutations(n)[rank]` without building the
+ * other n! - 1 of them.
+ *
+ * FULL ORDER enumerates n! instances and each one needs its order string, so
+ * materialising the whole table per call would put a 5,040-array allocation on
+ * a path the resolution track walks at COMMIT. This is O(n^2) per instance and
+ * allocates one array. `tests/derivation.test.mjs` checks it round-trips
+ * against `permutationRank` across both variants' entire spaces.
+ */
+export function unrankPermutation(n, rank) {
+  if (!Number.isInteger(n) || n < 1) throw new RangeError('unrankPermutation requires n >= 1');
+  const total = factorial(n);
+  if (!Number.isInteger(rank) || rank < 0 || rank >= total) {
+    throw new RangeError(`Rank ${rank} is outside [0, ${total})`);
+  }
+  const available = Array.from({ length: n }, (_, i) => i);
+  const out = new Array(n);
+  let remainder = rank;
+  for (let i = 0; i < n; i += 1) {
+    const blockSize = factorial(n - 1 - i);
+    const index = Math.floor(remainder / blockSize);
+    remainder -= index * blockSize;
+    out[i] = available[index];
+    available.splice(index, 1);
+  }
+  return out;
+}
+
+/**
+ * The complete outcome view a resolve predicate may look at.
+ *
+ * Built in one place so a new derived field cannot be added to some call sites
+ * and forgotten at others — there are a dozen of them across the enumerator,
+ * the settlement path, the conformance runner and the tests, and they must all
+ * hand a predicate the identical object shape. Everything here is a
+ * deterministic function of `perm` alone, which is what keeps `resolve` a pure
+ * function of `(instance, outcome)`.
+ */
+export function outcomeViewOf(perm, n = perm.length) {
+  return Object.freeze({
+    n,
+    perm: Object.freeze(perm),
+    pos: Object.freeze(positionsOf(perm)),
+    rank: permutationRank(perm),
+    order: orderKey(perm),
+  });
+}
+
+/**
  * Lexicographic rank of a permutation of [0, n), matching `allPermutations`
  * ordering. Computed from the Lehmer code with exact integer arithmetic.
  */

@@ -12,7 +12,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { canonicalJson, encodeFields, sha256Hex } from '../tools/lib/canonical.mjs';
-import { BET_FAMILIES } from '../tools/lib/bets.mjs';
+import { BET_FAMILIES, fullOrderParams, fullOrderParamsByRank } from '../tools/lib/bets.mjs';
+import {
+  allPermutations,
+  factorial,
+  orderKey,
+  permutationRank,
+  unrankPermutation,
+} from '../tools/lib/permutations.mjs';
 import {
   AetherOrderError,
   adapterFingerprint,
@@ -22,12 +29,15 @@ import {
   derivePermutation,
   makeTranscript,
   normalizeServerSeed,
+  openTicket,
   seedCommitment,
+  settleTicket,
+  ticketDigest,
   uniformBelow,
   verifyTranscript,
   ZERO_COMMITMENT,
 } from '../tools/lib/derive.mjs';
-import { VARIANT_IDS, getVariant } from '../tools/lib/model.mjs';
+import { ADAPTER_VERSION, VARIANT_IDS, getVariant } from '../tools/lib/model.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES = JSON.parse(readFileSync(join(ROOT, 'tests', 'fixtures', 'transcripts.json'), 'utf8'));
@@ -38,6 +48,106 @@ const ctx = (over = {}) => ({ variantId: 'classic', roundId: 'r-1', clientSeed: 
 
 /** Frozen: SHA-256 of encodeFields(['aether-order', 1n, 2]). */
 const GOLDEN_FIELD_DIGEST = '20cde8918719d4e71c26b8d84c8aea5a0ae17c125ffa83bb81818ba4472a4754';
+
+/* ------------------------------------------------------------------ *
+ * The unranking FULL ORDER's parameterisation now depends on.          *
+ *                                                                      *
+ * `full` emits n! instances and each needs its order string. Building   *
+ * the whole permutation table per call would put a 5,040-array          *
+ * allocation on a path the resolution track walks at COMMIT, so the     *
+ * family unranks instead — which is only safe if the unranking really   *
+ * is the inverse of the ranking every other part of this repository     *
+ * uses. Checked exhaustively, not spot-checked.                         *
+ * ------------------------------------------------------------------ */
+
+describe('unrankPermutation inverts permutationRank', () => {
+  it.each(VARIANT_IDS)('%s: over the entire outcome space', (variantId) => {
+    const { n } = getVariant(variantId);
+    const all = allPermutations(n);
+    for (let rank = 0; rank < all.length; rank += 1) {
+      const unranked = unrankPermutation(n, rank);
+      expect(unranked, `rank ${rank}`).toEqual(all[rank]);
+      expect(permutationRank(unranked), `rank ${rank}`).toBe(rank);
+    }
+  });
+
+  it('refuses a rank outside the space rather than wrapping', () => {
+    expect(() => unrankPermutation(5, 120)).toThrow(RangeError);
+    expect(() => unrankPermutation(5, -1)).toThrow(RangeError);
+    expect(() => unrankPermutation(5, 1.5)).toThrow(RangeError);
+  });
+
+  it('orderKey stays decodable above nine elements', () => {
+    // A bare digit string would stop being decodable at n > 9, and
+    // PERMUTATION_LIMITS.maxElements is 12.
+    expect(orderKey([11, 0, 10])).toBe('11-0-10');
+    expect(orderKey([1, 10])).not.toBe(orderKey([11, 0]));
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * A FULL ORDER receipt has to be readable by the player who holds it.  *
+ * ------------------------------------------------------------------ */
+
+describe('FULL ORDER is spelled with the order, not with an opaque rank', () => {
+  it.each(VARIANT_IDS)('%s: the digested parameters are the settled order', (variantId) => {
+    const { n } = getVariant(variantId);
+    const transcript = makeTranscript(SEED_A, ctx({ variantId, roundId: 'r-full' }));
+    // The line that wins this round is spelled exactly as the transcript reads.
+    const params = fullOrderParams(transcript.permutation);
+    expect(params.order).toBe(transcript.permutation.join('-'));
+
+    const seedContext = { variantId, roundId: transcript.roundId, nonce: transcript.nonce };
+    const opened = openTicket(seedContext, {
+      lines: [{ code: 'full', params, stakeChips: 25n }],
+    });
+    // What a player reads off their own ticket is the order, not an index.
+    expect(opened.lines[0].params).toEqual({ order: transcript.permutation.join('-') });
+
+    const settlement = settleTicket(transcript, { lines: [{ code: 'full', params, stakeChips: 25n }] });
+    expect(settlement.lines[0].won).toBe(true);
+
+    // And it is genuinely what the digest binds: a different order digests
+    // differently, and the same order digests identically however it was built.
+    const other = fullOrderParamsByRank(n, permutationRank(transcript.permutation) === 0 ? 1 : 0);
+    expect(other.order).not.toBe(params.order);
+    const otherDigest = ticketDigest(seedContext, { lines: [{ code: 'full', params: other, stakeChips: 25n }] });
+    expect(otherDigest).not.toBe(opened.ticketDigest);
+  });
+
+  it('no instance in the catalogue still carries a rank parameter', () => {
+    for (const variantId of VARIANT_IDS) {
+      const { n } = getVariant(variantId);
+      const family = BET_FAMILIES.find((candidate) => candidate.code === 'full');
+      for (const instance of family.instances(n, { permutationCount: factorial(n) })) {
+        expect(Object.keys(instance.params)).toEqual(['order']);
+        expect(instance.label).toBe(`full:${instance.params.order}`);
+      }
+    }
+  });
+
+  it('the adapter version was bumped, because the change is replay-visible', () => {
+    // canonicalParams is bound into the catalogue digest and thence into every
+    // commitment, so docs/ENGINE.md §2 requires a new adapterVersion.
+    expect(ADAPTER_VERSION).not.toBe('1.1.0');
+    const published = JSON.parse(readFileSync(join(ROOT, 'docs', 'paytable.json'), 'utf8'));
+    expect(published.adapterVersion).toBe(ADAPTER_VERSION);
+  });
+
+  it('docs/paytable.json publishes the element table those indices refer to', () => {
+    const published = JSON.parse(readFileSync(join(ROOT, 'docs', 'paytable.json'), 'utf8'));
+    for (const variantId of VARIANT_IDS) {
+      const variant = getVariant(variantId);
+      const elements = published.variants[variantId].elements;
+      expect(elements).toHaveLength(variant.n);
+      elements.forEach((element, index) => {
+        expect(element.index).toBe(index);
+        expect(element.id).toBe(variant.elements[index].id);
+        expect(element.hex).toBe(variant.elements[index].hex);
+      });
+    }
+  });
+});
 
 describe('frozen wire-format fixtures', () => {
   it('carries vectors for every variant', () => {

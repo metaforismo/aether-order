@@ -31,6 +31,7 @@ import {
   verifyReceipt,
 } from '../tools/lib/derive.mjs';
 import { LIMITS, VARIANT_IDS, getVariant } from '../tools/lib/model.mjs';
+import { fullOrderParamsByRank } from '../tools/lib/bets.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES = JSON.parse(readFileSync(join(ROOT, 'tests', 'fixtures', 'transcripts.json'), 'utf8'));
@@ -59,7 +60,7 @@ function round(variantId, overrides = {}) {
 }
 
 describe.each(VARIANT_IDS)('openTicket — %s', (variantId) => {
-  const { context, ticket } = round(variantId);
+  const { context, ticket, n } = round(variantId);
   const seedContext = { variantId, roundId: context.roundId, nonce: context.nonce };
 
   it('returns lines in canonical order with a derived idempotency key', () => {
@@ -110,7 +111,7 @@ describe.each(VARIANT_IDS)('openTicket — %s', (variantId) => {
       openTicket(seedContext, {
         lines: Array.from({ length: LIMITS.maxLinesPerTicket + 1 }, (_, i) => ({
           code: 'full',
-          params: { rank: i },
+          params: fullOrderParamsByRank(n, i),
           stakeChips: 25n,
         })),
       }),
@@ -120,7 +121,7 @@ describe.each(VARIANT_IDS)('openTicket — %s', (variantId) => {
   it('rejects a hostile ticket that answers `length` and `map` differently', () => {
     const lines = [{ code: 'first', params: { c: 0 }, stakeChips: 25n }];
     lines.map = () =>
-      Array.from({ length: 40 }, (_, i) => ({ code: 'full', params: { rank: i }, stakeChips: 5000n }));
+      Array.from({ length: 40 }, (_, i) => ({ code: 'full', params: fullOrderParamsByRank(n, i), stakeChips: 5000n }));
     // slice() reads length and indices directly, so the smuggled `map` is never
     // consulted and the ticket settles as the single line it declared.
     expect(openTicket(seedContext, { lines }).lines).toHaveLength(1);

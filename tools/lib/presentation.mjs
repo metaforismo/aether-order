@@ -18,7 +18,7 @@
  *      mutually exclusive, which the fairness narrative actively encourages.
  */
 
-import { allPermutations, positionsOf, permutationRank } from './permutations.mjs';
+import { allPermutations, outcomeViewOf } from './permutations.mjs';
 import { CHIPS_PER_CREDIT, getVariant } from './model.mjs';
 import { exactChips, normalizeTicket } from './derive.mjs';
 import { exactDecimal, rational } from './rational.mjs';
@@ -112,9 +112,7 @@ export function roundPresentation(settlement) {
 export function ticketStripFigures(variantId, ticket) {
   const variant = getVariant(variantId);
   const normalized = normalizeTicket(variant.id, ticket);
-  const views = allPermutations(variant.n).map((perm) =>
-    Object.freeze({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n: variant.n }),
-  );
+  const views = allPermutations(variant.n).map((perm) => outcomeViewOf(perm, variant.n));
 
   let best = 0n;
   let bestRank = -1;

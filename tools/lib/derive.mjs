@@ -29,7 +29,7 @@
 import { createHash, createPrivateKey, createPublicKey, sign as cryptoSign, verify as cryptoVerify } from 'node:crypto';
 
 import { canonicalJson, encodeFields, hmacSha256, sha256Hex, constantTimeHexEqual } from './canonical.mjs';
-import { allPermutations, fisherYates, permutationRank, positionsOf } from './permutations.mjs';
+import { allPermutations, fisherYates, outcomeViewOf, permutationRank } from './permutations.mjs';
 import { rational, mul as rmul, cmp as rcmp } from './rational.mjs';
 import {
   ADAPTER_VERSION,
@@ -168,14 +168,7 @@ function viewsFor(variantId) {
   const variant = assertVariant(variantId);
   const cached = viewsCache.get(variant.id);
   if (cached) return cached;
-  const views = allPermutations(variant.n).map((perm) =>
-    Object.freeze({
-      perm: Object.freeze(perm),
-      pos: Object.freeze(positionsOf(perm)),
-      rank: permutationRank(perm),
-      n: variant.n,
-    }),
-  );
+  const views = allPermutations(variant.n).map((perm) => outcomeViewOf(perm, variant.n));
   viewsCache.set(variant.id, views);
   return views;
 }
@@ -831,12 +824,7 @@ export function settleTicket(transcript, ticket) {
     }
     seen.add(element);
   }
-  const ctx = Object.freeze({
-    perm: Object.freeze(perm),
-    pos: Object.freeze(positionsOf(perm)),
-    rank: permutationRank(perm),
-    n: variant.n,
-  });
+  const ctx = outcomeViewOf(perm, variant.n);
 
   let payout = 0n;
   const lines = normalized.lines.map((line, index) => {

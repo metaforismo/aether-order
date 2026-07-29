@@ -107,6 +107,24 @@ permutation, resolvable by inspection of the settled tube.
 client, and the paytable prices them identically — there is no hidden penalty
 for using the convenience control.
 
+**How an instance is spelled.** Every bet's parameters are **element indices**,
+and the index is the position in `variants[v].elements` in
+`docs/paytable.json` — the same index the transcript's `permutation` array
+carries. So `first {c=0}` is FIRST on element 0, `link {a=0,b=1}` is element 1
+directly above element 0, and `full {order=3-0-1-2-4}` is the complete column.
+
+FULL ORDER is parameterised by the **order**, not by its lexicographic rank.
+That is a deliberate change from adapter version 1.1.0, which emitted
+`{rank}` and therefore rendered `rank=37` into the ticket digest, the settlement
+digest and the signed receipt: a player's receipt for the game's largest bet
+recorded an opaque integer rather than the colours they picked, and could not be
+audited in a dispute without re-running a ranking function. `order=3-0-1-2-4` is
+the same shape as the `permutation` array in the transcript beside it, so
+checking a FULL ORDER line is a comparison rather than a computation. Nothing
+about the mathematics moves: the family still has exactly `n!` instances, each
+winning on exactly one outcome. What moves is the adapter fingerprint, which is
+why `adapterVersion` went to 1.2.0 (`docs/ENGINE.md` §2).
+
 ### 3.1 Counting
 
 For a permutation drawn uniformly from `S_n`:

@@ -11,7 +11,15 @@
 import { rational } from './rational.mjs';
 
 export const GAME_ID = 'aether-order';
-export const ADAPTER_VERSION = '1.1.0';
+/**
+ * Bumped from 1.1.0 when FULL ORDER stopped being parameterised by its
+ * lexicographic rank. `canonicalParams` is bound into the catalogue digest, the
+ * adapter fingerprint, every ticket and settlement digest and every signed
+ * receipt, so that is a replay-visible change and docs/ENGINE.md §2 requires a
+ * new adapter version for it. An integration must retain the exact adapter
+ * needed to replay any liability opened under 1.1.0.
+ */
+export const ADAPTER_VERSION = '1.2.0';
 export const API_VERSION = 'reveal-engine/api-v1';
 export const MODULE_VERSION = 'reveal-engine/permutation-v1';
 export const TRANSCRIPT_SCHEMA = 'reveal-engine/permutation-transcript-v1';

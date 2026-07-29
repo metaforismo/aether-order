@@ -22,8 +22,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { BET_FAMILIES } from '../tools/lib/bets.mjs';
-import { allPermutations, factorial } from '../tools/lib/permutations.mjs';
+import { BET_FAMILIES, fullOrderParamsByRank } from '../tools/lib/bets.mjs';
+import { allPermutations, factorial, orderKey, outcomeViewOf } from '../tools/lib/permutations.mjs';
 import { getVariant } from '../tools/lib/model.mjs';
 import {
   completionCount,
@@ -51,13 +51,14 @@ function sevenSample() {
     state = (state * 1103515245 + 12345) % 2147483648;
     ranks.add(state % 5040);
   }
-  return { ranks, permutations: [...ranks].map((rank) => all[rank]) };
+  const permutations = [...ranks].map((rank) => all[rank]);
+  return { ranks, permutations, orders: new Set(permutations.map((perm) => orderKey(perm))) };
 }
 
 const SEVEN_SAMPLE = sevenSample();
 const SEVEN = resolutionTable('seven', {
   permutations: SEVEN_SAMPLE.permutations,
-  instanceFilter: (family, instance) => family.code !== 'full' || SEVEN_SAMPLE.ranks.has(instance.params.rank),
+  instanceFilter: (family, instance) => family.code !== 'full' || SEVEN_SAMPLE.orders.has(instance.params.order),
 });
 
 /* ------------------------------------------------------------------ *
@@ -130,7 +131,7 @@ describe('the sweep agrees with the definition it implements', () => {
             pos[element] = slot;
           });
           const rank = CLASSIC_PERMS.findIndex((candidate) => candidate.every((v, i) => v === perm[i]));
-          expect(verdict).toBe(family.resolve(instance, { n, perm, pos, rank }) === true);
+          expect(verdict).toBe(family.resolve(instance, outcomeViewOf(perm, n)) === true);
         }
       }
     }
@@ -295,7 +296,7 @@ describe('resolutionTrack is what the choreography builder gets', () => {
     lines: [
       { code: 'first', params: { c: 2 } },
       { code: 'last', params: { c: 0 } },
-      { code: 'full', params: { rank: 0 } },
+      { code: 'full', params: fullOrderParamsByRank(5, 0) },
       { code: 'slot', params: { c: 3, k: 4 } },
     ],
   };
@@ -366,7 +367,7 @@ describe('resolutionTrack is what the choreography builder gets', () => {
     // The same hostile shape normalizeTicket defends against: an array carrying
     // an own `map` that reports one line to a length check and hands back more.
     const hostileLines = Object.assign([{ code: 'first', params: { c: 2 } }], {
-      map: () => Array.from({ length: 9 }, () => ({ code: 'full', params: { rank: 0 } })),
+      map: () => Array.from({ length: 9 }, () => ({ code: 'full', params: fullOrderParamsByRank(5, 0) })),
     });
     expect(resolutionTrack('classic', { lines: hostileLines }, perm).lines).toHaveLength(1);
   });

@@ -23,7 +23,7 @@ import {
   getVariant,
 } from './model.mjs';
 import { adapterFingerprint, catalogueDigest, fingerprintFields } from './derive.mjs';
-import { allPermutations, permutationRank, positionsOf } from './permutations.mjs';
+import { allPermutations, outcomeViewOf } from './permutations.mjs';
 import { eq, mul } from './rational.mjs';
 import { enumerateVariant, proveCapHeadroom, proveShuffleBijection, proveStakeQuantum } from './analysis.mjs';
 
@@ -57,9 +57,9 @@ export function assertAdapterConforms(variantId) {
   const variant = getVariant(variantId);
   const { n } = variant;
   const analysis = enumerateVariant(variant.id);
-  const views = allPermutations(n).map((perm) =>
-    Object.freeze({ perm: Object.freeze(perm), pos: Object.freeze(positionsOf(perm)), rank: permutationRank(perm), n }),
-  );
+  // Deeply frozen by `outcomeViewOf`, which is what makes check 4 (purity)
+  // meaningful: a predicate that mutated its view would throw, not pass.
+  const views = allPermutations(n).map((perm) => outcomeViewOf(perm, n));
   const checks = [];
   const record = (id, name, ok, detail = '') => {
     checks.push(Object.freeze({ id, name, ok: ok === true, detail }));

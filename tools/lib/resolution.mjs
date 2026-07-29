@@ -42,7 +42,7 @@
  */
 
 import { BET_FAMILIES, getFamily } from './bets.mjs';
-import { factorial, permutationRank, positionsOf } from './permutations.mjs';
+import { factorial, orderKey, permutationRank, positionsOf } from './permutations.mjs';
 import { getVariant } from './model.mjs';
 
 /**
@@ -56,8 +56,13 @@ import { getVariant } from './model.mjs';
  * cross-checks the fast sweep against the allocating `completionsOf` generator
  * on the whole CLASSIC space.
  *
- * `rank` is a getter that recomputes on read. It is O(n^2) and only `full` ever
- * reads it, so caching would cost more bookkeeping than it saves.
+ * `rank` and `order` are getters that recompute on read. Only `full` reads
+ * either — `order` since it became the parameter FULL ORDER is spelled with —
+ * so caching would cost more bookkeeping than it saves. Both must be present:
+ * a predicate handed a view missing a field it reads would silently resolve
+ * `undefined === something` to false, which is a wrong answer rather than an
+ * error, and `tests/resolution.test.mjs` cross-checks this view against
+ * `outcomeViewOf` for exactly that reason.
  */
 function makeReusableView(n) {
   const perm = new Array(n);
@@ -67,6 +72,10 @@ function makeReusableView(n) {
     enumerable: true,
     get: () => permutationRank(perm),
   });
+  Object.defineProperty(view, 'order', {
+    enumerable: true,
+    get: () => orderKey(perm),
+  });
   return view;
 }
 
@@ -74,6 +83,7 @@ function makeReusableView(n) {
 function outcomeView(perm, n) {
   const view = { n, perm, pos: positionsOf(perm) };
   Object.defineProperty(view, 'rank', { enumerable: true, get: () => permutationRank(perm) });
+  Object.defineProperty(view, 'order', { enumerable: true, get: () => orderKey(perm) });
   return view;
 }
 

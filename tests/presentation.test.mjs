@@ -14,8 +14,8 @@ import { describe, expect, it } from 'vitest';
 
 import { credits, roundPresentation, ticketStripFigures } from '../tools/lib/presentation.mjs';
 import { makeTranscript, settleTicket } from '../tools/lib/derive.mjs';
-import { allPermutations, positionsOf, permutationRank } from '../tools/lib/permutations.mjs';
-import { BET_FAMILIES } from '../tools/lib/bets.mjs';
+import { allPermutations, outcomeViewOf } from '../tools/lib/permutations.mjs';
+import { BET_FAMILIES, fullOrderParamsByRank } from '../tools/lib/bets.mjs';
 import { LIMITS, STAKE_QUANTUM, VARIANT_IDS, getVariant } from '../tools/lib/model.mjs';
 
 const settlement = (totalStakeChips, creditedChips) =>
@@ -106,7 +106,7 @@ describe.each(VARIANT_IDS)('the celebration gate through real settlements — %s
     const ticket = {
       lines: [
         { code: 'before', params: { a: 0, b: 1 }, stakeChips: 100n },
-        { code: 'full', params: { rank: 0 }, stakeChips: 100n },
+        { code: 'full', params: fullOrderParamsByRank(n, 0), stakeChips: 100n },
         { code: 'opening', params: { a: 2, b: 3 }, stakeChips: 100n },
       ],
     };
@@ -132,7 +132,11 @@ describe.each(VARIANT_IDS)('the ticket strip headline is a real maximum — %s',
 
   it('four FULL ORDER lines cannot all hit, and the figure says so', () => {
     const figures = ticketStripFigures(variantId, {
-      lines: [0, 1, 2, 3].map((rank) => ({ code: 'full', params: { rank }, stakeChips: LIMITS.maxLineStakeChips })),
+      lines: [0, 1, 2, 3].map((rank) => ({
+        code: 'full',
+        params: fullOrderParamsByRank(n, rank),
+        stakeChips: LIMITS.maxLineStakeChips,
+      })),
     });
     // Exactly one of four mutually exclusive lines can ever hit.
     expect(figures.bestOutcomeChips * 4n).toBe(figures.sumIfEveryLineHitChips);
@@ -151,7 +155,7 @@ describe.each(VARIANT_IDS)('the ticket strip headline is a real maximum — %s',
   it('agrees with the sum when every line genuinely can hit together', () => {
     const figures = ticketStripFigures(variantId, {
       lines: [
-        { code: 'full', params: { rank: 0 }, stakeChips: 100n },
+        { code: 'full', params: fullOrderParamsByRank(n, 0), stakeChips: 100n },
         { code: 'opening', params: { a: 0, b: 1 }, stakeChips: 100n },
         { code: 'slot', params: { c: 2, k: 2 }, stakeChips: 100n },
       ],
@@ -181,7 +185,7 @@ describe.each(VARIANT_IDS)('the ticket strip headline is a real maximum — %s',
       const figures = ticketStripFigures(variantId, { lines });
       let brute = 0n;
       for (const perm of allPermutations(n)) {
-        const view = { perm, pos: positionsOf(perm), rank: permutationRank(perm), n };
+        const view = outcomeViewOf(perm, n);
         let payout = 0n;
         for (const line of lines) {
           const family = BET_FAMILIES.find((candidate) => candidate.code === line.code);

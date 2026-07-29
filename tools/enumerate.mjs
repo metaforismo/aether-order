@@ -38,7 +38,7 @@ import {
   render,
   rtpCandidateProfile,
 } from './lib/analysis.mjs';
-import { BET_FAMILIES } from './lib/bets.mjs';
+import { BET_FAMILIES, fullOrderParamsByRank } from './lib/bets.mjs';
 import { canonicalJson } from './lib/canonical.mjs';
 import { assertAdapterConforms, claimAliasReport } from './lib/conform.mjs';
 import { credits, roundPresentation, ticketStripFigures } from './lib/presentation.mjs';
@@ -68,7 +68,7 @@ import {
   verifyTranscript,
   ZERO_COMMITMENT,
 } from './lib/derive.mjs';
-import { allPermutations, permutationRank, positionsOf } from './lib/permutations.mjs';
+import { allPermutations, orderKey, outcomeViewOf } from './lib/permutations.mjs';
 import { rational } from './lib/rational.mjs';
 import { completionsAfterPenultimateLock, resolutionTable } from './lib/resolution.mjs';
 
@@ -139,6 +139,11 @@ function resolutionSampleRanks(n) {
 function resolutionSamplePermutations(n) {
   const all = allPermutations(n);
   return [...resolutionSampleRanks(n)].map((rank) => all[rank]);
+}
+
+/** The same sample, addressed the way a FULL ORDER instance is now spelled. */
+function resolutionSampleOrders(n) {
+  return new Set(resolutionSamplePermutations(n).map((perm) => orderKey(perm)));
 }
 
 /** xorshift32 — deterministic ticket generator for the invariance sweep. */
@@ -233,7 +238,7 @@ function monteCarlo(variantId, rounds) {
       clientSeed: 'cross-check',
       nonce: round,
     });
-    const ctx = { perm, pos: positionsOf(perm), rank: permutationRank(perm), n: variant.n };
+    const ctx = outcomeViewOf(perm, variant.n);
     for (const probe of probes) {
       if (probe.family.resolve(probe.instance, ctx)) tally.set(probe.family.code, tally.get(probe.family.code) + 1);
     }
@@ -264,9 +269,9 @@ function demoTicketFor(transcript, n) {
 }
 
 /** Three lines that CAN all hit at once — rank 0 is the identity permutation. */
-function demoCompatibleLines() {
+function demoCompatibleLines(n) {
   return [
-    { code: 'full', params: { rank: 0 }, stakeChips: 100n },
+    { code: 'full', params: fullOrderParamsByRank(n, 0), stakeChips: 100n },
     { code: 'opening', params: { a: 0, b: 1 }, stakeChips: 100n },
     { code: 'slot', params: { c: 2, k: 2 }, stakeChips: 100n },
   ];
@@ -584,14 +589,18 @@ for (const variantId of variantIds) {
     {
       name: `4 x FULL ORDER at ${credits(LIMITS.maxLineStakeChips)}`,
       mutuallyExclusive: true,
-      lines: [0, 1, 2, 3].map((rank) => ({ code: 'full', params: { rank }, stakeChips: LIMITS.maxLineStakeChips })),
+      lines: [0, 1, 2, 3].map((rank) => ({
+        code: 'full',
+        params: fullOrderParamsByRank(variant.n, rank),
+        stakeChips: LIMITS.maxLineStakeChips,
+      })),
     },
     {
       name: '3 x FIRST on different colours at 1.00',
       mutuallyExclusive: true,
       lines: [0, 1, 2].map((c) => ({ code: 'first', params: { c }, stakeChips: 100n })),
     },
-    { name: 'FULL ORDER + OPENING + SLOT, all compatible', mutuallyExclusive: false, lines: demoCompatibleLines() },
+    { name: 'FULL ORDER + OPENING + SLOT, all compatible', mutuallyExclusive: false, lines: demoCompatibleLines(variant.n) },
   ];
   for (const strip of strips) {
     const figures = ticketStripFigures(variantId, strip);
@@ -657,7 +666,7 @@ for (const variantId of variantIds) {
       : resolutionTable(variantId, {
           permutations: resolutionSamplePermutations(analysis.n),
           instanceFilter: (family, instance) =>
-            family.code !== 'full' || resolutionSampleRanks(analysis.n).has(instance.params.rank),
+            family.code !== 'full' || resolutionSampleOrders(analysis.n).has(instance.params.order),
         });
   say(
     `      ${analysis.n <= 5 ? 'exhaustive over every instance x every outcome' : `sampled: ${resolution.rows.reduce((sum, row) => sum + row.pairs, 0).toLocaleString('en-US')} (instance, outcome) pairs`}`,
@@ -709,6 +718,20 @@ for (const variantId of variantIds) {
     n: analysis.n,
     permutationCount: analysis.permutationCount,
     adapterFingerprint: analysis.adapterFingerprint,
+    /**
+     * The element table, published because every bet's parameters are element
+     * INDICES — `c=0`, `a=0,b=1`, `order=3-0-1-2-4` — and without this table
+     * none of them is interpretable from the machine-readable artefact alone.
+     * The index is the position in this array, and it is the same index the
+     * transcript's `permutation` array carries.
+     */
+    elements: variant.elements.map((element, index) => ({
+      index,
+      id: element.id,
+      name: element.name,
+      hex: element.hex,
+      glyph: element.glyph,
+    })),
     targetRtp: render.fraction(TARGET_RTP),
     /**
      * Round credit, published so that a machine reading this file cannot

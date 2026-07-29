@@ -123,6 +123,13 @@ export interface OutcomeView {
   readonly pos: readonly SlotIndex[];
   /** Lexicographic rank of `perm`, in [0, n!). */
   readonly rank: number;
+  /**
+   * The printable identity of the settled order: element indices, bottom-up,
+   * joined by `-`. This is what FULL ORDER is parameterised by, so that a
+   * receipt records the order the player chose rather than an index into a
+   * ranking function — see the note on `full` in §4's catalogue and §11.
+   */
+  readonly order: string;
 }
 
 export interface BetFamily<P extends object = object> {

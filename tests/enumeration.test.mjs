@@ -17,7 +17,7 @@ import {
   proveStakeQuantum,
   render,
 } from '../tools/lib/analysis.mjs';
-import { BET_CODES, BET_FAMILIES } from '../tools/lib/bets.mjs';
+import { BET_CODES, BET_FAMILIES, fullOrderParamsByRank } from '../tools/lib/bets.mjs';
 import { LIMITS, STAKE_QUANTUM, TARGET_RTP, VARIANT_IDS, getVariant } from '../tools/lib/model.mjs';
 import { allPermutations, factorialBig, permutationRank, positionsOf } from '../tools/lib/permutations.mjs';
 import { cmp, eq, mul, rational } from '../tools/lib/rational.mjs';
@@ -152,7 +152,7 @@ describe.each(VARIANT_IDS)('variant %s', (variantId) => {
     // reading back the same ordering the selection came from, this would pass
     // and the maximum-credit figure would be unproved.
     const winners = [
-      { code: 'full', params: { rank: 0 }, multiplier: variant.multipliers.full },
+      { code: 'full', params: fullOrderParamsByRank(variant.n, 0), multiplier: variant.multipliers.full },
       { code: 'opening', params: { a: 0, b: 1 }, multiplier: variant.multipliers.opening },
       { code: 'first', params: { c: 0 }, multiplier: variant.multipliers.first },
       { code: 'before', params: { a: 0, b: 1 }, multiplier: variant.multipliers.before },
@@ -191,7 +191,7 @@ describe.each(VARIANT_IDS)('variant %s', (variantId) => {
     // The construction avoids it by selecting only among claims that win under
     // one fixed outcome; the witness has to be able to say when it did not.
     const winners = [
-      { code: 'full', params: { rank: 0 }, multiplier: variant.multipliers.full },
+      { code: 'full', params: fullOrderParamsByRank(variant.n, 0), multiplier: variant.multipliers.full },
       { code: 'full', params: { rank: 1 }, multiplier: variant.multipliers.full },
       { code: 'full', params: { rank: 2 }, multiplier: variant.multipliers.full },
       { code: 'full', params: { rank: 3 }, multiplier: variant.multipliers.full },
