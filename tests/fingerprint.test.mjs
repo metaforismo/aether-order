@@ -103,6 +103,29 @@ describe.each(VARIANT_IDS)('behavioural catalogue digest — %s', (variantId) =>
     expect(claimSignature(variantId, 'before', { params: { a: 0, b: 1 } })).not.toBe(group.signature);
     expect(n).toBeGreaterThan(2);
   });
+
+  it('is the win bitmap alone, so the pair docs/ENGINE.md names as one claim aliases', () => {
+    // docs/ENGINE.md §4 said the signature digested "the outcomes it wins on,
+    // plus its canonical parameter rendering" until docs/adr/0001. Those two
+    // renderings are `c=0` and `c=0,k=0`, so including them would separate the
+    // exact pair `requireDistinctLines` names as one claim — and the per-line
+    // stake ceiling would be defeated by spelling the best line two ways.
+    //
+    // The reference has always hashed the bitmap alone; the prose was wrong.
+    // This asserts the behaviour so the next drift is a build failure rather
+    // than something a porter reads and implements.
+    expect(claimSignature(variantId, 'first', { params: { c: 0 } })).toBe(
+      claimSignature(variantId, 'slot', { params: { c: 0, k: 0 } }),
+    );
+    expect(claimSignature(variantId, 'last', { params: { c: 0 } })).toBe(
+      claimSignature(variantId, 'slot', { params: { c: 0, k: n - 1 } }),
+    );
+    // Two claims with the SAME parameter rendering and different win sets stay
+    // distinct, so the bitmap is doing the work rather than the rendering.
+    expect(claimSignature(variantId, 'first', { params: { c: 0 } })).not.toBe(
+      claimSignature(variantId, 'last', { params: { c: 0 } }),
+    );
+  });
 });
 
 describe.each(VARIANT_IDS)('adapter fingerprint binds every priced field — %s', (variantId) => {

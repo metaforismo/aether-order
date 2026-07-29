@@ -303,9 +303,26 @@ export function permutationCatalogueDigest(game: PermutationGameDefinition): str
 
 /**
  * The behavioural identity of one claim: a digest of the outcomes it wins on,
- * plus its canonical parameter rendering. Settlement compares lines by this,
- * never by label, so two spellings of the same bet cannot both sit on a ticket.
- * Memoised per (variant, code, label).
+ * and nothing else. Settlement compares lines by this, never by label, so two
+ * spellings of the same bet cannot both sit on a ticket.
+ *
+ * The win bitmap is the WHOLE input, and that is load-bearing rather than
+ * incidental. Rounds 2-5 of this document said "plus its canonical parameter
+ * rendering", which is the one addition that would break the rule this function
+ * exists to enforce: `first {c:0}` and `slot {c:0,k:0}` win on identical orders
+ * and render as `c=0` and `c=0,k=0`, so a signature covering the params would
+ * separate them and `requireDistinctLines` above — which names that exact pair
+ * as one claim — could not hold. `tools/lib/derive.mjs` hashes the bitmap alone
+ * and has since round 2; the prose, not the reference, was wrong.
+ *
+ * Canonical parameters are still bound, in the places that need them to be:
+ * the catalogue digest, the ticket digest and the settlement digest all carry
+ * them, so renaming a parameter key still moves the adapter fingerprint and
+ * still breaks an open ticket's param matching. What they must not do is enter
+ * the identity a ticket is deduplicated by.
+ *
+ * Memoised per (variant, code, canonical parameter rendering) — never per
+ * label, which is authored metadata and does not determine the bitmap.
  */
 export function permutationClaimSignature(
   game: PermutationGameDefinition, code: string, instance: BetInstance,
