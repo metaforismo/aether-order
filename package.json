@@ -14,6 +14,7 @@
     "enumerate:markdown": "node tools/enumerate.mjs --markdown",
     "enumerate:write": "node tools/enumerate.mjs --write",
     "enumerate:montecarlo": "node tools/enumerate.mjs --monte-carlo=200000",
+    "bench": "node tools/bench.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "npm run enumerate && npm test"

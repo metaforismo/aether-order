@@ -7,6 +7,8 @@
  * published paytable and the proof cannot drift apart.
  */
 
+import { createHash } from 'node:crypto';
+
 import {
   allDrawVectors,
   allPermutations,
@@ -117,7 +119,17 @@ const TIER_RANK = Object.freeze({ [TIERS.FLOW]: 0, [TIERS.FORM]: 1, [TIERS.ORDER
  * win count (so a single published multiplier is honest for the whole family),
  * then derive probability, expected value, RTP and variance as exact fractions.
  */
+const variantAnalysisCache = new Map();
+
 export function enumerateVariant(variantId) {
+  const cached = variantAnalysisCache.get(variantId);
+  if (cached) return cached;
+  const analysis = enumerateVariantUncached(variantId);
+  variantAnalysisCache.set(variantId, analysis);
+  return analysis;
+}
+
+function enumerateVariantUncached(variantId) {
   const variant = getVariant(variantId);
   const { n } = variant;
   const permutations = allPermutations(n);
@@ -137,18 +149,35 @@ export function enumerateVariant(variantId) {
   });
 
   let evaluations = 0;
+  // Every instance's win/lose bitmap is digested as it is computed, at no extra
+  // evaluation cost. Two instances that share a digest are the SAME BET spelled
+  // two ways — `FIRST amber` and `SLOT amber @ slot 1` — which the ticket
+  // builder has to know about (docs/ENGINE.md §8 check 12). The layout is
+  // byte-identical to `claimSignature`'s, so the report and the settlement path
+  // agree by construction; a test asserts they do.
+  const winSets = new Map();
+  const bitmap = Buffer.alloc(Math.ceil(permutationCount / 8));
   const rows = BET_FAMILIES.map((family) => {
     const instances = family.instances(n, { permutationCount });
     if (instances.length === 0) throw new Error(`Family ${family.code} enumerated no instances`);
     const winCounts = instances.map((instance) => {
       let wins = 0;
+      bitmap.fill(0);
       for (let p = 0; p < permutationCount; p += 1) {
         const outcome = family.resolve(instance, contexts[p]);
         if (outcome !== true && outcome !== false) {
           throw new TypeError(`Family ${family.code} returned a non-boolean verdict`);
         }
-        if (outcome) wins += 1;
+        if (outcome) {
+          wins += 1;
+          bitmap[p >> 3] |= 1 << (p & 7);
+        }
       }
+      const signature = createHash('sha256').update(bitmap).digest('hex');
+      const spelling = Object.freeze({ code: family.code, label: instance.label, params: instance.params });
+      const bucket = winSets.get(signature);
+      if (bucket) bucket.push(spelling);
+      else winSets.set(signature, [spelling]);
       evaluations += permutationCount;
       return assertSafeCount(wins, permutationCount);
     });
@@ -202,6 +231,18 @@ export function enumerateVariant(variantId) {
     index === 0 ? true : TIER_RANK[row.tier] >= TIER_RANK[sorted[index - 1].tier],
   );
 
+  const claimAliases = Object.freeze(
+    [...winSets.entries()]
+      .filter(([, spellings]) => spellings.length > 1)
+      .map(([signature, spellings]) =>
+        Object.freeze({
+          signature,
+          spellings: Object.freeze([...spellings].sort((a, b) => (`${a.code}|${a.label}` < `${b.code}|${b.label}` ? -1 : 1))),
+        }),
+      )
+      .sort((a, b) => (`${a.spellings[0].code}|${a.spellings[0].label}` < `${b.spellings[0].code}|${b.spellings[0].label}` ? -1 : 1)),
+  );
+
   return Object.freeze({
     variantId: variant.id,
     displayName: variant.displayName,
@@ -216,6 +257,9 @@ export function enumerateVariant(variantId) {
     exact: offenders.length === 0,
     maxMultiplier,
     tiersMonotone,
+    distinctInstances: [...winSets.values()].reduce((total, group) => total + group.length, 0),
+    distinctClaims: winSets.size,
+    claimAliases,
   });
 }
 
@@ -292,7 +336,7 @@ export function proveCoverTickets(analysis) {
   // and buying every slot for it. Nothing here assumes exactly one line wins —
   // the payout is resolved against every outcome, so a broken predicate shows
   // up as a non-constant payout rather than passing silently.
-  for (const code of ['first', 'last', 'slot', 'full']) {
+  for (const code of ['first', 'last', 'slot', 'podium', 'full']) {
     const row = analysis.rows.find((candidate) => candidate.code === code);
     if (!row) continue;
     const family = BET_FAMILIES.find((candidate) => candidate.code === code);

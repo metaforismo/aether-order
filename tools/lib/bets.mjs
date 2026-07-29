@@ -34,6 +34,20 @@ function unorderedPairs(n) {
   return out;
 }
 
+function orderedTriples(n) {
+  const out = [];
+  for (let a = 0; a < n; a += 1) {
+    for (let b = 0; b < n; b += 1) {
+      if (b === a) continue;
+      for (let c = 0; c < n; c += 1) {
+        if (c === a || c === b) continue;
+        out.push([a, b, c]);
+      }
+    }
+  }
+  return out;
+}
+
 /** @type {ReadonlyArray<object>} */
 export const BET_FAMILIES = Object.freeze([
   Object.freeze({
@@ -120,6 +134,15 @@ export const BET_FAMILIES = Object.freeze([
     rule: 'The two colours are the first two to settle, in exactly that order.',
     instances: (n) => orderedPairs(n).map(([a, b]) => inst('opening', { a, b }, `${a}${b}|open`)),
     resolve: (i, { pos }) => pos[i.params.a] === 0 && pos[i.params.b] === 1,
+  }),
+  Object.freeze({
+    code: 'podium',
+    name: 'PODIUM',
+    tier: TIERS.ORDER,
+    picks: 'three colours, in order',
+    rule: 'The three colours are the first three to settle, in exactly that order.',
+    instances: (n) => orderedTriples(n).map(([a, b, c]) => inst('podium', { a, b, c }, `${a}${b}${c}|pod`)),
+    resolve: (i, { pos }) => pos[i.params.a] === 0 && pos[i.params.b] === 1 && pos[i.params.c] === 2,
   }),
   Object.freeze({
     code: 'full',

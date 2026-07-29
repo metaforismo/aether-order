@@ -241,6 +241,38 @@ describe('published limits', () => {
   ])('rejects a malformed permutation %p even from a trusted caller', (permutation) => {
     expect(() => settleTicket(at('classic', permutation), { lines: [line()] })).toThrow(AetherOrderError);
   });
+
+  it('rejects a permutation that iterates differently from how it indexes', () => {
+    // The same double-read class the ticket-lines guard defends against, one
+    // function further down. The permutation guard used to validate through the
+    // ITERATOR protocol (`for (const e of perm)`) and then consume by INDEX
+    // (`positionsOf`, `permutationRank`). A genuine Array carrying its own
+    // `Symbol.iterator` therefore presented a valid permutation to the check and
+    // something else to settlement. Snapshotting with `slice` closes it.
+    const forged = [0, 0, 0, 0, 0];
+    forged[Symbol.iterator] = function* honest() {
+      yield* [0, 1, 2, 3, 4];
+    };
+    expect(() => settleTicket(at('classic', forged), { lines: [line()] })).toThrow(AetherOrderError);
+
+    // And the array-like variant: a length that lies about the indices.
+    const short = [0, 1, 2, 3, 4];
+    short[Symbol.iterator] = function* honest() {
+      yield* [0, 1, 2, 3, 4];
+    };
+    short[4] = 0;
+    expect(() => settleTicket(at('classic', short), { lines: [line()] })).toThrow(AetherOrderError);
+  });
+
+  it('settles against the snapshot, so a permutation mutated mid-settlement is ignored', () => {
+    const live = [0, 1, 2, 3, 4];
+    const transcript = at('classic', live);
+    const settlement = settleTicket(transcript, {
+      lines: [{ code: 'first', params: { c: 0 }, stakeChips: 25n }],
+    });
+    live[0] = 4; // too late: settlement already read its own copy
+    expect(settlement.lines[0].won).toBe(true);
+  });
 });
 
 describe('the cap never binds on the shipped paytable', () => {

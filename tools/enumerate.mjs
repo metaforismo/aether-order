@@ -39,19 +39,33 @@ import {
 } from './lib/analysis.mjs';
 import { BET_FAMILIES } from './lib/bets.mjs';
 import { canonicalJson } from './lib/canonical.mjs';
+import { assertAdapterConforms, claimAliasReport } from './lib/conform.mjs';
+import { credits, roundPresentation, ticketStripFigures } from './lib/presentation.mjs';
 import {
   ADAPTER_VERSION,
   CHIPS_PER_CREDIT,
   GAME_ID,
   LIMITS,
   MODULE_VERSION,
+  PLAY_POLICY,
   STAKE_LADDER,
   STAKE_QUANTUM,
   TARGET_RTP,
   VARIANT_IDS,
   getVariant,
 } from './lib/model.mjs';
-import { derivePermutation, makeTranscript, verifyTranscript, ZERO_COMMITMENT } from './lib/derive.mjs';
+import {
+  derivePermutation,
+  ed25519KeyPairFromSeed,
+  makeReceipt,
+  makeTranscript,
+  openTicket,
+  settleTicket,
+  signReceipt,
+  verifyReceipt,
+  verifyTranscript,
+  ZERO_COMMITMENT,
+} from './lib/derive.mjs';
 import { permutationRank, positionsOf } from './lib/permutations.mjs';
 import { rational } from './lib/rational.mjs';
 
@@ -200,11 +214,48 @@ function factorialNumber(n) {
   return value;
 }
 
+/**
+ * A deterministic three-line ticket for the protocol round trip and the frozen
+ * receipt fixtures. Two lines are chosen to win against the round's own
+ * permutation so the settlement is non-trivial; all three are distinct claims.
+ */
+function demoTicketFor(transcript, n) {
+  const perm = transcript.permutation;
+  return {
+    lines: [
+      { code: 'first', params: { c: perm[0] }, stakeChips: 100n },
+      { code: 'before', params: { a: 0, b: 1 }, stakeChips: 50n },
+      { code: 'slot', params: { c: perm[n - 1], k: n - 1 }, stakeChips: 25n },
+    ],
+  };
+}
+
+/** Three lines that CAN all hit at once — rank 0 is the identity permutation. */
+function demoCompatibleLines() {
+  return [
+    { code: 'full', params: { rank: 0 }, stakeChips: 100n },
+    { code: 'opening', params: { a: 0, b: 1 }, stakeChips: 100n },
+    { code: 'slot', params: { c: 2, k: 2 }, stakeChips: 100n },
+  ];
+}
+
 /* -------------------------------------------------------------- */
 /* Report                                                          */
 /* -------------------------------------------------------------- */
 
-const machine = { gameId: GAME_ID, adapterVersion: ADAPTER_VERSION, moduleVersion: MODULE_VERSION, variants: {} };
+const machine = {
+  gameId: GAME_ID,
+  adapterVersion: ADAPTER_VERSION,
+  moduleVersion: MODULE_VERSION,
+  /** Speed-of-play policy. Published so the client and the RGS cannot diverge. */
+  playPolicy: {
+    minRoundCycleMs: PLAY_POLICY.minRoundCycleMs,
+    maxRoundsPerRollingHour: PLAY_POLICY.maxRoundsPerRollingHour,
+    realityCheckMinutes: [...PLAY_POLICY.realityCheckMinutes],
+    skipShortensPresentationOnly: PLAY_POLICY.skipShortensPresentationOnly,
+  },
+  variants: {},
+};
 const markdown = [];
 
 say('AETHER ORDER — exhaustive exact enumeration');
@@ -293,6 +344,17 @@ for (const variantId of variantIds) {
     'enforced during enumeration; a heterogeneous family throws',
   );
   check('tier labels are monotone in variance', analysis.tiersMonotone);
+  const aliases = claimAliasReport(variantId);
+  check(
+    'every pair of chips that mean the same bet is reported to the ticket builder',
+    aliases.groups.length > 0 && aliases.distinctClaims < aliases.instances,
+    `${aliases.instances} instances -> ${aliases.distinctClaims} distinct claims; ` +
+      `${aliases.groups.length} alias group(s), e.g. ` +
+      aliases.groups
+        .slice(0, 2)
+        .map((group) => group.spellings.map((spelling) => `${spelling.code}:${spelling.label}`).join(' = '))
+        .join(', '),
+  );
   say();
 
   /* --- Volatility ---------------------------------------------- */
@@ -395,9 +457,116 @@ for (const variantId of variantIds) {
   say(`      permutation ${transcript.permutation.join('-')} (${variant.elements.map((e) => e.id).join(', ')})`);
   say();
 
+  /* --- Proof 9: the ticket is bound to the round --------------- */
+  say('[10] Ticket binding — a signed receipt covers the bet, not just the draw');
+  const demoTicket = demoTicketFor(transcript, variant.n);
+  const opened = openTicket(
+    { variantId, roundId: transcript.roundId, nonce: transcript.nonce },
+    demoTicket,
+  );
+  const demoSettlement = settleTicket(transcript, demoTicket);
+  const operatorKey = ed25519KeyPairFromSeed(seedFrom('operator-key'));
+  const receipt = signReceipt(
+    makeReceipt({ transcript, ticket: demoTicket, settlement: demoSettlement, signerId: 'axiom-games/reference-signer' }),
+    operatorKey.privateKey,
+  );
+  const receiptOk = verifyReceipt(receipt, {
+    transcript,
+    ticket: demoTicket,
+    settlement: demoSettlement,
+    publicKey: operatorKey.publicKey,
+  });
+  check('a signed receipt verifies against its round, ticket and settlement', receiptOk.ok && receiptOk.signatureValid === true, receipt.digest);
+  const reordered = { lines: [...demoTicket.lines].reverse() };
+  check(
+    'reordering the same lines yields the same ticket digest, so a retry cannot double-debit',
+    openTicket({ variantId, roundId: transcript.roundId, nonce: transcript.nonce }, reordered).ticketDigest === opened.ticketDigest,
+    opened.idempotencyKey,
+  );
+  const restakedTicket = {
+    lines: demoTicket.lines.map((line, index) => (index === 0 ? { ...line, stakeChips: line.stakeChips + STAKE_QUANTUM } : line)),
+  };
+  const restaked = verifyReceipt(receipt, {
+    transcript,
+    ticket: restakedTicket,
+    settlement: demoSettlement,
+    publicKey: operatorKey.publicKey,
+  });
+  check('a receipt rejects a ticket whose stake was edited after the fact', !restaked.ok, restaked.code);
+  say('      Commit-reveal proves the draw. The receipt proves the bet — and it is');
+  say('      an operator signature, so it is non-repudiation, not verification from');
+  say('      first principles. docs/ENGINE.md section 11 states that boundary.');
+  say();
+
+  /* --- Proof 10: the headline ticket figure is a real maximum --- */
+  say('[11] Ticket strip — the published figure is a maximum over outcomes, not a sum');
+  const strips = [
+    {
+      name: `4 x FULL ORDER at ${credits(LIMITS.maxLineStakeChips)}`,
+      mutuallyExclusive: true,
+      lines: [0, 1, 2, 3].map((rank) => ({ code: 'full', params: { rank }, stakeChips: LIMITS.maxLineStakeChips })),
+    },
+    {
+      name: '3 x FIRST on different colours at 1.00',
+      mutuallyExclusive: true,
+      lines: [0, 1, 2].map((c) => ({ code: 'first', params: { c }, stakeChips: 100n })),
+    },
+    { name: 'FULL ORDER + OPENING + SLOT, all compatible', mutuallyExclusive: false, lines: demoCompatibleLines() },
+  ];
+  for (const strip of strips) {
+    const figures = ticketStripFigures(variantId, strip);
+    const overstated = figures.sumIfEveryLineHitChips > figures.bestOutcomeChips;
+    check(
+      `${strip.name}`,
+      overstated === strip.mutuallyExclusive && figures.everyLineCanHitTogether === !strip.mutuallyExclusive,
+      `best possible outcome ${credits(figures.bestOutcomeChips)}` +
+        (overstated
+          ? `  (a "sum of every line" figure would have claimed ${credits(figures.sumIfEveryLineHitChips)} — unreachable)`
+          : '  (every line can hit together, so the two agree)'),
+    );
+  }
+  say('      The client publishes bestOutcomeChips and never the sum. Mutually');
+  say('      exclusive lines are exactly what a hedged ticket is made of.');
+  say();
+
+  /* --- Proof 11: no loss is ever presented as a win ------------- */
+  say('[12] Celebration gate — a round is celebrated only when it returned more than it cost');
+  const gateCases = [
+    { label: 'one small line hits on a 12.00 ticket', settlement: { totalStakeChips: 1200n, creditedChips: 192n, netChips: -1008n } },
+    { label: 'exact break-even', settlement: { totalStakeChips: 500n, creditedChips: 500n, netChips: 0n } },
+    { label: 'one chip of profit', settlement: { totalStakeChips: 500n, creditedChips: 525n, netChips: 25n } },
+    { label: 'nothing hits', settlement: { totalStakeChips: 500n, creditedChips: 0n, netChips: -500n } },
+  ];
+  for (const gateCase of gateCases) {
+    const presentation = roundPresentation(gateCase.settlement);
+    const expected = gateCase.settlement.creditedChips > gateCase.settlement.totalStakeChips;
+    check(
+      `${gateCase.label} -> ${presentation.celebrate ? 'celebrate' : 'neutral'}`,
+      presentation.celebrate === expected &&
+        (presentation.celebrate ||
+          (presentation.audio === 'none' && !presentation.balanceCountsUp && !presentation.multiplierStamp)),
+      `"${presentation.headline}"`,
+    );
+  }
+  const realGate = roundPresentation(demoSettlement);
+  check(
+    'the demo round obeys the same gate through the real settlement path',
+    realGate.celebrate === demoSettlement.creditedChips > demoSettlement.totalStakeChips,
+    `"${realGate.headline}"`,
+  );
+  say();
+
+  /* --- Proof 12: packaged adapter conformance -------------------- */
+  const conformance = assertAdapterConforms(variantId);
+  say('[13] Adapter conformance — docs/ENGINE.md section 8, checks 1 to 12');
+  for (const entry of conformance.checks) {
+    check(`${String(entry.id).padStart(2)}. ${entry.name}`, entry.ok, entry.detail);
+  }
+  say();
+
   /* --- Monte Carlo cross-check --------------------------------- */
   if (monteCarloRounds > 0) {
-    say(`[10] Monte Carlo cross-check — ${monteCarloRounds.toLocaleString('en-US')} derived rounds (sanity only)`);
+    say(`[14] Monte Carlo cross-check — ${monteCarloRounds.toLocaleString('en-US')} derived rounds (sanity only)`);
     const results = monteCarlo(variantId, monteCarloRounds);
     for (const result of results) {
       const row = analysis.rows.find((candidate) => candidate.code === result.code);
@@ -426,6 +595,16 @@ for (const variantId of variantIds) {
     maxWinMultiple: LIMITS.maxWinMultiple.toString(),
     supremumMultiplier: render.fraction(analysis.maxMultiplier),
     stakeQuantumChips: STAKE_QUANTUM.toString(),
+    instances: analysis.distinctInstances,
+    distinctClaims: analysis.distinctClaims,
+    /**
+     * Chips that mean the same bet spelled two ways. The ticket builder merges
+     * these instead of rejecting the tap; settlement treats them as one claim.
+     */
+    claimAliases: aliases.groups.map((group) => ({
+      signature: group.signature,
+      spellings: group.spellings.map((spelling) => ({ code: spelling.code, label: spelling.label })),
+    })),
     bets: analysis.rows.map((row) => ({
       code: row.code,
       name: row.name,
@@ -507,8 +686,20 @@ if (wantWrite) {
   mkdirSync(dirname(paytablePath), { recursive: true });
   writeFileSync(paytablePath, canonicalJson(machine));
 
-  const fixtures = { schemaNote: 'Frozen wire-format vectors. Regenerate only with an intentional protocol change.', vectors: [] };
+  const operator = ed25519KeyPairFromSeed(seedFrom('operator-key'));
+  const fixtures = {
+    schemaNote: 'Frozen wire-format vectors. Regenerate only with an intentional protocol change.',
+    /**
+     * The receipt signer. Ed25519 signatures are deterministic (RFC 8032), so a
+     * signed receipt is a stable byte-for-byte fixture. This key exists only to
+     * freeze the wire format; it is not, and must never become, an operator key.
+     */
+    operatorPublicKey: operator.publicKeyHex,
+    operatorSignerId: 'axiom-games/reference-signer',
+    vectors: [],
+  };
   for (const variantId of VARIANT_IDS) {
+    const { n } = getVariant(variantId);
     for (let index = 0; index < 4; index += 1) {
       const serverSeed = seedFrom(`vector/${variantId}/${index}`);
       const context = {
@@ -519,7 +710,14 @@ if (wantWrite) {
       };
       const previous = index === 0 ? ZERO_COMMITMENT : fixtures.vectors[fixtures.vectors.length - 1].transcript.commitment;
       const transcript = makeTranscript(serverSeed, context, previous);
-      fixtures.vectors.push({ serverSeed, context, transcript });
+      const ticket = demoTicketFor(transcript, n);
+      const opened = openTicket(context, ticket);
+      const settlement = settleTicket(transcript, ticket);
+      const receipt = signReceipt(
+        makeReceipt({ transcript, ticket, settlement, signerId: fixtures.operatorSignerId }),
+        operator.privateKey,
+      );
+      fixtures.vectors.push({ serverSeed, context, transcript, ticket: opened, settlement, receipt });
     }
   }
   const fixturePath = join(ROOT, 'tests', 'fixtures', 'transcripts.json');

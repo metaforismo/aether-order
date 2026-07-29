@@ -1,10 +1,19 @@
 {
-  "adapterVersion": "1.0.0",
+  "adapterVersion": "1.1.0",
   "gameId": "aether-order",
   "moduleVersion": "reveal-engine/permutation-v1",
+  "playPolicy": {
+    "maxRoundsPerRollingHour": 900,
+    "minRoundCycleMs": 2500,
+    "realityCheckMinutes": [
+      30,
+      60
+    ],
+    "skipShortensPresentationOnly": true
+  },
   "variants": {
     "classic": {
-      "adapterFingerprint": "dc760ab3b8f239934c7029b0cbabef1e49bbc8bab14342af9722cb54a42ff746",
+      "adapterFingerprint": "acc1bcc56736ec6da617368b9352139d60dfc654f92153b4360d4b2e797c8aa3",
       "bets": [
         {
           "code": "before",
@@ -115,6 +124,18 @@
           "winsPerInstance": 6
         },
         {
+          "code": "podium",
+          "decimal": "57.60x",
+          "instances": 60,
+          "multiplier": "288/5",
+          "name": "PODIUM",
+          "probability": "1/60",
+          "rtp": "24/25",
+          "tier": "ORDER",
+          "variance": "33984/625",
+          "winsPerInstance": 2
+        },
+        {
           "code": "full",
           "decimal": "115.20x",
           "instances": 120,
@@ -127,7 +148,141 @@
           "winsPerInstance": 1
         }
       ],
+      "claimAliases": [
+        {
+          "signature": "888fc9ab4292ecdd91fa18b76ee8e413a74ac36c31d83206d7f2f7e9cc54b89a",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f0"
+            },
+            {
+              "code": "slot",
+              "label": "0@0"
+            }
+          ]
+        },
+        {
+          "signature": "d8040c5d5d0f53fc20c8d8d404d153e7d338e8d2aa9084b4be0f690148b36cf5",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f1"
+            },
+            {
+              "code": "slot",
+              "label": "1@0"
+            }
+          ]
+        },
+        {
+          "signature": "d87b9e5c4cda78809853be8493dd26233cacc3e6598182391476d2a4212d234c",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f2"
+            },
+            {
+              "code": "slot",
+              "label": "2@0"
+            }
+          ]
+        },
+        {
+          "signature": "f1d242c15db8720a1626a85cc6776326df3e3812f1fae5d6854fbee6bc2e825a",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f3"
+            },
+            {
+              "code": "slot",
+              "label": "3@0"
+            }
+          ]
+        },
+        {
+          "signature": "ade87388c74f1ddf929566810b527c95c58ac65cf7ea31a00a0512071f62801e",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f4"
+            },
+            {
+              "code": "slot",
+              "label": "4@0"
+            }
+          ]
+        },
+        {
+          "signature": "e0fabd7f6d390a8715cf98c3342255d97cdd6f8c8a3de898cd92cca627fae83b",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t0"
+            },
+            {
+              "code": "slot",
+              "label": "0@4"
+            }
+          ]
+        },
+        {
+          "signature": "f8f79c54b35b1bff04bb2de974d901ab4d9b5855adf73c0ae40ac35f50fabf76",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t1"
+            },
+            {
+              "code": "slot",
+              "label": "1@4"
+            }
+          ]
+        },
+        {
+          "signature": "b22f4d24cc76879b841fd7d9fced6b3972cb034d76217d51fe3107628370023f",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t2"
+            },
+            {
+              "code": "slot",
+              "label": "2@4"
+            }
+          ]
+        },
+        {
+          "signature": "c75849729f89c78665bd140cdb801ae48ffc48ba1a9789d18c932fc50e463fe0",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t3"
+            },
+            {
+              "code": "slot",
+              "label": "3@4"
+            }
+          ]
+        },
+        {
+          "signature": "3b2d96034b00ad47ff56f7ca5394592e6ba9ec7c2a3936baf9018dbcb4a99eb0",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t4"
+            },
+            {
+              "code": "slot",
+              "label": "4@4"
+            }
+          ]
+        }
+      ],
       "displayName": "AETHER ORDER",
+      "distinctClaims": 285,
+      "instances": 295,
       "maxWinMultiple": "5000",
       "n": 5,
       "permutationCount": 120,
@@ -136,7 +291,7 @@
       "targetRtp": "24/25"
     },
     "seven": {
-      "adapterFingerprint": "462146a16cdba56528e304d7b8ae9dda1b7077779501537426ccea4337779f52",
+      "adapterFingerprint": "dc11499eebcc8680300b051411fbfceb740f7beac1d52c2aa1a20f2fa46e519d",
       "bets": [
         {
           "code": "before",
@@ -247,6 +402,18 @@
           "winsPerInstance": 120
         },
         {
+          "code": "podium",
+          "decimal": "201.60x",
+          "instances": 210,
+          "multiplier": "1008/5",
+          "name": "PODIUM",
+          "probability": "1/210",
+          "rtp": "24/25",
+          "tier": "ORDER",
+          "variance": "120384/625",
+          "winsPerInstance": 24
+        },
+        {
           "code": "full",
           "decimal": "4838.40x",
           "instances": 5040,
@@ -259,7 +426,193 @@
           "winsPerInstance": 1
         }
       ],
+      "claimAliases": [
+        {
+          "signature": "5a61ab81f013e9cb95b3f1c4a903d27847bbb0408f206f486c7c61d01a170a7b",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f0"
+            },
+            {
+              "code": "slot",
+              "label": "0@0"
+            }
+          ]
+        },
+        {
+          "signature": "d4357be28e912bf8c7cef9f85b9ba610b5ffe1439822ea8f7761bcc73d71cc1a",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f1"
+            },
+            {
+              "code": "slot",
+              "label": "1@0"
+            }
+          ]
+        },
+        {
+          "signature": "24a3081ebc10e2bf2c584ef692eecab27a6e222c16a861c26054f9088b8b673a",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f2"
+            },
+            {
+              "code": "slot",
+              "label": "2@0"
+            }
+          ]
+        },
+        {
+          "signature": "d13a30305ae024b086339e18f30e94946167b04c896de89cd6e554bceafdfa41",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f3"
+            },
+            {
+              "code": "slot",
+              "label": "3@0"
+            }
+          ]
+        },
+        {
+          "signature": "c4fb9ef4ecfd299d0823e41194ab9fc1c735d3ef88f5af9302133c668ab12a69",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f4"
+            },
+            {
+              "code": "slot",
+              "label": "4@0"
+            }
+          ]
+        },
+        {
+          "signature": "d034b521fa11dc74fc97651a46af278c015923393d538289db8542f331d01ec3",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f5"
+            },
+            {
+              "code": "slot",
+              "label": "5@0"
+            }
+          ]
+        },
+        {
+          "signature": "1779e89a364db297def9c31c98458a9c24799ae8c06e10ed9a42f4bde5028d1d",
+          "spellings": [
+            {
+              "code": "first",
+              "label": "f6"
+            },
+            {
+              "code": "slot",
+              "label": "6@0"
+            }
+          ]
+        },
+        {
+          "signature": "e96b67b00d1f3c1c4b82e8a84cf27a805a14c47b1a7522f6857da9ee783f6816",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t0"
+            },
+            {
+              "code": "slot",
+              "label": "0@6"
+            }
+          ]
+        },
+        {
+          "signature": "f5da31a0f5cc7c0be74a9be562296ca2ffa0d6b53e81bbf51fa7ad927d36c885",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t1"
+            },
+            {
+              "code": "slot",
+              "label": "1@6"
+            }
+          ]
+        },
+        {
+          "signature": "fcc28dfbc07f12f6bb096ac634bed2e3270578727b688517273ed8ca5db19200",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t2"
+            },
+            {
+              "code": "slot",
+              "label": "2@6"
+            }
+          ]
+        },
+        {
+          "signature": "6af6cb6b8685875e56c8d736b55eec20dbf722627ad27f1dd8dec23e55abf8a0",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t3"
+            },
+            {
+              "code": "slot",
+              "label": "3@6"
+            }
+          ]
+        },
+        {
+          "signature": "59108227ea398fc7b12870bcb499122be6a9b7443c96b42cbb24157a6cb880c3",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t4"
+            },
+            {
+              "code": "slot",
+              "label": "4@6"
+            }
+          ]
+        },
+        {
+          "signature": "5b261c7127dc80f42a47698933ebd1e9a5ea77728c19413da67c2bc7911f0abf",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t5"
+            },
+            {
+              "code": "slot",
+              "label": "5@6"
+            }
+          ]
+        },
+        {
+          "signature": "8838e5117d3832984dde7e46e4de6c6c917f6fbf60736fa2134cd745caf003fe",
+          "spellings": [
+            {
+              "code": "last",
+              "label": "t6"
+            },
+            {
+              "code": "slot",
+              "label": "6@6"
+            }
+          ]
+        }
+      ],
       "displayName": "AETHER ORDER · SEVEN",
+      "distinctClaims": 5460,
+      "instances": 5474,
       "maxWinMultiple": "5000",
       "n": 7,
       "permutationCount": 5040,

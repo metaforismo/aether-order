@@ -111,7 +111,7 @@ describe('docs/DESIGN.md quotes real multipliers', () => {
   const design = readFileSync(DESIGN_MD, 'utf8');
 
   it('the player-facing bet menu quotes only published multipliers', () => {
-    const quoted = new Set(collectMultiplierTokens(design, '### FLOW — lands often', '**Ticket rules.**'));
+    const quoted = new Set(collectMultiplierTokens(design, '### FLOW — lands often', '### Ticket rules'));
     const publishedDecimals = new Set(
       VARIANT_IDS.flatMap((id) => analyses[id].rows.map((row) => render.multiplierDecimal(row.multiplier))),
     );

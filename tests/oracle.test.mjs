@@ -42,6 +42,8 @@ const ORACLE_WINS = Object.freeze({
   link: (n) => f(n - 1),
   // Two slots pinned; arrange the remaining n-2.
   opening: (n) => f(n - 2),
+  // Three slots pinned; arrange the remaining n-3.
+  podium: (n) => f(n - 3),
   full: () => 1n,
 });
 
@@ -56,6 +58,7 @@ const ORACLE_INSTANCES = Object.freeze({
   slot: (n) => big(n) * big(n),
   link: (n) => big(n) * big(n - 1),
   opening: (n) => big(n) * big(n - 1),
+  podium: (n) => big(n) * big(n - 1) * big(n - 2),
   full: (n) => f(n),
 });
 
