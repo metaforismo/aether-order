@@ -20,6 +20,7 @@ import { claimKey, claimSummary, elementName, type Params } from './claims.js';
 import { glyphSvg } from './glyphs.js';
 import { credits, signedCredits } from './money.js';
 import { openPicker, stakeLadder } from './picker.js';
+import { draftRows, roundRows } from './rows.js';
 import {
   openFairness,
   openHistory,
@@ -38,7 +39,16 @@ import type {
   TicketQuote,
   VariantInfo,
 } from './types.js';
-import { announce, closeAllSheets, esc, on, reducedMotion, sleep, toast } from './ui.js';
+import {
+  announce,
+  closeAllSheets,
+  delegate,
+  esc,
+  on,
+  reducedMotion,
+  sleep,
+  toast,
+} from './ui.js';
 
 interface Line {
   code: string;
@@ -68,12 +78,25 @@ const state = {
   verified: false,
   notice: null as Notice | null,
   skipRequested: false,
+  /**
+   * The order the player built the ticket in, as indices into the round's
+   * canonical line list.
+   *
+   * `openTicket` sorts the lines into the engine's wire order (ENGINE.md §7.6),
+   * so the record the player reads back on S4 and S5 would otherwise not be the
+   * ticket they built. It is frozen once, at COMMIT, exactly as §5 S4 requires
+   * of the pinned strip, and nothing reorders after that.
+   */
+  displayOrder: null as number[] | null,
 };
 
 let chamber: Chamber;
 let quoteTimer: number | undefined;
 let floorTimer: number | undefined;
 let lobbySource: EventSource | null = null;
+let realityCheckShownAt = 0;
+/** Set while a round is playing, so SKIP can compress the one on screen. */
+let skipCurrentRound: (() => void) | null = null;
 
 const app = (): HTMLElement => document.getElementById('app') as HTMLElement;
 const variant = (): VariantInfo =>
@@ -92,26 +115,32 @@ async function boot(): Promise<void> {
   state.operatorKeyHex = key?.publicKeyHex ?? null;
 
   app().innerHTML = `
-    <header class="rail">
-      <button class="icon-btn" data-menu aria-label="Menu">
-        <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 5l8 6v8H4z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-      </button>
-      <span class="rail__balance"><b data-balance>—</b><span>balance</span></span>
-      <button class="variant-toggle" data-variant>CLASSIC</button>
-      <span class="badge">free play</span>
-      <button class="icon-btn fairness-chip" data-fairness aria-label="Fairness" data-state="idle">
-        <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 9-9 9-9-9z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 9l3 3-3 3-3-3z" fill="currentColor"/></svg>
-      </button>
-    </header>
+    <header class="rail" data-rail></header>
+    <div class="progress" data-progress-track><i data-progress></i></div>
     <div data-cadence></div>
-    <main class="stage" id="stage"></main>
+    <main class="stage" id="stage">
+      <div class="chamber-holder" id="chamber"></div>
+      <button class="skip" data-skip aria-label="Skip the animation">SKIP</button>
+      <!--
+        §1's three-second test names five things a new player must see, in this
+        order: five spheres, the numbered tube, THIS SENTENCE, the FORM chips,
+        the 96% line. Round 1 shipped items 1, 2, 4 and 5 and left the
+        explanation one level down inside the picker sheet — which is after the
+        tap the criterion is about. It sits on the chamber rather than in the
+        deck so that saying what the game is costs the chip rail no reach: §5
+        keeps every control needed to play inside the thumb zone.
+      -->
+      <p class="stage__note">They settle in a random order. Bet on the order.</p>
+    </main>
     <section class="deck" id="deck"></section>`;
 
-  chamber = new Chamber(document.getElementById('stage') as HTMLElement);
+  chamber = new Chamber(document.getElementById('chamber') as HTMLElement);
   chamber.render(variant());
 
-  on(app(), '[data-menu]', 'click', () => openMenu());
-  on(app(), '[data-variant]', 'click', () => {
+  // Delegated, because the top rail is re-rendered: S10's rail carries `←` and
+  // the room's name where S1's carries the menu, the balance and the variant.
+  delegate(app(), '[data-menu]', 'click', () => openMenu());
+  delegate(app(), '[data-variant]', 'click', () => {
     if (state.mode === 'round') return;
     openVariantSheet({
       catalogue: catalogue,
@@ -119,7 +148,22 @@ async function boot(): Promise<void> {
       onPick: (variantId) => void switchVariant(variantId),
     });
   });
-  on(app(), '[data-fairness]', 'click', () => void openFairnessForLast());
+  delegate(app(), '[data-fairness]', 'click', () => void openFairnessForLast());
+  delegate(app(), '[data-back-solo]', 'click', () => void togglePlace());
+  delegate(app(), '[data-skip]', 'click', () => {
+    // Takes effect on the round being watched, and is remembered as a
+    // preference for the next one (§2.2). It changes nothing about the outcome,
+    // the settlement or the transcript.
+    state.skipRequested = true;
+    skipCurrentRound?.();
+    void api.settings((state.session as SessionState).id, { skip: true });
+  });
+  // A resize event is not the only thing that changes the space the chamber
+  // gets: OS or browser text scaling reflows the deck without one, and §11 asks
+  // this layout to survive 200%. Observing the stage catches every cause.
+  new ResizeObserver(() => {
+    if (state.mode !== 'round') fitChamber();
+  }).observe(document.getElementById('stage') as HTMLElement);
 
   await openRound();
   render();
@@ -132,9 +176,21 @@ async function boot(): Promise<void> {
 
 /* -------------------------------------------------------------- plumbing -- */
 
+/**
+ * The reality check is due until it is acknowledged, and more than one call
+ * lands inside a single round (commit, then reveal, then the next open). It is
+ * one dialog per due check, never a stack the player has to dismiss twice.
+ */
 function setSession(session: SessionState): void {
   state.session = session;
-  if (session.realityCheck.due) showRealityCheck();
+  if (!session.realityCheck.due) {
+    realityCheckShownAt = 0;
+    return;
+  }
+  const key = session.realityCheck.elapsedMinutes;
+  if (realityCheckShownAt === key) return;
+  realityCheckShownAt = key;
+  showRealityCheck();
 }
 
 async function openRound(): Promise<void> {
@@ -149,6 +205,7 @@ async function switchVariant(variantId: 'classic' | 'seven'): Promise<void> {
   state.lines = [];
   state.quote = null;
   state.round = null;
+  state.displayOrder = null;
   state.mode = 'build';
   state.verified = false;
   chamber.render(variant());
@@ -237,18 +294,65 @@ function addLine(code: string, params: Params, stakeChips: bigint): void {
 
 /* ---------------------------------------------------------------- render -- */
 
+const ICON_HOME =
+  '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 5l8 6v8H4z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
+/** §6.8: a 14 px chevron plus a 6 px tail. Never a chevron alone. */
+const ICON_BACK =
+  '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 4 12l7 7M4 12h16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"/></svg>';
+const ICON_FAIRNESS =
+  '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 9-9 9-9-9z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 9l3 3-3 3-3-3z" fill="currentColor"/></svg>';
+
+/**
+ * The top rail. §5 S1 carries the menu, the balance, the variant toggle and the
+ * fairness chip; §5 S10 replaces the first three with `←  SHARED CHAMBER`, so
+ * leaving the room is one tap from anywhere in it and the screen says which room
+ * the player is in.
+ */
+function railMarkup(): string {
+  const session = state.session as SessionState;
+  const fairnessState = state.verified ? 'verified' : session.openRound ? 'committed' : 'idle';
+  const fairness = `<button class="icon-btn fairness-chip" data-fairness aria-label="Fairness" data-state="${fairnessState}">${ICON_FAIRNESS}</button>`;
+  if (state.place === 'lobby')
+    return `
+      <button class="icon-btn" data-back-solo aria-label="Back to solo play">${ICON_BACK}</button>
+      <span class="rail__title">SHARED CHAMBER</span>
+      <span class="badge">free play</span>
+      ${fairness}`;
+  return `
+    <button class="icon-btn" data-menu aria-label="Menu">${ICON_HOME}</button>
+    <span class="rail__balance"><b>${esc(credits(BigInt(session.balanceChips)))}</b><span>balance</span></span>
+    <button class="variant-toggle" data-variant>${esc(variant().label)}</button>
+    <span class="badge">free play</span>
+    ${fairness}`;
+}
+
+/**
+ * S4 asks the chamber to go full-bleed. An SVG with a fixed viewBox in a taller
+ * box letterboxes instead, so the chamber is redrawn to the height the layout
+ * actually gives it. Never mid-round: a re-layout during SETTLE would restart
+ * every transition in flight.
+ */
+function fitChamber(): void {
+  const holder = document.getElementById('chamber');
+  if (!holder || !state.session) return;
+  const available = holder.clientHeight;
+  if (available <= 0) return;
+  // Hysteresis: the tight layout adds a line to the deck and so shrinks the
+  // stage further. Without a gap between the two thresholds the two layouts
+  // would flip each other back and forth forever.
+  const tight = available < (app().dataset.tight === 'yes' ? 300 : 240);
+  app().dataset.tight = tight ? 'yes' : 'no';
+  if (Math.abs(available - chamber.height) < 8) return;
+  chamber.render(variant(), available);
+}
+
 function render(): void {
   const session = state.session;
   if (!session) return;
-  const info = variant();
   app().dataset.mode = state.mode;
+  app().dataset.place = state.place;
 
-  const balance = app().querySelector('[data-balance]') as HTMLElement;
-  balance.textContent = credits(BigInt(session.balanceChips));
-  const toggle = app().querySelector('[data-variant]') as HTMLElement;
-  toggle.textContent = info.label;
-  const chip = app().querySelector('[data-fairness]') as HTMLElement;
-  chip.dataset.state = state.verified ? 'verified' : session.openRound ? 'committed' : 'idle';
+  (app().querySelector('[data-rail]') as HTMLElement).innerHTML = railMarkup();
 
   const cadence = app().querySelector('[data-cadence]') as HTMLElement;
   cadence.innerHTML = state.place === 'lobby' ? cadenceMarkup() : '';
@@ -258,6 +362,7 @@ function render(): void {
     state.mode === 'round' ? roundDeck() : state.mode === 'result' ? resultDeck() : buildDeck();
   wireDeck(deck);
   if (state.mode === 'build') startFloorTicker();
+  fitChamber();
 }
 
 /**
@@ -268,39 +373,58 @@ function render(): void {
  * already known. Won and lost lines carry identical weight — the difference is
  * colour and opacity, which is the information itself, and losing lines are
  * never swept away (§10).
+ *
+ * **The verdict is not in this markup during a round, and that is the point.**
+ * The whole settlement arrives at COMMIT — it has to, because the choreography
+ * is a function of the transcript — so it would be trivial for the strip to
+ * print `returned 4.80` on a winning line from the first frame. It did, in
+ * round 1, and that made §2.1's entire mechanism decorative: the exact credit
+ * was readable with the tube still empty. So the live row carries the stake and
+ * the multiplier the player already knew, and the *only* thing that changes at
+ * the deciding lock is `data-state`, which drives colour and opacity and nothing
+ * else. The returned figure appears once, on S5, where it is the record.
  */
 function pinnedLines(phase: 'live' | 'final'): string {
   const info = variant();
   const round = state.round;
   const rows = round
-    ? round.lines.map((line) => ({
-        name: line.name,
-        summary: claimSummary(info, line.code, line.params),
-        right: `${credits(BigInt(line.stakeChips))} × ${line.multiplierDecimal}`,
-        state: phase === 'live' ? 'pending' : line.won === true ? 'won' : 'lost',
-        returned: line.won === true && line.grossChips ? credits(BigInt(line.grossChips)) : null,
-      }))
-    : state.lines.map((line) => {
-        const bet = info.bets.find((candidate) => candidate.code === line.code);
-        return {
-          name: bet?.name ?? line.code,
-          summary: claimSummary(info, line.code, line.params),
-          right: `${credits(line.stakeChips)} × ${bet?.multiplierDecimal ?? ''}`,
-          state: 'pending',
-          returned: null as string | null,
-        };
-      });
+    ? roundRows(info, round, state.displayOrder, phase)
+    : draftRows(info, state.lines);
 
   return `<div class="lines">${rows
     .map(
-      (row, index) =>
-        `<div class="line" data-line="${index}" data-state="${row.state}">
-          <b>${esc(row.name)}</b><span>${esc(row.summary)}</span><u>${esc(
-            row.returned ? `returned ${row.returned}` : row.right,
-          )}</u>
+      (row) =>
+        `<div class="line" data-line="${row.index}" data-state="${row.state}">
+          <b>${esc(row.name)}</b><span>${esc(row.summary)}</span><u>${esc(row.right)}</u>
         </div>`,
     )
     .join('')}</div>`;
+}
+
+/**
+ * The order the player built the ticket in, mapped onto the engine's canonical
+ * line list. Frozen at COMMIT (§5 S4) and used for nothing but the reading
+ * order of the strip — every index in the resolution track still addresses the
+ * canonical line it belongs to.
+ */
+function freezeDisplayOrder(round: RoundView): void {
+  const info = variant();
+  const remaining = round.lines.map((line, index) => ({
+    index,
+    key: claimKey(info, line.code, line.params),
+  }));
+  const order: number[] = [];
+  for (const built of state.lines) {
+    const key = claimKey(info, built.code, built.params);
+    const at = remaining.findIndex((candidate) => candidate.key === key);
+    if (at < 0) {
+      state.displayOrder = null;
+      return;
+    }
+    order.push((remaining[at] as { index: number }).index);
+    remaining.splice(at, 1);
+  }
+  state.displayOrder = remaining.length === 0 ? order : null;
 }
 
 function tierTabs(): string {
@@ -342,25 +466,38 @@ function chipRail(): string {
 function ticketStrip(): string {
   const total = totalStake();
   const best = state.quote ? BigInt(state.quote.bestOutcomeChips) : 0n;
-  return `<button class="strip" data-review title="best possible outcome: the most this exact ticket can return on any settled order">
+  return `<button class="strip" data-review>
     <b>${state.lines.length}</b> line${state.lines.length === 1 ? '' : 's'} ·
     <b>${esc(credits(total))}</b>
-    <span class="strip__best">best <b>${esc(state.quote ? credits(best) : '—')}</b></span>
+    <span class="strip__best" data-best>best <b>${esc(state.quote ? credits(best) : '—')}</b></span>
   </button>`;
+}
+
+/** How long the CTA still accepts a bet, and when the next one opens (§5 S10). */
+function lobbySeconds(at: number | undefined): string {
+  if (at === undefined) return '';
+  return `${Math.max(0, (at - Date.now()) / 1000).toFixed(1)}s`;
+}
+
+function commitLabel(): string {
+  const total = totalStake();
+  if (state.place !== 'lobby') return `COMMIT ${credits(total)}`;
+  const lobby = state.lobby;
+  if (lobby?.clientClosesAt !== undefined && Date.now() >= lobby.clientClosesAt)
+    return `BETTING CLOSED · next draw in ${lobbySeconds(lobby.settleAtEpochMs)}`;
+  return `COMMIT ${credits(total)} (closes in ${lobbySeconds(lobby?.clientClosesAt)})`;
 }
 
 function commitButton(): string {
   const session = state.session as SessionState;
-  const total = totalStake();
   const waiting = session.commitAvailableInMs > 0;
   const lobbyClosed =
     state.place === 'lobby' &&
     state.lobby?.clientClosesAt !== undefined &&
     Date.now() >= state.lobby.clientClosesAt;
   const disabled = state.lines.length === 0 || waiting || lobbyClosed;
-  const label = lobbyClosed ? 'BETTING CLOSED' : `COMMIT ${credits(total)}`;
   return `<button class="cta" data-commit ${disabled ? 'disabled' : ''}>
-    ${esc(label)}
+    <span data-commit-label>${esc(commitLabel())}</span>
     ${waiting ? '<span class="cta__sub">unlocks — it never expires</span>' : ''}
     <i class="cta__hairline" data-hairline></i>
   </button>`;
@@ -378,23 +515,25 @@ function noticeMarkup(): string {
 }
 
 function buildDeck(): string {
+  // §1 item 5 is "one line UNDER THE RAIL", and the rail it means is the chip
+  // rail it follows in that list — not the foot of the screen. Putting it there
+  // is also what keeps the tier tabs inside §5's thumb zone.
   return `
     ${state.place === 'lobby' ? presenceMarkup() : ''}
+    <p class="premise">They settle in a random order. Bet on the order.</p>
     ${tierTabs()}
-    ${chipRail()}
+    <div class="rail-block">
+      ${chipRail()}
+      <p class="footnote">Every bet pays 96%. The tiers are how wild the ride is, not how good the deal is.</p>
+    </div>
     ${ticketStrip()}
     ${noticeMarkup()}
-    ${commitButton()}
-    <p class="footnote">Every bet pays 96%. The tiers are how wild the ride is, not how good the deal is.</p>`;
+    ${commitButton()}`;
 }
 
+/** S4: the pinned strip and nothing else. SKIP and the hairline live in the shell. */
 function roundDeck(): string {
-  return `
-    <div class="progress"><i data-progress></i></div>
-    ${pinnedLines('live')}
-    <div class="row">
-      <button class="btn btn--quiet" data-skip>SKIP</button>
-    </div>`;
+  return pinnedLines('live');
 }
 
 function resultDeck(): string {
@@ -471,6 +610,42 @@ function wireDeck(deck: HTMLElement): void {
       onAdd: (params, stakeChips) => addLine(bet.code, params, stakeChips),
     });
   });
+  /*
+   * §5 S1: the third figure is "long-pressable for the one-line explanation".
+   * Round 1 implemented that as a `title=` attribute, which is a desktop hover
+   * tooltip and fires on no touch gesture at all — on the 390 x 844 reference
+   * device the explanation could not be surfaced from S1. This is a real press,
+   * and the press swallows the click so it never falls through into S3.
+   */
+  let pressTimer: number | undefined;
+  let pressed = false;
+  const strip = deck.querySelector('.strip');
+  if (strip) {
+    const start = (event: Event): void => {
+      if (!(event.target as HTMLElement).closest('[data-best]')) return;
+      pressed = false;
+      window.clearTimeout(pressTimer);
+      pressTimer = window.setTimeout(() => {
+        pressed = true;
+        toast('the most this exact ticket can return on any settled order');
+      }, 450);
+    };
+    const stop = (): void => window.clearTimeout(pressTimer);
+    strip.addEventListener('pointerdown', start);
+    strip.addEventListener('pointerup', stop);
+    strip.addEventListener('pointercancel', stop);
+    strip.addEventListener('pointerleave', stop);
+    strip.addEventListener(
+      'click',
+      (event) => {
+        if (!pressed) return;
+        pressed = false;
+        event.stopImmediatePropagation();
+        event.preventDefault();
+      },
+      true,
+    );
+  }
   on(deck, '[data-review]', 'click', () => {
     if (state.lines.length === 0) return;
     openTicketReview({
@@ -489,16 +664,13 @@ function wireDeck(deck: HTMLElement): void {
     });
   });
   on(deck, '[data-commit]', 'click', () => void commit());
-  on(deck, '[data-skip]', 'click', () => {
-    state.skipRequested = true;
-    void api.settings((state.session as SessionState).id, { skip: true });
-  });
   on(deck, '[data-rebet]', 'click', () => void rebet());
   on(deck, '[data-new]', 'click', () => {
     state.lines = [];
     state.quote = null;
     state.mode = 'build';
     state.round = null;
+    state.displayOrder = null;
     chamber.reset();
     void openRound().then(render);
   });
@@ -550,6 +722,7 @@ async function commit(): Promise<void> {
       const result = await api.lobbyCommit(session.id, roundId, lineInputs());
       setSession(result.session);
       state.round = result.round;
+      freezeDisplayOrder(result.round);
       state.mode = 'round';
       render();
       toast('Ticket in. The draw settles on the room’s clock.');
@@ -563,6 +736,7 @@ async function commit(): Promise<void> {
     const result = await api.commit(session.id, roundId, session.clientSeed, lineInputs());
     setSession(result.session);
     state.round = result.round;
+    freezeDisplayOrder(result.round);
     state.verified = false;
     // The round is settled and credited server-side from here. A presentation
     // failure must never leave the player without their result.
@@ -631,11 +805,21 @@ function handleCommitFailure(error: unknown): void {
 async function rebet(): Promise<void> {
   const round = state.round;
   if (!round) return;
-  state.lines = round.lines.map((line) => ({
-    code: line.code,
-    params: line.params as Params,
-    stakeChips: BigInt(line.stakeChips),
-  }));
+  // Same lines, same stakes — and the same reading order. REBET rebuilds the
+  // ticket from the engine's canonical list, so without this the record would
+  // silently resort itself between one round and its repeat.
+  const order =
+    state.displayOrder && state.displayOrder.length === round.lines.length
+      ? state.displayOrder
+      : round.lines.map((_line, index) => index);
+  state.lines = order.map((index) => {
+    const line = round.lines[index] as (typeof round.lines)[number];
+    return {
+      code: line.code,
+      params: line.params as Params,
+      stakeChips: BigInt(line.stakeChips),
+    };
+  });
   state.mode = 'build';
   state.round = null;
   chamber.reset();
@@ -665,13 +849,17 @@ async function playRound(round: RoundView): Promise<void> {
   const settleMs = (info.n - 2) * stagger + beats.fallMs + beats.reboundMs;
   const closeMs = celebrate ? beats.closeCelebratedMs : beats.closeNeutralMs;
   const naturalMs = beats.chargeMs + beats.agitateMs + settleMs + closeMs;
-  // SKIP compresses beats 3-6 and nothing else. It never shortens the cycle.
-  const scale = state.skipRequested ? beats.skipCompressedMs / naturalMs : 1;
+  // SKIP compresses beats 3-6 and nothing else. It never shortens the cycle
+  // (§2.2), and it never removes a beat: a skipped round still resolves every
+  // line in prefix order, in the same sequence, faster.
+  const skipScale = beats.skipCompressedMs / naturalMs;
+  let scale = state.skipRequested ? skipScale : 1;
 
   const setProgress = (fraction: number): void => {
     const bar = document.querySelector('[data-progress]') as HTMLElement | null;
     if (bar) bar.style.width = `${Math.min(100, fraction * 100)}%`;
   };
+  setProgress(0);
 
   const resolveLinesAt = (lock: number): void => {
     if (!track) return;
@@ -682,47 +870,76 @@ async function playRound(round: RoundView): Promise<void> {
     }
   };
 
-  // docs/DESIGN.md §7.2: the choreography is a function of ELAPSED TIME, not of
-  // frame index or of a chain of delays. Every beat has an absolute offset from
-  // COMMIT, so a device that stalls — a backgrounded tab, a slow lane — time-
-  // shifts and catches up. It never skips a lock and never truncates the close.
-  const started = performance.now();
-  const at = async (offset: number): Promise<void> => {
-    const delay = started + offset - performance.now();
-    if (delay > 0) await sleep(delay);
+  /*
+   * docs/DESIGN.md §7.2: the choreography is a function of ELAPSED TIME, not of
+   * frame index or of a chain of delays. Every beat has an absolute offset on a
+   * natural timeline, so a device that stalls — a backgrounded tab, a slow lane
+   * — time-shifts and catches up. It never skips a lock and never truncates the
+   * close.
+   *
+   * `scale` maps that natural timeline onto the wall clock, and SKIP may change
+   * it *during* the round: the control is on screen throughout S4, and a control
+   * that only takes effect next time is a control that looks broken. Changing it
+   * re-anchors rather than rescaling from zero, so the beats already played keep
+   * the time they took and only what is left compresses.
+   */
+  let anchorNatural = 0;
+  let anchorWall = performance.now();
+  const wallFor = (natural: number): number => anchorWall + (natural - anchorNatural) * scale;
+  const compress = (): void => {
+    if (scale <= skipScale) return;
+    const now = performance.now();
+    anchorNatural += (now - anchorWall) / scale;
+    anchorWall = now;
+    scale = skipScale;
+  };
+  skipCurrentRound = compress;
+
+  const at = async (natural: number): Promise<void> => {
+    // Sliced, so a SKIP arriving mid-wait is honoured within a frame or two
+    // rather than at the end of a beat it was pressed to shorten.
+    for (;;) {
+      const delay = wallFor(natural) - performance.now();
+      if (delay <= 0) return;
+      await sleep(Math.min(delay, 60));
+    }
   };
 
   chamber.setBeat('charge');
-  await at(beats.chargeMs * scale);
+  await at(beats.chargeMs);
   chamber.setBeat('agitate');
-  await at((beats.chargeMs + beats.agitateMs) * scale);
+  await at(beats.chargeMs + beats.agitateMs);
   chamber.setBeat('settle');
 
-  const settleStart = (beats.chargeMs + beats.agitateMs) * scale;
+  const settleStart = beats.chargeMs + beats.agitateMs;
   for (let lock = 1; lock <= info.n - 1; lock += 1) {
-    await at(settleStart + (lock - 1) * stagger * scale);
+    await at(settleStart + (lock - 1) * stagger);
     chamber.seat(lock, permutation[lock - 1] as number, fall * scale);
-    await at(settleStart + ((lock - 1) * stagger + fall) * scale);
+    await at(settleStart + (lock - 1) * stagger + fall);
     chamber.lock(lock);
     resolveLinesAt(lock);
     // The hairline reaches full width at lock n-1: there is no information left.
     setProgress(lock / (info.n - 1));
   }
 
-  const closeStart = settleStart + ((info.n - 2) * stagger + beats.fallMs + beats.reboundMs) * scale;
+  const closeStart = settleStart + (info.n - 2) * stagger + beats.fallMs + beats.reboundMs;
   await at(closeStart);
   chamber.setBeat('close');
   if (celebrate) chamber.igniteRim(true);
   const closeFall = celebrate ? beats.fallMs / 0.35 : beats.fallMs;
   chamber.seat(info.n, permutation[info.n - 1] as number, (reduced ? 120 : closeFall) * scale);
-  await at(closeStart + closeFall * scale);
+  await at(closeStart + closeFall);
   chamber.lock(info.n);
   resolveLinesAt(info.n);
 
-  if (round.presentation?.multiplierStamp && round.settlement)
-    chamber.setStamp(credits(BigInt(round.settlement.creditedChips)), true);
-  await at(closeStart + (closeFall + beats.stampMs) * scale);
+  // §9 step 5: the multiplier stamps over the tube. The figure is the round's
+  // realised return multiple, computed on the server in chips because it is
+  // arithmetic on money and this client does none.
+  if (round.presentation?.multiplierStamp && round.presentation.stampMultipleDecimal)
+    chamber.setStamp(round.presentation.stampMultipleDecimal, true);
+  await at(closeStart + closeFall + beats.stampMs);
   chamber.setBeat('done');
+  skipCurrentRound = null;
 
   announce(
     `Settled order: ${permutation.map((element) => elementName(info, element)).join(', ')}. ${
@@ -926,14 +1143,17 @@ async function togglePlace(): Promise<void> {
     state.lobby = lobby;
     state.mode = 'build';
     state.round = null;
+    state.displayOrder = null;
     chamber.reset();
     connectLobby();
   } else {
+    // §13.2: mid-cadence, no penalty, no confirmation.
     state.place = 'solo';
     lobbySource?.close();
     lobbySource = null;
     state.mode = 'build';
     state.round = null;
+    state.displayOrder = null;
     chamber.reset();
     await openRound();
   }
@@ -944,17 +1164,26 @@ function connectLobby(): void {
   lobbySource?.close();
   const session = state.session as SessionState;
   lobbySource = new EventSource(`/api/lobby/stream?session=${encodeURIComponent(session.id)}`);
+  /*
+   * `event.data` is guarded because `open` is EventSource's own native
+   * connection event as well as a plausible name for a server-sent one. The
+   * server's draw-opened event is called `draw` for that reason — naming it
+   * `open` made the native event, which carries no data, run this handler and
+   * throw out of it on every single connect, so the reset below never ran.
+   */
   const onState = (event: MessageEvent): void => {
-    state.lobby = JSON.parse(event.data as string) as LobbyState;
+    if (typeof event.data !== 'string') return;
+    state.lobby = JSON.parse(event.data) as LobbyState;
     if (state.place === 'lobby' && state.mode === 'build') render();
   };
   lobbySource.addEventListener('state', onState as EventListener);
   lobbySource.addEventListener('presence', onState as EventListener);
-  lobbySource.addEventListener('open', (event) => {
+  lobbySource.addEventListener('draw', (event) => {
     onState(event as MessageEvent);
     if (state.place === 'lobby' && state.mode !== 'round') {
       state.mode = 'build';
       state.round = null;
+      state.displayOrder = null;
       chamber.reset();
       render();
     }
@@ -971,10 +1200,17 @@ function connectLobby(): void {
     void playRound(payload.round);
   });
   window.setInterval(() => {
-    if (state.place === 'lobby' && state.mode === 'build') {
-      const cadence = app().querySelector('[data-cadence]') as HTMLElement;
-      cadence.innerHTML = cadenceMarkup();
-    }
+    if (state.place !== 'lobby' || state.mode !== 'build') return;
+    const cadence = app().querySelector('[data-cadence]') as HTMLElement;
+    cadence.innerHTML = cadenceMarkup();
+    const label = app().querySelector('[data-commit-label]');
+    if (label) label.textContent = commitLabel();
+    // The CTA closes early on purpose: a button that is live when a commit
+    // could not land is a button that lies (§5 S10).
+    const cta = app().querySelector<HTMLButtonElement>('.cta');
+    const closed =
+      state.lobby?.clientClosesAt !== undefined && Date.now() >= state.lobby.clientClosesAt;
+    if (cta) cta.disabled = closed || state.lines.length === 0;
   }, 200);
 }
 

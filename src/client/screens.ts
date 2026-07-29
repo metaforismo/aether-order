@@ -111,6 +111,39 @@ export function openTicketReview(options: {
 
 /* ------------------------------------------------------------------ S6 ---- */
 
+/**
+ * The lines the signature covers, in the words the chip used and in the
+ * parameters the digest ate.
+ *
+ * A player auditing a receipt for the chip this UI calls "slot 3" finds
+ * `c=3,k=2`, because the adapter indexes slots from zero while the tube is
+ * numbered from one — `first` is published as the alias of `slot @ 0`. That is
+ * a real gap between the label and the record, and the honest fix is not to
+ * renumber either one but to print both side by side on the screen where the
+ * record is read. Nothing else in the product shows the wire form, and nothing
+ * else needs to.
+ */
+function wireLines(round: RoundView): string {
+  if (round.lines.length === 0) return '';
+  const rows = round.lines
+    .map(
+      (line) =>
+        `<tr><td>${esc(line.name)}</td><td style="color:var(--ink-dim)">${esc(
+          line.code,
+        )}</td><td class="num" style="font-family:var(--mono)">${esc(
+          Object.entries(line.params as Record<string, unknown>)
+            .map(([key, value]) => `${key}=${String(value)}`)
+            .join(' '),
+        )}</td></tr>`,
+    )
+    .join('');
+  return `<details>
+    <summary style="cursor:pointer;color:var(--ink-dim);font-size:var(--t-xs);letter-spacing:.08em;text-transform:uppercase">What the signature covers</summary>
+    <table class="paytable"><thead><tr><th>Chip</th><th>Code</th><th>Parameters</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="note">These are the exact codes and parameters that entered the ticket digest, so a dispute can be checked line by line. Slots and colours are indexed from zero here: the chip labelled <em>slot 3</em> is recorded as <span style="font-family:var(--mono)">k=2</span>, and FIRST is the same claim as <span style="font-family:var(--mono)">slot k=0</span>.</p>
+  </details>`;
+}
+
 export async function openFairness(options: {
   sessionId: string;
   round: RoundView;
@@ -206,6 +239,7 @@ export async function openFairness(options: {
           ['credited', round.settlement ? credits(BigInt(round.settlement.creditedChips)) : '—'],
         ])}
         <p class="note">The transcript proves the draw was fair. This receipt is the operator's signature on what you staked and what you were paid — a different kind of guarantee, and one that depends on their key.</p>
+        ${wireLines(round)}
         <div class="row">
           <button class="btn" data-copy-receipt>⧉ COPY RECEIPT</button>
         </div>
@@ -462,6 +496,7 @@ export function openRealityCheck(options: {
 }): void {
   const check = options.session.realityCheck;
   openModal(
+    'reality',
     `<h2>Reality check</h2>
      <dl class="kv">
        <dt>time played</dt><dd>${check.elapsedMinutes} min</dd>

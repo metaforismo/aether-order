@@ -32,6 +32,26 @@ export function on<K extends keyof HTMLElementEventMap>(
     node.addEventListener(type, (event) => handler(event as HTMLElementEventMap[K], node));
 }
 
+/**
+ * Delegated listener, for regions that are re-rendered.
+ *
+ * `on` binds to the nodes that exist when it runs, which is right for the deck
+ * (rewired on every render) and wrong for anything wired once at boot over
+ * markup that changes — the top rail, whose contents differ between solo play
+ * and the shared chamber.
+ */
+export function delegate<K extends keyof HTMLElementEventMap>(
+  root: ParentNode & EventTarget,
+  selector: string,
+  type: K,
+  handler: (event: HTMLElementEventMap[K], element: HTMLElement) => void,
+): void {
+  root.addEventListener(type, (event) => {
+    const target = (event.target as HTMLElement | null)?.closest<HTMLElement>(selector);
+    if (target) handler(event as HTMLElementEventMap[K], target);
+  });
+}
+
 export function announce(message: string): void {
   const live = document.getElementById('live');
   if (live) live.textContent = message;
@@ -99,9 +119,23 @@ export function sheetsOpen(): number {
   return openSheets;
 }
 
-export function openModal(markup: string, onMount?: (root: HTMLElement, close: () => void) => void): void {
+/**
+ * One modal at a time, keyed by `name`.
+ *
+ * A second identical dialog stacked on the first is two dismissals for one
+ * interruption, and the reality check is exactly the screen where making the
+ * player work twice is worst.
+ */
+export function openModal(
+  name: string,
+  markup: string,
+  onMount?: (root: HTMLElement, close: () => void) => void,
+): void {
   const root = document.getElementById('modal-root') as HTMLElement;
-  const modal = html(`<div class="modal" role="dialog" aria-modal="true"><div class="modal__panel">${markup}</div></div>`);
+  if (root.querySelector(`.modal[data-modal="${name}"]`)) return;
+  const modal = html(
+    `<div class="modal" role="dialog" aria-modal="true" data-modal="${name}"><div class="modal__panel">${markup}</div></div>`,
+  );
   root.append(modal);
   const close = (): void => modal.remove();
   onMount?.(modal, close);
