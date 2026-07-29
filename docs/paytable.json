@@ -1,0 +1,271 @@
+{
+  "adapterVersion": "1.0.0",
+  "gameId": "aether-order",
+  "moduleVersion": "reveal-engine/permutation-v1",
+  "variants": {
+    "classic": {
+      "adapterFingerprint": "93ce961efc3528804b3fb500f0672f2ac55927224c0402154c34efc7a4adb17e",
+      "bets": [
+        {
+          "code": "before",
+          "decimal": "1.92x",
+          "instances": 20,
+          "multiplier": "48/25",
+          "name": "BEFORE",
+          "probability": "1/2",
+          "rtp": "24/25",
+          "tier": "FLOW",
+          "variance": "576/625",
+          "winsPerInstance": 60
+        },
+        {
+          "code": "early",
+          "decimal": "2.40x",
+          "instances": 5,
+          "multiplier": "12/5",
+          "name": "EARLY",
+          "probability": "2/5",
+          "rtp": "24/25",
+          "tier": "FLOW",
+          "variance": "864/625",
+          "winsPerInstance": 48
+        },
+        {
+          "code": "late",
+          "decimal": "2.40x",
+          "instances": 5,
+          "multiplier": "12/5",
+          "name": "LATE",
+          "probability": "2/5",
+          "rtp": "24/25",
+          "tier": "FLOW",
+          "variance": "864/625",
+          "winsPerInstance": 48
+        },
+        {
+          "code": "link-any",
+          "decimal": "2.40x",
+          "instances": 10,
+          "multiplier": "12/5",
+          "name": "LINK · EITHER",
+          "probability": "2/5",
+          "rtp": "24/25",
+          "tier": "FLOW",
+          "variance": "864/625",
+          "winsPerInstance": 48
+        },
+        {
+          "code": "first",
+          "decimal": "4.80x",
+          "instances": 5,
+          "multiplier": "24/5",
+          "name": "FIRST",
+          "probability": "1/5",
+          "rtp": "24/25",
+          "tier": "FORM",
+          "variance": "2304/625",
+          "winsPerInstance": 24
+        },
+        {
+          "code": "last",
+          "decimal": "4.80x",
+          "instances": 5,
+          "multiplier": "24/5",
+          "name": "LAST",
+          "probability": "1/5",
+          "rtp": "24/25",
+          "tier": "FORM",
+          "variance": "2304/625",
+          "winsPerInstance": 24
+        },
+        {
+          "code": "slot",
+          "decimal": "4.80x",
+          "instances": 25,
+          "multiplier": "24/5",
+          "name": "SLOT",
+          "probability": "1/5",
+          "rtp": "24/25",
+          "tier": "FORM",
+          "variance": "2304/625",
+          "winsPerInstance": 24
+        },
+        {
+          "code": "link",
+          "decimal": "4.80x",
+          "instances": 20,
+          "multiplier": "24/5",
+          "name": "LINK",
+          "probability": "1/5",
+          "rtp": "24/25",
+          "tier": "FORM",
+          "variance": "2304/625",
+          "winsPerInstance": 24
+        },
+        {
+          "code": "opening",
+          "decimal": "19.20x",
+          "instances": 20,
+          "multiplier": "96/5",
+          "name": "OPENING",
+          "probability": "1/20",
+          "rtp": "24/25",
+          "tier": "ORDER",
+          "variance": "10944/625",
+          "winsPerInstance": 6
+        },
+        {
+          "code": "full",
+          "decimal": "115.20x",
+          "instances": 120,
+          "multiplier": "576/5",
+          "name": "FULL ORDER",
+          "probability": "1/120",
+          "rtp": "24/25",
+          "tier": "ORDER",
+          "variance": "68544/625",
+          "winsPerInstance": 1
+        }
+      ],
+      "displayName": "AETHER ORDER",
+      "maxWinMultiple": "5000",
+      "n": 5,
+      "permutationCount": 120,
+      "stakeQuantumChips": "25",
+      "supremumMultiplier": "576/5",
+      "targetRtp": "24/25"
+    },
+    "seven": {
+      "adapterFingerprint": "2211d939334978a18684d67277df39daed2c40aaa1748bae5d1390b621ed03fe",
+      "bets": [
+        {
+          "code": "before",
+          "decimal": "1.92x",
+          "instances": 42,
+          "multiplier": "48/25",
+          "name": "BEFORE",
+          "probability": "1/2",
+          "rtp": "24/25",
+          "tier": "FLOW",
+          "variance": "576/625",
+          "winsPerInstance": 2520
+        },
+        {
+          "code": "early",
+          "decimal": "3.36x",
+          "instances": 7,
+          "multiplier": "84/25",
+          "name": "EARLY",
+          "probability": "2/7",
+          "rtp": "24/25",
+          "tier": "FLOW",
+          "variance": "288/125",
+          "winsPerInstance": 1440
+        },
+        {
+          "code": "late",
+          "decimal": "3.36x",
+          "instances": 7,
+          "multiplier": "84/25",
+          "name": "LATE",
+          "probability": "2/7",
+          "rtp": "24/25",
+          "tier": "FLOW",
+          "variance": "288/125",
+          "winsPerInstance": 1440
+        },
+        {
+          "code": "link-any",
+          "decimal": "3.36x",
+          "instances": 21,
+          "multiplier": "84/25",
+          "name": "LINK · EITHER",
+          "probability": "2/7",
+          "rtp": "24/25",
+          "tier": "FLOW",
+          "variance": "288/125",
+          "winsPerInstance": 1440
+        },
+        {
+          "code": "first",
+          "decimal": "6.72x",
+          "instances": 7,
+          "multiplier": "168/25",
+          "name": "FIRST",
+          "probability": "1/7",
+          "rtp": "24/25",
+          "tier": "FORM",
+          "variance": "3456/625",
+          "winsPerInstance": 720
+        },
+        {
+          "code": "last",
+          "decimal": "6.72x",
+          "instances": 7,
+          "multiplier": "168/25",
+          "name": "LAST",
+          "probability": "1/7",
+          "rtp": "24/25",
+          "tier": "FORM",
+          "variance": "3456/625",
+          "winsPerInstance": 720
+        },
+        {
+          "code": "slot",
+          "decimal": "6.72x",
+          "instances": 49,
+          "multiplier": "168/25",
+          "name": "SLOT",
+          "probability": "1/7",
+          "rtp": "24/25",
+          "tier": "FORM",
+          "variance": "3456/625",
+          "winsPerInstance": 720
+        },
+        {
+          "code": "link",
+          "decimal": "6.72x",
+          "instances": 42,
+          "multiplier": "168/25",
+          "name": "LINK",
+          "probability": "1/7",
+          "rtp": "24/25",
+          "tier": "FORM",
+          "variance": "3456/625",
+          "winsPerInstance": 720
+        },
+        {
+          "code": "opening",
+          "decimal": "40.32x",
+          "instances": 42,
+          "multiplier": "1008/25",
+          "name": "OPENING",
+          "probability": "1/42",
+          "rtp": "24/25",
+          "tier": "ORDER",
+          "variance": "23616/625",
+          "winsPerInstance": 120
+        },
+        {
+          "code": "full",
+          "decimal": "4838.40x",
+          "instances": 5040,
+          "multiplier": "24192/5",
+          "name": "FULL ORDER",
+          "probability": "1/5040",
+          "rtp": "24/25",
+          "tier": "ORDER",
+          "variance": "2902464/625",
+          "winsPerInstance": 1
+        }
+      ],
+      "displayName": "AETHER ORDER · SEVEN",
+      "maxWinMultiple": "5000",
+      "n": 7,
+      "permutationCount": 5040,
+      "stakeQuantumChips": "25",
+      "supremumMultiplier": "24192/5",
+      "targetRtp": "24/25"
+    }
+  }
+}
