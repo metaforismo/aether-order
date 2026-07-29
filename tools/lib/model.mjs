@@ -11,10 +11,19 @@
 import { rational } from './rational.mjs';
 
 export const GAME_ID = 'aether-order';
-export const ADAPTER_VERSION = '1.0.0';
+export const ADAPTER_VERSION = '1.1.0';
+export const API_VERSION = 'reveal-engine/api-v1';
 export const MODULE_VERSION = 'reveal-engine/permutation-v1';
 export const TRANSCRIPT_SCHEMA = 'reveal-engine/permutation-transcript-v1';
+export const TICKET_SCHEMA = 'reveal-engine/permutation-ticket-v1';
+export const RECEIPT_SCHEMA = 'reveal-engine/permutation-receipt-v1';
+export const ROUND_SNAPSHOT_SCHEMA = 'reveal-engine/permutation-round-snapshot-v1';
+
 export const SEED_COMMIT_DOMAIN = 'aether-order/seed-commit-v1';
+export const TICKET_DIGEST_DOMAIN = 'aether-order/ticket-digest-v1';
+export const SETTLEMENT_DIGEST_DOMAIN = 'aether-order/settlement-digest-v1';
+export const RECEIPT_DOMAIN = 'aether-order/receipt-v1';
+export const IDEMPOTENCY_DOMAIN = 'aether-order/idempotency-v1';
 
 /** Target theoretical return to player, exact: 24/25 = 96.000%. */
 export const TARGET_RTP = rational(24n, 25n);
@@ -31,6 +40,9 @@ export const STAKE_QUANTUM = 25n;
 export const STAKE_LADDER = Object.freeze([25n, 50n, 100n, 250n, 500n, 1000n, 2500n, 5000n]);
 
 export const LIMITS = Object.freeze({
+  /** Definition ceiling, and the ceiling on exhaustive conformance. */
+  maxElements: 12,
+  maxExhaustiveElements: 8,
   maxLinesPerTicket: 12,
   minLineStakeChips: 25n,
   maxLineStakeChips: 5000n,
@@ -47,6 +59,26 @@ export const LIMITS = Object.freeze({
   maxClientSeedBytes: 64,
   maxRoundIdBytes: 128,
   maxLabelBytes: 128,
+  maxTranscriptBytes: 64 * 1024,
+  maxSnapshotBytes: 256 * 1024,
+});
+
+/**
+ * Speed-of-play policy. NOT part of the adapter fingerprint: pacing is a
+ * client/RGS obligation and changing it must not invalidate an open liability.
+ * It is published here so docs/DESIGN.md §10 can be machine-checked against the
+ * shipped numbers instead of asserting them in prose.
+ *
+ * `minRoundCycleMs` is measured COMMIT to COMMIT and enforced server-side. SKIP
+ * compresses the presentation only; it can never shorten the cycle. The rolling
+ * ceiling is a hard stop, not a nudge: at the ceiling COMMIT is disabled until
+ * the trailing 60-minute window frees a slot.
+ */
+export const PLAY_POLICY = Object.freeze({
+  minRoundCycleMs: 2500,
+  maxRoundsPerRollingHour: 900,
+  realityCheckMinutes: Object.freeze([30, 60]),
+  skipShortensPresentationOnly: true,
 });
 
 /** Element identity is shared across variants; SEVEN appends two elements. */
@@ -77,6 +109,7 @@ const CLASSIC_MULTIPLIERS = Object.freeze({
   slot: rational(24n, 5n), //      4.80x
   link: rational(24n, 5n), //      4.80x
   opening: rational(96n, 5n), //  19.20x
+  podium: rational(288n, 5n), //  57.60x
   full: rational(576n, 5n), //   115.20x
 });
 
@@ -90,6 +123,7 @@ const SEVEN_MULTIPLIERS = Object.freeze({
   slot: rational(168n, 25n), //      6.72x
   link: rational(168n, 25n), //      6.72x
   opening: rational(1008n, 25n), // 40.32x
+  podium: rational(1008n, 5n), //  201.60x
   full: rational(24192n, 5n), //  4838.40x
 });
 
