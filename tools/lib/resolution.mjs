@@ -30,12 +30,15 @@
  *     renderer needs, including the lock at which the round's settlement — and
  *     therefore the celebration gate in `presentation.mjs` — is already known.
  *
- * Cost. `decisiveLock` pays `(n - k)!` predicate evaluations only at the lock
- * `k` where the verdict becomes constant; every earlier lock aborts at the first
- * disagreement, which is almost always the second completion. The worst case
- * over the shipped catalogue is a line decided at lock 1 in SEVEN: 720
- * evaluations. A full 12-line ticket costs under 10,000, paid once at COMMIT
- * inside a 260 ms CHARGE beat.
+ * Cost. `decisiveLock` pays `(n - k)!` predicate evaluations at the lock `k`
+ * where the verdict becomes constant, and every earlier lock aborts at the first
+ * disagreement. That abort is usually immediate but not always: a high-ranked
+ * FULL ORDER claim agrees "lose" across thousands of completions before reaching
+ * its one winner, so the honest bound is the sum of the factorials,
+ * `sum_{k=0..n} (n-k)!` = 154 at n = 5 and 5,914 at n = 7. Measured worst case
+ * over the shipped catalogue: 5,649 evaluations for one SEVEN line, and 1.3 ms
+ * for a hostile 12-line SEVEN ticket — paid once, at COMMIT, inside a 260 ms
+ * CHARGE beat, and never touched again during the round.
  */
 
 import { BET_FAMILIES, getFamily } from './bets.mjs';

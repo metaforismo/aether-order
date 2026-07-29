@@ -235,6 +235,29 @@ describe('resolutionTrack is what the choreography builder gets', () => {
     }
   });
 
+  it('costs no more per line than the sum of the factorials the doc quotes', () => {
+    // docs/DESIGN.md §7 technique 1 quotes 5,914 as the per-line bound at n = 7.
+    // The worst real case is a high-ranked FULL ORDER claim, which agrees "lose"
+    // across thousands of completions before reaching its single winner.
+    const bound = (n) => {
+      let sum = 0;
+      for (let k = 0; k <= n; k += 1) sum += factorial(n - k);
+      return sum;
+    };
+    expect(bound(5)).toBe(154);
+    expect(bound(7)).toBe(5914);
+    expect(DESIGN).toContain('5,914 predicate');
+
+    const full = BET_FAMILIES.find((family) => family.code === 'full');
+    const sevenPerms = allPermutations(7);
+    for (const rank of [0, 2519, 5039]) {
+      const instance = full.instances(7, { permutationCount: 5040 })[rank];
+      const worst = decisiveLock(7, full, instance, sevenPerms[rank]);
+      expect(worst.lock).toBe(6);
+      expect(worst.completionsChecked).toBeLessThanOrEqual(bound(7));
+    }
+  });
+
   it('is a pure function of the ticket and the permutation', () => {
     const a = resolutionTrack('classic', ticket, perm);
     const b = resolutionTrack('classic', ticket, perm);

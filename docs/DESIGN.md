@@ -819,9 +819,10 @@ runtime; everything is evaluated.
    `n × n` canonical paths in normalised tube space; the runtime picks
    `template[startLane][targetSlot]` and time-shifts it. No physics, no solver,
    no collision. The line-resolution track (§2.1) is baked at the same moment,
-   by `resolutionTrack` in `tools/lib/resolution.mjs`: at most a few thousand
-   predicate evaluations for a 12-line ticket, once, inside the 260 ms CHARGE
-   beat. Nothing about which lines are alive is searched during SETTLE.
+   by `resolutionTrack` in `tools/lib/resolution.mjs`: bounded by 5,914 predicate
+   evaluations per line at `n = 7`, measured at **1.3 ms** for a hostile 12-line
+   SEVEN ticket, paid once inside the 260 ms CHARGE beat. Nothing about which
+   lines are alive is searched during SETTLE.
 2. **The "fluid" is one fragment shader, not a sim.** A single pass over the
    chamber rect does: a two-octave value-noise domain warp for caustics, a
    refraction offset that resamples the sphere layer, and a vertical depth
