@@ -32,13 +32,15 @@ receipt* core, plus the packaged conformance runner, with frozen wire-format
 fixtures and a test suite that asserts the published paytable against the
 enumeration on every commit.
 
-Three of the player-facing rules are code rather than prose, because a rule with
-no implementation is a rule that can be contradicted by the paragraph beneath
-it: the celebration gate (`tools/lib/presentation.mjs`), the line-resolution
-track that keeps a dead bet from being kept alive to look close
-(`tools/lib/resolution.mjs`), and the renderer's frame budget
-(`tools/lib/framebudget.mjs`). All three are asserted against the documents that
-quote them.
+Four of the design document's load-bearing claims are code rather than prose,
+because a rule with no implementation is a rule that can be contradicted by the
+paragraph beneath it: the celebration gate (`tools/lib/presentation.mjs`), the
+line-resolution track that keeps a dead bet from being kept alive to look close
+(`tools/lib/resolution.mjs`), the renderer's frame budget for **both** layers of
+the frame (`tools/lib/framebudget.mjs`), and the palette-separation bound behind
+the accessibility argument (`tools/lib/palette.mjs`). All four are asserted
+against the documents that quote them, and in every case the defect that put
+them there was a table that looked like arithmetic and had never been run.
 
 **What is specified but not implemented here:** the validating
 `definePermutationGame` factory, and the round-cycle floor and rolling-hour
@@ -142,7 +144,12 @@ generation and custody still sit with the operator — see the boundary below.)
 - **Your bet is bound to the round too.** After settlement the operator issues a
   signed receipt binding the seed commitment, the round commitment, a digest of
   your ticket and a digest of the settlement. Keep it and nobody can later
-  disagree about what you staked or what you were paid.
+  disagree about what you staked or what you were paid. It is written to be read:
+  every parameter is an element index published in `docs/paytable.json`, and
+  even the whole-column bet records the order you picked rather than an index
+  into a ranking function. A receipt whose signature was never checked does not
+  verify — it reports that its bindings held and that the signature was skipped,
+  and those are different answers.
 - **Exact money.** Stakes and payouts are integer chips with exact BigInt
   rational arithmetic. The stake quantum is chosen so every payout is an exact
   integer: rounding is provably a no-op, and realised RTP equals theoretical
@@ -178,10 +185,11 @@ legal bet instances against every one of them, and prints each bet's exact
 probability, multiplier, RTP and median rounds-to-first-hit as reduced fractions
 and exact integers — plus the shuffle bijection proof, the sampler uniformity
 proof, the cap-headroom proof, the zero-rounding proof, a commit-reveal round
-trip, a signed-receipt round trip, proof that the ticket strip's headline figure
-is a real maximum, proof that no losing round can be celebrated, proof that no
-bet is ever left undecided past the second-to-last sphere, and all twelve
-adapter conformance checks. Add `--monte-carlo=200000` for a sanity
+trip, a signed-receipt round trip (including the check that a receipt nobody
+signed does **not** verify), proof that the ticket strip's headline figure is a
+real maximum, proof that no losing round can be celebrated, proof that no bet is
+ever left undecided past the second-to-last sphere, and all twelve adapter
+conformance checks. Add `--monte-carlo=200000` for a sanity
 cross-check; it never sets a published number. `npm run bench` reproduces the
 cost figures in `docs/ENGINE.md` §4 on your own hardware and fails if any of
 them leaves its published band.
@@ -207,6 +215,11 @@ The gate is one comparison, implemented once, in
 **Speed of play is capped, not optimised.** Minimum 2.5 seconds between bets,
 enforced server-side; maximum 900 rounds per rolling hour. The skip button
 shortens the animation and never the cycle — it is not a slam stop.
+
+**The reality check is a floor you cannot lower.** 30 minutes, 60 minutes, then
+hourly, published as fields rather than promised in a sentence. The one control
+in the app can only make the checks *more* frequent; there is no field a player
+can write that removes one.
 
 **No autoplay.** Not a bounded one, not a stop-on-win one — none. The published
 play policy carries `autoplay: "none"` as a value the tests assert, because a

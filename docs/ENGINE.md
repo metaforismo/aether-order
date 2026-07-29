@@ -333,14 +333,14 @@ Node 25.8.2), with the observed run-to-run range beside it:
 
 | Measurement | Median | Range over 5 runs |
 | --- | --- | --- |
-| Catalogue digest, cold, `n = 5` (35,400 predicate evaluations) | 1.0 ms | 0.89 – 1.2 ms |
-| Catalogue digest, cold, `n = 7` (27.6M predicate evaluations) | 280 ms | 222 – 303 ms |
-| Transcript build, `n = 5`, warm | 46 µs | 38 – 48 µs |
-| Transcript verify, `n = 5`, warm | 47 µs | 39 – 52 µs |
-| Ticket settle, `n = 5`, three lines, warm | 8.1 µs | 7.2 – 8.6 µs |
-| Transcript build, `n = 7`, warm | 59 µs | 58 – 66 µs |
-| Transcript verify, `n = 7`, warm | 63 µs | 56 – 79 µs |
-| Ticket settle, `n = 7`, three lines, warm | 8.9 µs | 7.9 – 9.5 µs |
+| Catalogue digest, cold, `n = 5` (35,400 predicate evaluations) | 0.99 ms | 0.93 – 1.2 ms |
+| Catalogue digest, cold, `n = 7` (27.6M predicate evaluations) | 277 ms | 274 – 282 ms |
+| Transcript build, `n = 5`, warm | 33 µs | 33 – 40 µs |
+| Transcript verify, `n = 5`, warm | 37 µs | 35 – 38 µs |
+| Ticket settle, `n = 5`, three lines, warm | 6.4 µs | 5.7 – 7.7 µs |
+| Transcript build, `n = 7`, warm | 45 µs | 44 – 47 µs |
+| Transcript verify, `n = 7`, warm | 49 µs | 46 – 50 µs |
+| Ticket settle, `n = 7`, three lines, warm | 6.7 µs | 6.0 – 7.3 µs |
 
 **Round 2 published this table with ticket settle at 85 µs.** It measures about
 9 µs on the exact machine the document named — a factor of ten, on the one
@@ -353,10 +353,10 @@ carry their spread rather than a single sample dressed as a constant, and
 
 | Band | Value | Headroom on the reference machine |
 | --- | --- | --- |
-| Any warm per-round operation | < 2 ms | ~30× |
-| Cold catalogue digest, `n = 5` | < 200 ms | ~190× |
-| Cold catalogue digest, `n = 7` | < 20,000 ms | ~70× |
-| Cold digest ÷ ticket settle | > 100 | ~31,000 |
+| Any warm per-round operation | < 2 ms | ~41× |
+| Cold catalogue digest, `n = 5` | < 200 ms | ~200× |
+| Cold catalogue digest, `n = 7` | < 20,000 ms | ~72× |
+| Cold digest ÷ ticket settle | > 100 | ~42,000 |
 
 The bands are deliberately loose because a shared CI runner is not a laptop and
 a flaky performance assertion is how an unasserted benchmark gets rationalised
