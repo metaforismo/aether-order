@@ -1255,8 +1255,13 @@ exist.
 
 ## 11. Accessibility
 
-- **Colour is never the only channel.** Glyph on every sphere, name in every
-  ticket line, glyph repeated on every chip.
+- **Colour is never the only channel, and here it is not even the primary one.**
+  §6.1 proves that seven colours clearing the 4.5:1 floor against `--void`
+  cannot be separated by luminance — the best achievable closest pair is
+  1.28:1 — so the glyph carries the load: etched on every sphere, repeated on
+  every chip, with the colour named in text on every ticket line and the settled
+  order announced as a string. A build that drops a glyph has dropped the
+  channel, not a decoration.
 - **Contrast.** The rule applies to **foreground tokens** — anything that can
   carry text, an icon or a state indicator — and is measured against `--void`:
   `--ink` 17.22:1, `--ink-dim` 7.81:1, `--gold` 8.40:1, `--win` 12.01:1. All four
