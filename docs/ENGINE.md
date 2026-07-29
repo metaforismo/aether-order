@@ -182,7 +182,7 @@ export interface PermutationRiskPolicy {
 export interface PermutationPlayPolicy {
   readonly minRoundCycleMs: number;
   readonly maxRoundsPerRollingHour: number;
-  /** Fixed early checks, in minutes of elapsed session time. */
+  /** Fixed early checks, in minutes of elapsed session time. Operator floor. */
   readonly realityCheckMinutes: readonly number[];
   /**
    * The interval that repeats forever after the last fixed check. Required:
@@ -190,6 +190,32 @@ export interface PermutationPlayPolicy {
    * array would stop checking after the last entry.
    */
   readonly realityCheckRecurrenceMinutes: number;
+  /**
+   * Additional recurring intervals a player may switch on in docs/DESIGN.md
+   * §5 S9. Every entry MUST be <= `realityCheckRecurrenceMinutes`.
+   *
+   * These two fields exist because the reality check was specified twice, in
+   * two incompatible ways: S9 listed it as a player-facing control, §10 stated
+   * it as fixed operator policy, and no field in this interface could hold a
+   * player's value. An implementer could not tell whether the control existed —
+   * and if it did, `playPolicyDigest` would have had to vary per player,
+   * destroying its only purpose (a trace of the PUBLISHED policy), or else
+   * misreport what the player actually received.
+   *
+   * The rule is therefore asymmetric, like the fingerprint rule above. The
+   * operator schedule is a floor and always fires. A player selection only adds
+   * instants, so the schedule a player receives is always a superset of the
+   * published one; `realityCheckOverride: 'tighten-only'` states that as a
+   * value rather than a sentence, and there is deliberately no field a player
+   * can write that removes or delays a check.
+   *
+   * The option set is part of the published policy and IS digested — widening
+   * it past the recurrence would be a loosening. The player's own selection is
+   * session state and is NOT digested, so `playPolicyDigest` remains one value
+   * per operator policy rather than one per player.
+   */
+  readonly playerRealityCheckIntervalOptions: readonly number[];
+  readonly realityCheckOverride: 'tighten-only';
   /** Must be true. A skip control that shortens the cycle is a slam stop. */
   readonly skipShortensPresentationOnly: true;
   /**

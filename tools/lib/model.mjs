@@ -85,6 +85,26 @@ export const LIMITS = Object.freeze({
  * checking after 60 minutes — which is precisely what the prose promised not to
  * do.
  *
+ * `playerRealityCheckIntervalOptions` and `realityCheckOverride` exist because
+ * the reality check was previously specified two incompatible ways: DESIGN §5
+ * S9 listed "reality-check interval" as a player-facing control, DESIGN §10
+ * stated it as fixed operator policy, and there was nowhere in the published
+ * policy to hold a player's value. An implementer could not tell whether the
+ * control existed, and if it did, `playPolicyDigest` would either have varied
+ * per player — destroying its value as a trace of the *published* policy — or
+ * silently misreported what the player actually received.
+ *
+ * The resolution is asymmetric, exactly like the fingerprint asymmetry above.
+ * The operator schedule is a FLOOR that always fires. A player may select an
+ * additional recurring interval from `playerRealityCheckIntervalOptions`, every
+ * entry of which is at most `realityCheckRecurrenceMinutes`, so the effective
+ * schedule a player receives is always a SUPERSET of the published one:
+ * `realityCheckOverride: 'tighten-only'` names that rule as a value rather than
+ * a sentence. The player's choice is session state and never enters the digest,
+ * which continues to attest exactly one thing — the minimum schedule the
+ * operator guaranteed. Loosening remains impossible by construction, because
+ * there is no field a player can write that removes a check.
+ *
  * `autoplay` is `'none'`, and it is a value rather than a sentence because a
  * sentence is what let round 2 ship a self-contradiction: a clause banning
  * autoplay that continues through losses, followed by a clause permitting a
@@ -95,12 +115,58 @@ export const PLAY_POLICY = Object.freeze({
   maxRoundsPerRollingHour: 900,
   realityCheckMinutes: Object.freeze([30, 60]),
   realityCheckRecurrenceMinutes: 60,
+  /**
+   * Additional recurring intervals a player may switch on in S9. Every entry is
+   * <= realityCheckRecurrenceMinutes, so a player choice can only ADD checks to
+   * the operator schedule, never remove or delay one.
+   */
+  playerRealityCheckIntervalOptions: Object.freeze([15, 30, 60]),
+  /** The only direction a player may move the reality check. */
+  realityCheckOverride: 'tighten-only',
   skipShortensPresentationOnly: true,
   autoplay: 'none',
 });
 
 /** The only legal value of `PLAY_POLICY.autoplay` in this specification. */
 export const AUTOPLAY_MODES = Object.freeze(['none']);
+
+/** The only legal value of `PLAY_POLICY.realityCheckOverride`. */
+export const REALITY_CHECK_OVERRIDE_MODES = Object.freeze(['tighten-only']);
+
+/**
+ * The reality-check schedule a player actually receives, in minutes of elapsed
+ * session time, up to `horizonMinutes`.
+ *
+ * This is the function that makes "the player may only tighten it" a property
+ * rather than a promise: the operator's fixed checks and its recurrence are
+ * emitted unconditionally, and a player interval only adds instants. The result
+ * is therefore a superset of `effectiveRealityChecks(policy, horizon, null)`
+ * for every legal choice — which is what `tests/design.test.mjs` asserts over
+ * every option and every horizon it checks.
+ *
+ * @param {object} policy
+ * @param {number} horizonMinutes how far ahead to expand the schedule
+ * @param {number|null} playerIntervalMinutes the player's S9 selection, if any
+ * @returns {number[]} ascending, de-duplicated check times
+ */
+export function effectiveRealityChecks(policy, horizonMinutes, playerIntervalMinutes = null) {
+  if (typeof policy !== 'object' || policy === null) throw new TypeError('effectiveRealityChecks needs a policy');
+  if (!Number.isFinite(horizonMinutes) || horizonMinutes <= 0) {
+    throw new RangeError('effectiveRealityChecks needs a positive horizon');
+  }
+  const times = new Set(policy.realityCheckMinutes.filter((minute) => minute <= horizonMinutes));
+  const last = policy.realityCheckMinutes[policy.realityCheckMinutes.length - 1];
+  for (let t = last + policy.realityCheckRecurrenceMinutes; t <= horizonMinutes; t += policy.realityCheckRecurrenceMinutes) {
+    times.add(t);
+  }
+  if (playerIntervalMinutes !== null) {
+    if (!policy.playerRealityCheckIntervalOptions.includes(playerIntervalMinutes)) {
+      throw new RangeError(`Reality-check interval ${playerIntervalMinutes} is not a published option`);
+    }
+    for (let t = playerIntervalMinutes; t <= horizonMinutes; t += playerIntervalMinutes) times.add(t);
+  }
+  return [...times].sort((a, b) => a - b);
+}
 
 /** Element identity is shared across variants; SEVEN appends two elements. */
 export const ELEMENTS = Object.freeze([

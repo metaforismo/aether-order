@@ -7,14 +7,20 @@
     "autoplay": "none",
     "maxRoundsPerRollingHour": 900,
     "minRoundCycleMs": 2500,
+    "playerRealityCheckIntervalOptions": [
+      15,
+      30,
+      60
+    ],
     "realityCheckMinutes": [
       30,
       60
     ],
+    "realityCheckOverride": "tighten-only",
     "realityCheckRecurrenceMinutes": 60,
     "skipShortensPresentationOnly": true
   },
-  "playPolicyDigest": "72d5c708126b469f17cf884bdf7a622695ef3068d8a041ce8e74d8cf29fa835b",
+  "playPolicyDigest": "6d543d966f6425f00464c51d7878ddbbeb95f7f0b7aeb5bfc6593a751aabf0bd",
   "variants": {
     "classic": {
       "adapterFingerprint": "acc1bcc56736ec6da617368b9352139d60dfc654f92153b4360d4b2e797c8aa3",

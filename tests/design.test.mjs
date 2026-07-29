@@ -22,7 +22,13 @@ import { describe, expect, it } from 'vitest';
 
 import * as derive from '../tools/lib/derive.mjs';
 import * as conform from '../tools/lib/conform.mjs';
-import { AUTOPLAY_MODES, ELEMENTS, PLAY_POLICY } from '../tools/lib/model.mjs';
+import {
+  AUTOPLAY_MODES,
+  ELEMENTS,
+  PLAY_POLICY,
+  REALITY_CHECK_OVERRIDE_MODES,
+  effectiveRealityChecks,
+} from '../tools/lib/model.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (name) => readFileSync(join(ROOT, name), 'utf8');
@@ -161,6 +167,77 @@ describe('the speed-of-play policy is quoted consistently everywhere', () => {
     expect(published.realityCheckRecurrenceMinutes).toBe(PLAY_POLICY.realityCheckRecurrenceMinutes);
     expect(DESIGN).toContain('realityCheckRecurrenceMinutes');
     expect(ENGINE).toContain('realityCheckRecurrenceMinutes');
+  });
+
+  /**
+   * The reality check used to be specified twice and incompatibly: S9 called it
+   * a player control, §10 called it fixed operator policy, and the published
+   * policy had nowhere to hold a player's value. Either reading breaks
+   * `playPolicyDigest` — per-player it stops being a trace of the published
+   * policy; fixed it misreports what the player received.
+   *
+   * The resolution is tighten-only, and it is a property here, not a promise.
+   */
+  describe('the reality check is one control with one reading', () => {
+    it('every player option is at most the operator recurrence', () => {
+      expect(PLAY_POLICY.realityCheckOverride).toBe('tighten-only');
+      expect(REALITY_CHECK_OVERRIDE_MODES).toEqual(['tighten-only']);
+      expect(PLAY_POLICY.playerRealityCheckIntervalOptions.length).toBeGreaterThan(0);
+      for (const option of PLAY_POLICY.playerRealityCheckIntervalOptions) {
+        expect(option, `${option} minutes`).toBeLessThanOrEqual(PLAY_POLICY.realityCheckRecurrenceMinutes);
+        expect(option).toBeGreaterThan(0);
+      }
+    });
+
+    it('any player choice yields a SUPERSET of the published schedule', () => {
+      for (const horizon of [30, 60, 90, 120, 240, 480]) {
+        const floor = effectiveRealityChecks(PLAY_POLICY, horizon, null);
+        // The floor itself always contains the operator's fixed checks.
+        for (const fixed of PLAY_POLICY.realityCheckMinutes) {
+          if (fixed <= horizon) expect(floor).toContain(fixed);
+        }
+        for (const option of PLAY_POLICY.playerRealityCheckIntervalOptions) {
+          const chosen = effectiveRealityChecks(PLAY_POLICY, horizon, option);
+          for (const instant of floor) {
+            expect(chosen, `horizon ${horizon}, option ${option}`).toContain(instant);
+          }
+          expect(chosen.length).toBeGreaterThanOrEqual(floor.length);
+        }
+      }
+    });
+
+    it('the schedule really does keep going past the last fixed check', () => {
+      // The defect an array alone would reintroduce: stopping at 60 minutes.
+      expect(effectiveRealityChecks(PLAY_POLICY, 240, null)).toEqual([30, 60, 120, 180, 240]);
+    });
+
+    it('an unpublished interval is refused rather than honoured', () => {
+      expect(() => effectiveRealityChecks(PLAY_POLICY, 120, 90)).toThrow(/not a published option/u);
+      expect(() => effectiveRealityChecks(PLAY_POLICY, 120, 0)).toThrow(/not a published option/u);
+    });
+
+    it('the published policy carries both fields and the documents agree', () => {
+      const published = JSON.parse(read('docs/paytable.json')).playPolicy;
+      expect(published.playerRealityCheckIntervalOptions).toEqual([...PLAY_POLICY.playerRealityCheckIntervalOptions]);
+      expect(published.realityCheckOverride).toBe('tighten-only');
+      expect(ENGINE).toContain('playerRealityCheckIntervalOptions');
+      expect(ENGINE).toContain("readonly realityCheckOverride: 'tighten-only';");
+      expect(DESIGN).toContain('playerRealityCheckIntervalOptions');
+      expect(DESIGN).toContain('tighten-only');
+      // S9 must present it as an addition, never as an interval the player owns.
+      const s9 = DESIGN.slice(DESIGN.indexOf('### S8 — PAYTABLE'), DESIGN.indexOf('### S10 — SHARED CHAMBER'));
+      expect(s9).toMatch(/CHECK IN\s+MORE OFTEN/u);
+      expect(s9).toMatch(/cannot switch those off/u);
+      expect(s9).toMatch(/tighten-only/u);
+    });
+
+    it('widening the option set past the recurrence moves the digest', () => {
+      const base = derive.playPolicyDigest();
+      expect(derive.playPolicyDigest({ ...PLAY_POLICY, playerRealityCheckIntervalOptions: [15, 30, 60, 240] })).not.toBe(
+        base,
+      );
+      expect(derive.playPolicyDigest({ ...PLAY_POLICY, realityCheckOverride: 'any' })).not.toBe(base);
+    });
   });
 
   it('docs/DESIGN.md quotes both numbers', () => {

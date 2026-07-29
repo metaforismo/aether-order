@@ -1268,6 +1268,13 @@ export function playPolicyDigest(policy = PLAY_POLICY) {
       String(policy.maxRoundsPerRollingHour),
       Array.prototype.slice.call(policy.realityCheckMinutes ?? []).join(','),
       String(policy.realityCheckRecurrenceMinutes),
+      // The option set a player may tighten to is part of the PUBLISHED policy
+      // and is digested; the player's own selection is session state and is not,
+      // so the digest attests one thing — the minimum schedule the operator
+      // guaranteed — identically for every player. Widening the option set past
+      // the recurrence would be a loosening, and it moves the digest.
+      Array.prototype.slice.call(policy.playerRealityCheckIntervalOptions ?? []).join(','),
+      String(policy.realityCheckOverride),
       String(policy.skipShortensPresentationOnly === true),
       String(policy.autoplay),
     ]),

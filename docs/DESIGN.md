@@ -537,8 +537,20 @@ through to S6 for that round. Header shows **session elapsed time** and
 S8 is the table from §4 with the exact probability shown next to every
 multiplier, plus the alias list (*"these two chips are the same bet"*).
 
-S9 holds session limit, loss limit, reality-check interval, and the
-self-exclusion hand-off. It also states the pacing policy as plain fact —
+S9 holds session limit, loss limit, the reality-check control, and the
+self-exclusion hand-off.
+
+**The reality-check control is a tighten-only addition, and the screen says
+so.** The operator schedule — 30 minutes, 60 minutes, then hourly — is shown
+first, as a published fact with no toggle beside it, because §10 makes it a
+floor the player cannot move. Beneath it sits one optional selector, `CHECK IN
+MORE OFTEN`, offering `15 / 30 / 60 minutes` (the published
+`playerRealityCheckIntervalOptions`) and an `OFF` that returns to the floor,
+never below it. Its caption is fixed: *"these are extra checks on top of the
+ones above — you cannot switch those off."* No control on this screen can
+lengthen an interval, and the screen must not imply one exists.
+
+It also states the pacing policy as plain fact —
 *"minimum 2.5 seconds between bets; maximum 900 rounds per hour; no autoplay"* —
 with rounds played in the trailing hour shown as a number, never as a bar
 filling toward a goal. Both screens are reachable from the `⌂` menu in two taps.
@@ -1256,6 +1268,31 @@ and its own review. It is not a paragraph.
   array — which is what `docs/paytable.json` publishes for exactly this reason —
   would have stopped checking at 60 minutes while this paragraph promised
   otherwise.
+- **That schedule is a floor, and the player-facing control in S9 can only
+  tighten it.** Round 4 of this document specified the reality check twice and
+  incompatibly: S9 listed "reality-check interval" among the player's controls
+  while this section stated it as fixed operator policy, and
+  `PermutationPlayPolicy` had no field a player's value could live in. An
+  implementer could not tell whether the control existed. Worse, if it did, the
+  `playPolicyDigest` stamped into every round snapshot would have had to vary
+  per player — destroying the one thing it is for, a trace of the *published*
+  policy — or else misreport what the player actually received. A
+  responsible-gaming control with two readings is exactly the defect this
+  section claims to have eliminated for autoplay.
+
+  The rule, as values rather than prose:
+  `playerRealityCheckIntervalOptions: [15, 30, 60]` and
+  `realityCheckOverride: 'tighten-only'`. Every option is at most the operator
+  recurrence, and the operator's own checks fire regardless, so **the schedule a
+  player receives is always a superset of the published one**. There is no field
+  a player can write that removes a check, delays one, or turns the feature off.
+  `effectiveRealityChecks` in `tools/lib/model.mjs` computes the schedule and
+  `tests/design.test.mjs` asserts the superset property over every option.
+
+  The option set is published policy and is digested; the player's selection is
+  session state and is not, so `playPolicyDigest` stays one value per operator
+  policy rather than one per player. That is the only arrangement in which the
+  digest means anything.
 - Session limit, loss limit and self-exclusion hand-off live in S9, reachable in
   two taps from anywhere.
 - The fairness/verify screen is one tap from every result.

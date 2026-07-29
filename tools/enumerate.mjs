@@ -302,6 +302,14 @@ const machine = {
      * 60 minutes while the specification promised hourly thereafter.
      */
     realityCheckRecurrenceMinutes: PLAY_POLICY.realityCheckRecurrenceMinutes,
+    /**
+     * The intervals S9 may offer a player, and the only direction they may move
+     * the check in. The operator schedule above always fires; a player choice
+     * only adds instants to it, so the effective schedule is always a superset
+     * of the published one and the digest stays a per-operator constant.
+     */
+    playerRealityCheckIntervalOptions: [...PLAY_POLICY.playerRealityCheckIntervalOptions],
+    realityCheckOverride: PLAY_POLICY.realityCheckOverride,
     skipShortensPresentationOnly: PLAY_POLICY.skipShortensPresentationOnly,
     /** Not shipped. See docs/DESIGN.md section 10. */
     autoplay: PLAY_POLICY.autoplay,
