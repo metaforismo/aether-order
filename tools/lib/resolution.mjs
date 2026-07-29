@@ -261,8 +261,7 @@ export function resolutionTrack(variantId, ticket, permutation) {
   }
   const lines = Array.prototype.slice.call(ticket.lines).map((line, index) => {
     const family = getFamily(line.code);
-    const instances = family.instances(n, { permutationCount: factorial(n) });
-    const instance = instances.find((candidate) => sameParams(candidate.params, line.params));
+    const instance = instanceFor(family, n, line.params);
     if (!instance) throw new RangeError(`Line ${index} is not a legal instance of ${line.code}`);
     const decided = decisiveLock(n, family, instance, permutation);
     return Object.freeze({
@@ -300,6 +299,62 @@ export function resolutionTrack(variantId, ticket, permutation) {
     /** True iff some line survives to the last informative lock. */
     resolvesAtPenultimateLock: latest === n - 1,
   });
+}
+
+/* --------------------------------------------------------------------- *
+ * Instance lookup, memoised — in the CONSUMER, never in the adapter.      *
+ *                                                                        *
+ * `resolutionTrack` used to rebuild `family.instances(n)` once per ticket *
+ * line and then scan it linearly. At n = 7 that is 5,040 instances built  *
+ * twelve times for a full ticket, and it got materially worse when FULL   *
+ * ORDER started unranking a permutation per instance: the rebuild alone   *
+ * went from 0.5 ms to 8.4 ms, so a hostile twelve-line SEVEN ticket paid  *
+ * ~100 ms of pure allocation inside the 260 ms CHARGE beat that docs/     *
+ * DESIGN.md §7 technique 1 budgets. The instance set is a pure function   *
+ * of (family, n), so it is built once per process here.                   *
+ *                                                                        *
+ * The caches live in this module and not in `bets.mjs` for the same       *
+ * reason `derive.mjs` keeps its own: conformance check 3 must keep        *
+ * calling `family.instances` twice for real, and an adapter-side cache    *
+ * would make that check tautological.                                     *
+ * --------------------------------------------------------------------- */
+
+const instancesCache = new Map();
+const instanceIndexCache = new Map();
+
+/** Sorted `key=value` rendering, used only as an index key. */
+const paramsKey = (params) =>
+  Object.keys(params)
+    .sort()
+    .map((key) => `${key}=${String(params[key])}`)
+    .join(',');
+
+/**
+ * Resolve caller-supplied parameters to the adapter's own frozen instance.
+ *
+ * The rendering is only an index: the match is confirmed with `sameParams`,
+ * which compares with `===`, so `{c: '0'}` cannot pass as `{c: 0}` merely
+ * because the two render alike. The caller's object is read once, into a
+ * snapshot, so a stateful getter cannot answer the index and the strict
+ * comparison differently.
+ */
+function instanceFor(family, n, params) {
+  if (typeof params !== 'object' || params === null) return undefined;
+  const snapshot = { ...params };
+  const key = `${family.code}|${n}`;
+  let instances = instancesCache.get(key);
+  if (!instances) {
+    instances = family.instances(n, { permutationCount: factorial(n) });
+    instancesCache.set(key, instances);
+  }
+  let index = instanceIndexCache.get(key);
+  if (!index) {
+    index = new Map();
+    for (const instance of instances) index.set(paramsKey(instance.params), instance);
+    instanceIndexCache.set(key, index);
+  }
+  const candidate = index.get(paramsKey(snapshot));
+  return candidate && sameParams(candidate.params, snapshot) ? candidate : undefined;
 }
 
 /** Shallow structural equality over a bet instance's flat numeric parameters. */

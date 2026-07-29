@@ -341,6 +341,8 @@ Node 25.8.2), with the observed run-to-run range beside it:
 | Transcript build, `n = 7`, warm | 45 µs | 44 – 47 µs |
 | Transcript verify, `n = 7`, warm | 49 µs | 46 – 50 µs |
 | Ticket settle, `n = 7`, three lines, warm | 6.7 µs | 6.0 – 7.3 µs |
+| Resolution track, `n = 7`, 12 lines, **worst legal ticket** | 10.7 ms | 10.5 – 10.8 ms |
+| Resolution track, `n = 7`, 12 lines, realistic ticket | 0.48 ms | 0.47 – 0.48 ms |
 
 **Round 2 published this table with ticket settle at 85 µs.** It measures about
 9 µs on the exact machine the document named — a factor of ten, on the one
@@ -357,6 +359,7 @@ carry their spread rather than a single sample dressed as a constant, and
 | Cold catalogue digest, `n = 5` | < 200 ms | ~200× |
 | Cold catalogue digest, `n = 7` | < 20,000 ms | ~72× |
 | Cold digest ÷ ticket settle | > 100 | ~42,000 |
+| Resolution track, worst ticket | < 260 ms | ~24× |
 
 The bands are deliberately loose because a shared CI runner is not a laptop and
 a flaky performance assertion is how an unasserted benchmark gets rationalised
@@ -364,6 +367,16 @@ in the first place. What they catch is a regression of *kind* — a per-round pa
 that started touching the catalogue digest — which is exactly the claim the
 table exists to support: the digest is paid once per process at adapter
 construction, and nothing on a round path touches it.
+
+**The resolution track is the exception that has to be measured**, because it is
+the one per-round cost that is not microseconds and the only one paid inside a
+named animation beat: docs/DESIGN.md §7 technique 1 builds it once inside the
+260 ms CHARGE. Its band is that beat. The two rows are a *worst legal ticket* —
+eleven maximal-rank FULL ORDER claims, each of which agrees "lose" across
+thousands of completions before reaching its single winner — and a realistic
+twelve-line one. Round 4 published 1.3 ms for "a hostile 12-line SEVEN ticket",
+which is roughly the realistic figure and an order of magnitude under the
+genuinely hostile one; both are now measured, banded and quoted.
 
 ---
 

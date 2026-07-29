@@ -35,6 +35,9 @@ import { createHash } from 'node:crypto';
 
 import { digestCatalogue, makeTranscript, settleTicket, verifyTranscript } from './lib/derive.mjs';
 import { VARIANT_IDS, getVariant } from './lib/model.mjs';
+import { fullOrderParamsByRank } from './lib/bets.mjs';
+import { allPermutations } from './lib/permutations.mjs';
+import { resolutionTrack } from './lib/resolution.mjs';
 
 const seedFrom = (label) => createHash('sha256').update(`aether-order/bench/${label}`).digest('hex');
 
@@ -55,6 +58,14 @@ export const BANDS = Object.freeze({
    * cost and nothing on a round path touches it. Reference ratio: ~27,000.
    */
   minDigestToSettleRatio: 100,
+  /**
+   * The resolution track, built once per round inside the 260 ms CHARGE beat
+   * (docs/DESIGN.md §7 technique 1). The band is the beat itself: if building
+   * the track costs more than the beat that pays for it, the choreography has
+   * to start before it knows what it is animating. Reference: ~12 ms for a
+   * genuinely hostile ticket, ~0.5 ms for a realistic one.
+   */
+  resolutionTrackMaxMs: 260,
 });
 
 function time(key, label, iterations, run) {
@@ -119,6 +130,51 @@ export function benchSample({ quick = false } = {}) {
     );
   }
 
+  // The resolution track, which is the one per-round cost that is NOT
+  // microseconds and the only one paid inside a named animation beat.
+  //
+  // Two tickets, because the spread between them is the whole point. `full`'s
+  // decisive lock costs (n - k)! evaluations at the lock that decides it, and a
+  // maximal-rank FULL ORDER claim agrees "lose" across thousands of completions
+  // before reaching its single winner — so eleven of them is the worst ticket
+  // the risk policy permits, and it is nothing like a ticket anyone builds.
+  {
+    const perm = allPermutations(7)[5039];
+    const iterations = quick ? 3 : 20;
+    const hostile = {
+      lines: [
+        ...Array.from({ length: 11 }, (_, i) => ({ code: 'full', params: fullOrderParamsByRank(7, 5039 - i) })),
+        { code: 'last', params: { c: 0 } },
+      ],
+    };
+    const realistic = {
+      lines: [
+        { code: 'first', params: { c: 0 } },
+        { code: 'early', params: { c: 1 } },
+        { code: 'late', params: { c: 2 } },
+        { code: 'neighbours', params: { a: 0, b: 1 } },
+        { code: 'last', params: { c: 3 } },
+        { code: 'slot', params: { c: 4, k: 4 } },
+        { code: 'stack', params: { a: 0, b: 1 } },
+        { code: 'opening', params: { a: 0, b: 1 } },
+        { code: 'podium', params: { a: 0, b: 1, c: 2 } },
+        { code: 'before', params: { a: 0, b: 1 } },
+        { code: 'full', params: fullOrderParamsByRank(7, 0) },
+        { code: 'slot', params: { c: 3, k: 3 } },
+      ],
+    };
+    rows.push(
+      time('resolution-track-n7-hostile', 'resolution track (n = 7, 12 lines, worst)', iterations, () =>
+        resolutionTrack('seven', hostile, perm),
+      ),
+    );
+    rows.push(
+      time('resolution-track-n7-typical', 'resolution track (n = 7, 12 lines, real)', iterations * 5, () =>
+        resolutionTrack('seven', realistic, perm),
+      ),
+    );
+  }
+
   return rows;
 }
 
@@ -158,7 +214,9 @@ export function runBench({ repeat = 3, quick = false } = {}) {
 /** Every band, evaluated. Shared by the CLI and by `tests/bench.test.mjs`. */
 export function evaluateBands(result) {
   const by = (key) => result.measurements.find((row) => row.key === key);
-  const perRound = result.measurements.filter((row) => !row.key.startsWith('digest-cold'));
+  const perRound = result.measurements.filter(
+    (row) => !row.key.startsWith('digest-cold') && !row.key.startsWith('resolution-track'),
+  );
   const settleSeven = by('ticket-settle-n7');
   const digestSeven = by('digest-cold-n7');
   const ratio = settleSeven.medianMs > 0 ? digestSeven.medianMs / settleSeven.medianMs : Infinity;
@@ -178,6 +236,14 @@ export function evaluateBands(result) {
       name: 'cold catalogue digest (n = 7) is under its band',
       ok: digestSeven.medianMs < BANDS.coldDigestSevenMaxMs,
       detail: `${digestSeven.medianMs.toFixed(0)} ms < ${BANDS.coldDigestSevenMaxMs} ms`,
+    },
+    {
+      name: 'the resolution track fits inside the CHARGE beat that pays for it',
+      ok: by('resolution-track-n7-hostile').medianMs < BANDS.resolutionTrackMaxMs,
+      detail:
+        `worst ticket ${by('resolution-track-n7-hostile').medianMs.toFixed(1)} ms, ` +
+        `realistic ${by('resolution-track-n7-typical').medianMs.toFixed(2)} ms ` +
+        `< ${BANDS.resolutionTrackMaxMs} ms`,
     },
     {
       name: 'the digest is a startup cost, not a round cost',

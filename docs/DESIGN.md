@@ -1102,9 +1102,15 @@ runtime; everything is evaluated.
    `template[startLane][targetSlot]` and time-shifts it. No physics, no solver,
    no collision. The line-resolution track (§2.1) is baked at the same moment,
    by `resolutionTrack` in `tools/lib/resolution.mjs`: bounded by 5,914 predicate
-   evaluations per line at `n = 7`, measured at **1.3 ms** for a hostile 12-line
-   SEVEN ticket, paid once inside the 260 ms CHARGE beat. Nothing about which
-   lines are alive is searched during SETTLE.
+   evaluations per line at `n = 7`, and measured at **0.48 ms** for a realistic
+   twelve-line SEVEN ticket and **10.7 ms** for the worst one the risk policy
+   permits — eleven maximal-rank FULL ORDER claims, each of which agrees "lose"
+   across thousands of completions before it reaches its single winner. Both are
+   paid once, inside the 260 ms CHARGE beat, and `tools/bench.mjs` asserts the
+   worst case against that beat as a published band (`docs/ENGINE.md` §4).
+   Round 4 quoted 1.3 ms for "a hostile" ticket, which is roughly the realistic
+   figure with a hostile label on it. Nothing about which lines are alive is
+   searched during SETTLE.
 2. **The "fluid" is one fragment shader, not a sim.** A single pass over the
    chamber rect does: a two-octave value-noise domain warp for caustics, a
    refraction offset that resamples the sphere layer, and a vertical depth

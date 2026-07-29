@@ -49,9 +49,31 @@ describe('tools/bench.mjs reproduces within its published bands', () => {
   });
 
   it('no warm per-round measurement approaches a frame', () => {
-    for (const row of result.measurements.filter((entry) => !entry.key.startsWith('digest-cold'))) {
+    // The resolution track is excluded on purpose and banded separately: it is
+    // the one per-round cost that is not microseconds, and it is paid inside a
+    // named 260 ms animation beat rather than inside a frame. Folding it into
+    // this band would either loosen the band into uselessness or hide the one
+    // figure that actually needs watching.
+    const perRound = result.measurements.filter(
+      (entry) => !entry.key.startsWith('digest-cold') && !entry.key.startsWith('resolution-track'),
+    );
+    expect(perRound.length).toBeGreaterThan(0);
+    for (const row of perRound) {
       expect(row.medianMs, row.label).toBeLessThan(BANDS.perRoundMaxMs);
     }
+  });
+
+  it('the resolution track fits inside the CHARGE beat, worst ticket included', () => {
+    // docs/DESIGN.md §7 technique 1 builds the track once inside a 260 ms beat.
+    // If the worst legal ticket costs more than the beat that pays for it, the
+    // choreography starts before it knows what it is animating.
+    const worst = result.measurements.find((row) => row.key === 'resolution-track-n7-hostile');
+    const realistic = result.measurements.find((row) => row.key === 'resolution-track-n7-typical');
+    expect(worst, 'the worst-case resolution-track measurement is missing').toBeDefined();
+    expect(worst.medianMs).toBeLessThan(BANDS.resolutionTrackMaxMs);
+    // And the spread between a hostile ticket and a real one is the reason both
+    // are measured: quoting one as the other is how 1.3 ms got published.
+    expect(realistic.medianMs).toBeLessThan(worst.medianMs);
   });
 
   it('reports a real range rather than a single sample dressed as a constant', () => {
