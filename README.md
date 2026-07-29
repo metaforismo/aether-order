@@ -196,7 +196,7 @@ round and receipt is gone.
 | `npm run dev` | build the client, serve it and the API on `PORT` (default 5173) |
 | `npm run build` | build the client bundle only, into `dist/client` |
 | `npm run typecheck` | `tsc --noEmit` over the service and the client |
-| `npm test` | the whole suite, including the API-level playthrough |
+| `npm test` | the whole suite, including the API-level playthrough and the pinned-strip leak test |
 | `AETHER_DEV=1 npm run dev` | additionally enables `POST /api/dev/skew`, a test hook that shifts *session elapsed time* so the reality-check schedule can be seen without waiting 30 minutes. It changes no policy and is off by default. |
 | `AETHER_CONFORMANCE=1 npm run dev` | additionally runs `docs/ENGINE.md` §8's twelve checks at startup (~7 s at `n = 7`). They run on every build in `tests/adapter-conformance.test.ts`, which is where §8 says they belong; the *fingerprint* cross-check against `docs/paytable.json` runs at every startup regardless, and a mismatch refuses to serve. |
 
@@ -250,12 +250,28 @@ S6 fairness, S7 history, S8 paytable, S9 limits and play controls, S10 the
 shared chamber.
 
 Two things it deliberately does *not* do: it computes no money — the stake, the
-payout, the best-outcome figure and the celebration gate all come from the
-service, which gets them from the engine — and it does **not** ask the server
-whether a round was fair. `src/client/verify.ts` re-derives the permutation from
-`(server seed, your seed, round id, nonce)` with WebCrypto and recomputes both
-hashes itself; `tests/verifier.test.ts` fails the build if that second
-implementation and the engine ever disagree on a single digest.
+payout, the best-outcome figure, the celebration gate and the figure the
+multiplier stamp carries all come from the service, which gets them from the
+engine — and it does **not** ask the server whether a round was fair.
+`src/client/verify.ts` re-derives the permutation from `(server seed, your seed,
+round id, nonce)` with WebCrypto and recomputes both hashes itself;
+`tests/verifier.test.ts` fails the build if that second implementation and the
+engine ever disagree on a single digest.
+
+**Three things it does not do, and one of them is a test.** The client holds the
+whole settlement from the instant of COMMIT — it must, because §7's choreography
+is a pure function of the transcript — so it is one careless template away from
+printing the round's result before the round shows it. §2.1 is the repository's
+anti-near-miss mechanism and the server spends `resolutionTrack` and two parity
+tests getting the deciding lock exactly right; a strip that renders the verdict
+at COMMIT makes all of that decorative. So the pinned strip's rows are built by
+a pure function, `src/client/rows.ts`, and `tests/pinned-lines.test.ts` drives a
+real settled round through the real service and fails the build if any figure
+that is not already on the ticket appears while the round is live. The other two:
+the record is rendered in the order the player *built* the ticket rather than the
+engine's canonical wire order, frozen once at COMMIT; and gold is transient on
+the lock ring, so a losing tube is never left wearing a row of gold rings (§6.1
+lists gold's six uses and "the slot ring at the moment it locks" is one moment).
 
 **Graybox boundaries, stated rather than implied.** The chamber is DOM and SVG at
 the geometry §6.9 specifies, not the WebGL lane §7 budgets: no fluid shader, no
@@ -286,6 +302,27 @@ conformance checks. Add `--monte-carlo=200000` for a sanity
 cross-check; it never sets a published number. `npm run bench` reproduces the
 cost figures in `docs/ENGINE.md` §4 on your own hardware and fails if any of
 them leaves its published band.
+
+**The suite is exhaustive, so it is slow, so it sets its own timeout — and the
+one test that measures time runs alone.** Two things make a green run mean
+something:
+
+- Several SEVEN sweeps legitimately take seconds each and the `n = 7`
+  conformance sweep can exceed a minute on a loaded box; vitest's default
+  per-test limit is five seconds. `vitest.config.ts` raises it to 120 s for
+  every file. A correct test that is slower than a default is not a failure, and
+  CI turning red on a loaded runner is exactly what destroys the claim this
+  README rests on — that when a table here disagrees with the code, CI is red.
+- `tests/bench.test.mjs` asserts the published bands in `docs/ENGINE.md` §4 by
+  measuring wall-clock time, so it is excluded from the parallel pass and run
+  again on its own (`vitest.bench.config.ts`). Sharing the machine with eighteen
+  other test files, it measured 2.26 ms against its 2 ms band; alone, from the
+  same commit, 0.23 ms. A timing assertion that is really an assertion about
+  scheduler pressure is a flaky test, and a flaky test is how an unasserted
+  benchmark gets rationalised back in.
+
+The timeout is not a performance budget. `tools/bench.mjs` is, and it also runs
+as its own CI step with the full table printed.
 
 ## Documentation
 
