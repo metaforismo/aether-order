@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { enumerateVariant, render } from '../tools/lib/analysis.mjs';
+import { enumerateVariant, proveMaxRoundCredit, render } from '../tools/lib/analysis.mjs';
 import { collectMultiplierTokens, readFencedTable, untick } from '../tools/lib/mdtable.mjs';
 import { seedCommitment } from '../tools/lib/derive.mjs';
 import { LIMITS, TARGET_RTP, VARIANT_IDS } from '../tools/lib/model.mjs';
@@ -89,8 +89,6 @@ describe('docs/paytable.json mirrors the enumeration', () => {
     expect(entry.permutationCount).toBe(analysis.permutationCount);
     expect(entry.adapterFingerprint).toBe(analysis.adapterFingerprint);
     expect(entry.targetRtp).toBe(render.fraction(TARGET_RTP));
-    expect(entry.maxWinMultiple).toBe(LIMITS.maxWinMultiple.toString());
-    expect(entry.supremumMultiplier).toBe(render.fraction(analysis.maxMultiplier));
     expect(entry.bets).toHaveLength(analysis.rows.length);
     entry.bets.forEach((bet, index) => {
       const row = analysis.rows[index];
@@ -103,6 +101,61 @@ describe('docs/paytable.json mirrors the enumeration', () => {
       expect(bet.decimal).toBe(`${render.multiplierDecimal(row.multiplier)}x`);
       expect(bet.rtp).toBe(render.fraction(TARGET_RTP));
       expect(bet.variance).toBe(render.fraction(row.variance));
+    });
+  });
+
+  /**
+   * The published file must not carry a number an integrator could publish as a
+   * prize when the game cannot pay it.
+   *
+   * Round 4 shipped `maxWinMultiple: "5000"` per variant. That is the inert
+   * liability cap, and `maxWinMultiple` is the industry's term for advertised
+   * max win, so a paytable sheet generated from this file would have advertised
+   * 5,000x on a game whose proven ceiling is 49.20x (CLASSIC) and 1,271.76x
+   * (SEVEN). These tests fail the build if that name comes back, and require the
+   * attainable maximum to be published beside the cap.
+   */
+  describe('the round-credit block cannot be misread as an advertised max win', () => {
+    it('publishes no field named maxWinMultiple anywhere in the file', () => {
+      const raw = readFileSync(PAYTABLE_JSON, 'utf8');
+      expect(raw).not.toContain('"maxWinMultiple"');
+      // The old bare supremum key is gone too: the largest LINE multiplier is
+      // not a ticket maximum either, and it was published without saying so.
+      expect(raw).not.toContain('"supremumMultiplier"');
+    });
+
+    it.each(VARIANT_IDS)('%s publishes the attainable maximum, computed not asserted', (variantId) => {
+      const entry = published.variants[variantId].roundCredit;
+      const best = proveMaxRoundCredit(variantId);
+      expect(best.optimal).toBe(true);
+      expect(entry.maxTicketReturnMultiple).toBe(render.fraction(best.roundMultiple));
+      expect(entry.maxTicketReturnMultipleDecimal).toBe(`${render.multiplierDecimal(best.roundMultiple)}x`);
+      expect(entry.maxTicketReturnCreditChips).toBe(best.creditedChips.toString());
+      expect(entry.maxTicketReturnStakeChips).toBe(best.totalStakeChips.toString());
+      // The published maximum must be the one docs/MATH.md §8 tabulates. The
+      // prose groups thousands; the machine field does not, so compare ungrouped.
+      const math = readFileSync(MATH_MD, 'utf8').replaceAll(',', '');
+      expect(math).toContain(`${render.multiplierDecimal(best.roundMultiple)}×`);
+    });
+
+    it.each(VARIANT_IDS)('%s keeps the cap, names it as a guard, and proves it inert', (variantId) => {
+      const entry = published.variants[variantId].roundCredit;
+      const analysis = analyses[variantId];
+      expect(entry.liabilityCapMultipleOfTicketStake).toBe(LIMITS.maxWinMultiple.toString());
+      expect(entry.liabilityCapIsInert).toBe(true);
+      expect(entry.supremumLineMultiplier).toBe(render.fraction(analysis.maxMultiplier));
+      expect(entry.note).toMatch(/not an advertised maximum win/u);
+    });
+
+    it.each(VARIANT_IDS)('%s cap strictly exceeds what any ticket can return', (variantId) => {
+      const entry = published.variants[variantId].roundCredit;
+      const [n, d] = entry.maxTicketReturnMultiple.split('/').map(BigInt);
+      expect(n).toBeLessThan(LIMITS.maxWinMultiple * (d ?? 1n));
+    });
+
+    it('the top-level note tells a copy generator which field to use', () => {
+      expect(published.note).toContain('maxTicketReturnMultipleDecimal');
+      expect(published.note).toContain('not a prize');
     });
   });
 });

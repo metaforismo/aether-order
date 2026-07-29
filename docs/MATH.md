@@ -427,6 +427,19 @@ settlement path:
 | CLASSIC | 4 lines (`full`, `podium`, `opening`, `slot`) at 50.00 each | 200.00 credits | 9,840.00 credits | 49.20× |
 | SEVEN | 4 lines (`full`, `podium`, `opening`, `slot`) at 50.00 each | 200.00 credits | 254,352.00 credits | 1,271.76× |
 
+**This is the figure a max-win claim must use, and it is published as such.**
+`docs/paytable.json` carries it per variant as
+`roundCredit.maxTicketReturnMultipleDecimal`, beside the cap under the name
+`roundCredit.liabilityCapMultipleOfTicketStake`. The previous revision published
+the cap alone, at the top level, under the key `maxWinMultiple` — which is the
+industry's term for the advertised max-win figure — so a paytable sheet
+generated from the machine-readable artefact would have advertised `5,000×` on a
+game that this section proves cannot pay more than `49.20×`. The mathematics was
+right and the published artefact was not, which is the same defect §8.1 spends a
+section banning for the ticket strip. `tests/paytable.test.mjs` now fails the
+build if the key name returns or if the attainable maximum drifts from
+`proveMaxRoundCredit`.
+
 **Why that is a maximum, in four steps rather than two.** The first two are the
 easy ones and were the only two the earlier draft stated; the last two are what
 make the argument close.
