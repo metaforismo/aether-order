@@ -191,6 +191,8 @@ export interface Presentation {
   audio: string;
   haptic: string;
   multiplierStamp: boolean;
+  /** What the round returned as a multiple of what it cost (§9 step 5). */
+  stampMultipleDecimal: string;
   balanceCountsUp: boolean;
   goldBloom: boolean;
   lineLighting: boolean;

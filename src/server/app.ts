@@ -214,7 +214,10 @@ export function createApp(options: AppOptions = {}): App {
           });
           return;
         }
-        write(event.type === 'round.open' ? 'open' : 'presence', lobbyState());
+        // Not `open`: that is EventSource's own native connection event, and a
+        // custom event sharing its name makes the native one — which carries no
+        // data — run the client's state handler and throw out of it on connect.
+        write(event.type === 'round.open' ? 'draw' : 'presence', lobbyState());
       });
       request.on('close', () => {
         unsubscribe();

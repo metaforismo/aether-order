@@ -171,9 +171,26 @@ export interface WirePresentation {
   readonly audio: string;
   readonly haptic: string;
   readonly multiplierStamp: boolean;
+  readonly stampMultipleDecimal: string;
   readonly balanceCountsUp: boolean;
   readonly goldBloom: boolean;
   readonly lineLighting: true;
+}
+
+/**
+ * The figure §9 step 5 stamps over the tube: what the round returned, as a
+ * multiple of what it cost.
+ *
+ * Exact integer arithmetic on chips, truncated toward zero to two decimals so
+ * the stamp can never overstate what was paid — a round that returns 4.80 on
+ * 1.75 is `2.74x`, not `2.75x`. The exact figures are on the same screen: S5
+ * carries the credit and the stake, and the receipt carries both to the chip.
+ * `x` is U+00D7 per §6.5, and two decimals always.
+ */
+function stampMultiple(creditedChips: bigint, stakedChips: bigint): string {
+  if (stakedChips <= 0n) return '';
+  const hundredths = (creditedChips * 100n) / stakedChips;
+  return `${hundredths / 100n}.${String(hundredths % 100n).padStart(2, '0')}×`;
 }
 
 /**
@@ -201,6 +218,7 @@ export function presentSettlement(settlement: Settlement): WirePresentation {
     audio: presentation.audio,
     haptic: presentation.haptic,
     multiplierStamp: presentation.multiplierStamp,
+    stampMultipleDecimal: stampMultiple(settlement.credited, settlement.totalStake),
     balanceCountsUp: presentation.balanceCountsUp,
     goldBloom: presentation.goldBloom,
     lineLighting: presentation.lineLighting,

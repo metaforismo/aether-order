@@ -168,6 +168,13 @@ describe('a full round, through the API', () => {
     expect(settled.presentation.headline).toBe('Won 32.27');
     expect(settled.presentation.balanceCountsUp).toBe(true);
 
+    // 5a. The figure that stamps over the tube (docs/DESIGN.md §9 step 5): what
+    // the round returned as a multiple of what it cost, 3552/325 = 10.929...,
+    // truncated toward zero so the stamp can never overstate the payout, with
+    // two decimals and U+00D7 (§6.5).
+    expect(settled.presentation.multiplierStamp).toBe(true);
+    expect(settled.presentation.stampMultipleDecimal).toBe('10.92\u00d7');
+
     // 6. The resolution track: no line is undecided past lock n-1, ever.
     expect(settled.resolution.settlementKnownAtLock).toBe(4);
     expect(settled.resolution.closeCarriesInformation).toBe(false);
@@ -244,6 +251,9 @@ describe('a full round, through the API', () => {
     expect(settled.presentation.headline).toBe('Returned 1.92 of 12.00');
     expect(settled.presentation.audio).toBe('none');
     expect(settled.presentation.multiplierStamp).toBe(false);
+    // The figure is still computed and still exact — the gate is what decides
+    // whether it is ever drawn, and this round is below it.
+    expect(settled.presentation.stampMultipleDecimal).toBe('0.16\u00d7');
     expect(settled.presentation.balanceCountsUp).toBe(false);
     // Which line won is information the player is owed, and is never suppressed.
     expect(settled.presentation.lineLighting).toBe(true);
