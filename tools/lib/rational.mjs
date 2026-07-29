@@ -98,9 +98,16 @@ export function parseFraction(text) {
  * Exact fixed-point decimal string. Throws if the value does not terminate at
  * `decimals` places, so a published decimal can never silently round.
  */
+function assertDecimals(decimals) {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 1000) {
+    throw new RangeError('decimals must be an integer in [0, 1000]');
+  }
+  return decimals;
+}
+
 export function exactDecimal(a, decimals) {
   check(a);
-  if (!Number.isInteger(decimals) || decimals < 0) throw new RangeError('decimals must be a non-negative integer');
+  assertDecimals(decimals);
   const scale = 10n ** BigInt(decimals);
   const scaled = a.n * scale;
   if (scaled % a.d !== 0n) {
@@ -120,6 +127,7 @@ export function exactDecimal(a, decimals) {
  */
 export function approxDecimal(a, decimals = 6) {
   check(a);
+  assertDecimals(decimals);
   const scale = 10n ** BigInt(decimals);
   const scaled = (a.n * scale) / a.d;
   const negative = scaled < 0n;
@@ -149,6 +157,7 @@ export function isqrt(value) {
  */
 export function approxSqrt(a, decimals = 4) {
   check(a);
+  assertDecimals(decimals);
   if (a.n < 0n) throw new RangeError('approxSqrt of a negative rational');
   const scale = 10n ** BigInt(2 * decimals);
   const root = isqrt((a.n * scale) / a.d);

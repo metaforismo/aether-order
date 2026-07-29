@@ -188,7 +188,11 @@ function canonicalParams(params) {
  */
 export function claimSignature(variantId, family, instance) {
   const variant = assertVariant(variantId);
-  const key = `${variant.id}|${family.code}|${instance.label}`;
+  // Key on what actually determines the bitmap — the family code and the
+  // canonical parameters — never on the label. A label is adapter-authored
+  // metadata; keying on it would let a caller with a hand-built instance whose
+  // label disagreed with its params poison the cache for the real instance.
+  const key = `${variant.id}|${family.code}|${canonicalParams(instance.params)}`;
   const cached = claimSignatureCache.get(key);
   if (cached) return cached;
   const views = viewsFor(variant.id);
@@ -217,13 +221,27 @@ export function catalogueDigest(variantId) {
   const variant = assertVariant(variantId);
   const cached = catalogueDigestCache.get(variant.id);
   if (cached) return cached;
+  const digest = digestCatalogue(variant.id);
+  catalogueDigestCache.set(variant.id, digest);
+  return digest;
+}
 
+/**
+ * The uncached digest, parameterised by the family list.
+ *
+ * Exported so the test suite can digest a *tampered* catalogue through the real
+ * code path. A test that reimplements the digest locally proves nothing about
+ * the production one — it would pass even if `catalogueDigest` ignored
+ * behaviour entirely.
+ */
+export function digestCatalogue(variantId, families = BET_FAMILIES) {
+  const variant = assertVariant(variantId);
   const { n } = variant;
   const views = viewsFor(variant.id);
   const hash = createHash('sha256');
-  hash.update(encodeFields(['catalogue', MODULE_VERSION, GAME_ID, variant.id, n, views.length, BET_FAMILIES.length]));
+  hash.update(encodeFields(['catalogue', MODULE_VERSION, GAME_ID, variant.id, n, views.length, families.length]));
   const bitmap = Buffer.alloc(Math.ceil(views.length / 8));
-  for (const family of BET_FAMILIES) {
+  for (const family of families) {
     const instances = family.instances(n, { permutationCount: views.length });
     hash.update(encodeFields(['family', family.code, family.tier, instances.length]));
     for (const instance of instances) {
@@ -237,9 +255,7 @@ export function catalogueDigest(variantId) {
       hash.update(encodeFields([instance.label, canonicalParams(instance.params), bitmap]));
     }
   }
-  const digest = hash.digest('hex');
-  catalogueDigestCache.set(variant.id, digest);
-  return digest;
+  return hash.digest('hex');
 }
 
 /**

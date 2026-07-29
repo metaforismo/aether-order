@@ -115,10 +115,16 @@ describe('published limits', () => {
   });
 
   it('rejects a ticket above the total stake limit', () => {
-    const lines = Array.from({ length: LIMITS.maxLinesPerTicket }, () =>
-      line({ stakeChips: LIMITS.maxLineStakeChips }),
+    // DISTINCT claims, so the duplicate rule cannot short-circuit the check and
+    // hide a missing total-stake limit: 5 x 5,000 = 25,000 > 20,000.
+    const lines = [0, 1, 2, 3, 4].map((c) =>
+      line({ params: { c }, stakeChips: LIMITS.maxLineStakeChips }),
     );
+    expect(lines).toHaveLength(5);
+    expect(lines.reduce((sum, l) => sum + l.stakeChips, 0n)).toBeGreaterThan(LIMITS.maxTicketStakeChips);
     expect(() => settleTicket(t, { lines })).toThrow(AetherOrderError);
+    // One line fewer is under the limit and must settle.
+    expect(() => settleTicket(t, { lines: lines.slice(0, 4) })).not.toThrow();
   });
 
   it('rejects an unknown bet code and illegal parameters with coded errors', () => {
@@ -143,16 +149,63 @@ describe('published limits', () => {
   });
 
   it('rejects a duplicated claim — the stake ceiling is per claim, not per row', () => {
-    const duplicate = () => settleTicket(t, { lines: [line(), line()] });
-    expect(duplicate).toThrow(AetherOrderError);
-    try {
-      duplicate();
-    } catch (error) {
-      expect(error.code).toBe('DUPLICATE_LINE');
-    }
-    // The same family with different parameters is fine.
+    const code = (fn) => {
+      try {
+        fn();
+        return null;
+      } catch (error) {
+        return error.code;
+      }
+    };
+    // Syntactically identical.
+    expect(code(() => settleTicket(t, { lines: [line(), line()] }))).toBe('DUPLICATE_LINE');
+
+    // Behaviourally identical but spelled differently. This is the case that
+    // matters: `first {c:0}` and `slot {c:0,k:0}` win on exactly the same 24
+    // permutations, so allowing both would hand back the per-line ceiling.
+    // A syntactic (code|label) check would let this through.
+    expect(
+      code(() =>
+        settleTicket(t, {
+          lines: [
+            { code: 'first', params: { c: 0 }, stakeChips: LIMITS.maxLineStakeChips },
+            { code: 'slot', params: { c: 0, k: 0 }, stakeChips: LIMITS.maxLineStakeChips },
+          ],
+        }),
+      ),
+    ).toBe('DUPLICATE_LINE');
+    // ... and in the other order, and for the LAST/SLOT alias too.
+    expect(
+      code(() =>
+        settleTicket(t, {
+          lines: [
+            { code: 'slot', params: { c: 2, k: 2 }, stakeChips: 25n },
+            { code: 'slot', params: { c: 2, k: 2 }, stakeChips: 25n },
+          ],
+        }),
+      ),
+    ).toBe('DUPLICATE_LINE');
+    expect(
+      code(() =>
+        settleTicket(t, {
+          lines: [
+            { code: 'last', params: { c: 3 }, stakeChips: 25n },
+            { code: 'slot', params: { c: 3, k: 4 }, stakeChips: 25n },
+          ],
+        }),
+      ),
+    ).toBe('DUPLICATE_LINE');
+
+    // Genuinely different claims are fine, including near-misses.
+    expect(() => settleTicket(t, { lines: [line(), line({ params: { c: 1 } })] })).not.toThrow();
     expect(() =>
-      settleTicket(t, { lines: [line(), line({ params: { c: 1 } })] }),
+      settleTicket(t, {
+        lines: [
+          { code: 'first', params: { c: 0 }, stakeChips: 25n },
+          { code: 'early', params: { c: 0 }, stakeChips: 25n }, // wins on 48, not 24
+          { code: 'slot', params: { c: 0, k: 1 }, stakeChips: 25n },
+        ],
+      }),
     ).not.toThrow();
   });
 

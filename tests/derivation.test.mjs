@@ -13,11 +13,12 @@ import { describe, expect, it } from 'vitest';
 
 import { canonicalJson, encodeFields, sha256Hex } from '../tools/lib/canonical.mjs';
 import { BET_FAMILIES } from '../tools/lib/bets.mjs';
-import { allPermutations, permutationRank, positionsOf } from '../tools/lib/permutations.mjs';
 import {
   AetherOrderError,
   adapterFingerprint,
   catalogueDigest,
+  claimSignature,
+  digestCatalogue,
   derivePermutation,
   makeTranscript,
   normalizeServerSeed,
@@ -34,6 +35,9 @@ const FIXTURES = JSON.parse(readFileSync(join(ROOT, 'tests', 'fixtures', 'transc
 const SEED_A = 'a'.repeat(64);
 const SEED_B = `${'0'.repeat(63)}1`;
 const ctx = (over = {}) => ({ variantId: 'classic', roundId: 'r-1', clientSeed: 'axiom', nonce: 0, ...over });
+
+/** Frozen: SHA-256 of encodeFields(['aether-order', 1n, 2]). */
+const GOLDEN_FIELD_DIGEST = '20cde8918719d4e71c26b8d84c8aea5a0ae17c125ffa83bb81818ba4472a4754';
 
 describe('frozen wire-format fixtures', () => {
   it('carries vectors for every variant', () => {
@@ -111,10 +115,13 @@ describe('canonical encoding', () => {
     expect(() => encodeFields([Number.MAX_SAFE_INTEGER + 1])).toThrow(TypeError);
   });
 
-  it('produces a stable digest for a stable field vector', () => {
-    expect(sha256Hex(encodeFields(['aether-order', 1n, 2]))).toBe(
-      sha256Hex(encodeFields(['aether-order', 1n, 2])),
-    );
+  it('produces a frozen golden digest for a fixed field vector', () => {
+    // A golden constant, not a self-comparison: a constant-returning or
+    // reordered encoder fails here. Regenerate only for an intentional
+    // protocol change, which is also a commitment-format change.
+    expect(sha256Hex(encodeFields(['aether-order', 1n, 2]))).toBe(GOLDEN_FIELD_DIGEST);
+    expect(sha256Hex(encodeFields(['aether-order', 2, 1n]))).not.toBe(GOLDEN_FIELD_DIGEST);
+    expect(sha256Hex(encodeFields(['aether-order', 1n]))).not.toBe(GOLDEN_FIELD_DIGEST);
   });
 });
 
@@ -323,27 +330,55 @@ describe('commitments', () => {
   });
 
   it('the adapter fingerprint binds catalogue BEHAVIOUR, not just its declaration', () => {
-    // A predicate change with identical codes and multipliers must still move
-    // the fingerprint, otherwise an open liability could be re-resolved.
+    // Tampered catalogues are digested through the PRODUCTION code path
+    // (digestCatalogue), not a local reimplementation — a reimplementation
+    // would pass even if catalogueDigest ignored behaviour entirely.
     const honest = catalogueDigest('classic');
-    const tampered = BET_FAMILIES.map((family) =>
+    expect(honest).toMatch(/^[0-9a-f]{64}$/u);
+    expect(digestCatalogue('classic')).toBe(honest);
+    expect(digestCatalogue('classic', [...BET_FAMILIES])).toBe(honest);
+
+    // Same code, same instances, same multiplier — only the predicate flips
+    // from "first" to "last". The digest must move.
+    const flipped = BET_FAMILIES.map((family) =>
       family.code === 'first'
         ? { ...family, resolve: (instance, view) => view.pos[instance.params.c] === view.n - 1 }
         : family,
     );
-    const digestOf = (families) => {
-      const perms = allPermutations(5);
-      const views = perms.map((perm) => ({ perm, pos: positionsOf(perm), rank: permutationRank(perm), n: 5 }));
-      return families
-        .map((family) =>
-          family
-            .instances(5, { permutationCount: perms.length })
-            .map((instance) => views.map((view) => (family.resolve(instance, view) ? '1' : '0')).join(''))
-            .join('|'),
-        )
-        .join('#');
-    };
-    expect(digestOf(tampered)).not.toBe(digestOf([...BET_FAMILIES]));
-    expect(honest).toMatch(/^[0-9a-f]{64}$/u);
+    expect(digestCatalogue('classic', flipped)).not.toBe(honest);
+
+    // Same behaviour, same labels — only a parameter key is renamed. Ticket
+    // matching would break, so the digest must move too.
+    const renamed = BET_FAMILIES.map((family) =>
+      family.code === 'first'
+        ? {
+            ...family,
+            instances: (n) =>
+              Array.from({ length: n }, (_, colour) =>
+                Object.freeze({ code: 'first', params: Object.freeze({ colour }), label: `f${colour}` }),
+              ),
+            resolve: (instance, view) => view.pos[instance.params.colour] === 0,
+          }
+        : family,
+    );
+    expect(digestCatalogue('classic', renamed)).not.toBe(honest);
+
+    // Dropping a family entirely must move it as well.
+    expect(digestCatalogue('classic', BET_FAMILIES.filter((f) => f.code !== 'link'))).not.toBe(honest);
+  });
+
+  it('claim signatures are keyed on parameters, not on adapter-authored labels', () => {
+    const first = BET_FAMILIES.find((family) => family.code === 'first');
+    const slot = BET_FAMILIES.find((family) => family.code === 'slot');
+    const honest = claimSignature('classic', first, { code: 'first', params: { c: 0 }, label: 'f0' });
+
+    // A hand-built instance whose label lies about its params must not be able
+    // to poison the cache entry for the real instance.
+    claimSignature('classic', first, { code: 'first', params: { c: 1 }, label: 'f0' });
+    expect(claimSignature('classic', first, { code: 'first', params: { c: 0 }, label: 'f0' })).toBe(honest);
+
+    // Behavioural aliases across families share a signature; near-misses do not.
+    expect(claimSignature('classic', slot, { code: 'slot', params: { c: 0, k: 0 }, label: '0@0' })).toBe(honest);
+    expect(claimSignature('classic', slot, { code: 'slot', params: { c: 0, k: 1 }, label: '0@1' })).not.toBe(honest);
   });
 });

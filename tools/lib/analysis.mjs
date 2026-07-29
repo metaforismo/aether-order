@@ -444,14 +444,21 @@ export function optimalityWitness(variant, winners, lines, totalStakeChips) {
     independentTop.length === chosen.length &&
     independentTop.every((multiplier, index) => eq(multiplier, chosen[index]));
 
+  // "Nothing left to buy" means literally that: either the ticket budget is
+  // spent, or the line limit is reached AND every line already sits at the
+  // per-line ceiling. Accepting "12 lines" alone would call a ticket of twelve
+  // minimum stakes optimal while 19,700 chips of budget sat unused.
+  const everyLineAtCeiling = lines.every((line) => line.stakeChips === LIMITS.maxLineStakeChips);
   const budgetExhausted =
-    totalStakeChips === LIMITS.maxTicketStakeChips || lines.length === LIMITS.maxLinesPerTicket;
+    totalStakeChips === LIMITS.maxTicketStakeChips ||
+    (lines.length === LIMITS.maxLinesPerTicket && everyLineAtCeiling);
 
   return Object.freeze({
     optimal: noBetterUnchosen && matchesIndependentSelection && budgetExhausted,
     noBetterUnchosen,
     matchesIndependentSelection,
     budgetExhausted,
+    everyLineAtCeiling,
   });
 }
 

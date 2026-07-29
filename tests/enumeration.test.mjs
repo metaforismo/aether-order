@@ -179,6 +179,23 @@ describe.each(VARIANT_IDS)('variant %s', (variantId) => {
     expect(optimalityWitness(variant, winners, goodLines, LIMITS.maxTicketStakeChips).optimal).toBe(true);
   });
 
+  it('the optimality witness rejects a full line count at minimum stakes', () => {
+    // Reaching the 12-line limit is not "nothing left to buy" if the lines sit
+    // at the minimum stake — 19,700 chips of budget would still be unspent.
+    // The witness must require the budget spent, or the line limit reached with
+    // every line already at the per-line ceiling.
+    const winners = Array.from({ length: LIMITS.maxLinesPerTicket }, (_, i) => ({
+      code: 'slot',
+      params: { c: i % variant.n, k: i % variant.n },
+      multiplier: variant.multipliers.slot,
+    }));
+    const cheap = winners.map((w) => ({ code: w.code, params: w.params, stakeChips: LIMITS.minLineStakeChips }));
+    const cheapWitness = optimalityWitness(variant, winners, cheap, LIMITS.minLineStakeChips * 12n);
+    expect(cheapWitness.optimal).toBe(false);
+    expect(cheapWitness.budgetExhausted).toBe(false);
+    expect(cheapWitness.everyLineAtCeiling).toBe(false);
+  });
+
   it('keeps variance consistent with the closed form rho^2 * (1/p - 1)', () => {
     const rhoSquared = mul(TARGET_RTP, TARGET_RTP);
     for (const row of analysis.rows) {
