@@ -1016,6 +1016,7 @@ Integrations branch on `code`, never on message text.
 | `INEXACT_PAYOUT` | `stake × multiplier` is not an integer — never rounds, always throws |
 | `IDEMPOTENCY_CONFLICT` | same key, different payload or action; or an unknown action |
 | `CYCLE_FLOOR` | COMMIT arrived before `play.minRoundCycleMs` elapsed, or the rolling round ceiling is reached — RGS-raised, never a client state |
+| `BETTING_CLOSED` | a shared-chamber `ticket.commit` reached the server after `settleAtEpochMs − commitLeadMs + commitGraceMs` on the server's clock. Hard `no bet`: the stake is unspent and the ticket is never queued into the next draw — docs/DESIGN.md §5 S10 |
 
 The receipt path reuses the table above rather than adding a parallel one:
 a receipt that does not bind the supplied ticket or settlement is

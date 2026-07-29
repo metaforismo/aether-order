@@ -596,6 +596,40 @@ only structural difference is that the round's clock belongs to the server.
   ticket: it is not placed, not carried over, not auto-committed. The CTA
   disables and reads `BETTING CLOSED · next draw in 3s`. This is §10's
   latency rule, and the lobby is the one place it could plausibly be violated.
+
+**The boundary rule, because a bar emptying is not a specification.** Round 4
+said the window closes and stopped there: it did not say which clock decides,
+whether there is any lead time before the settle, or what happens to a commit
+that leaves the client inside the window and arrives after it. The dangerous
+failure was already impossible — `roundId` is bound into `ticketDigest`, so a
+late ticket cannot silently roll into the next draw — but with no specified
+grace, every player on a slow connection systematically loses the draws they
+commit to near the boundary, in the one place this document names as where the
+rule could plausibly be broken. Four values, published in `docs/paytable.json`
+as `sharedChamber` and frozen in `tools/lib/model.mjs`:
+
+| Instant | Value | What happens |
+| --- | --- | --- |
+| `settleAtEpochMs − commitLeadMs − clientSafetyMs` | lead 750 ms, safety 250 ms | The client disables COMMIT. It closes **early on purpose**: a CTA that is live when a commit could not land is a button that lies. |
+| `settleAtEpochMs − commitLeadMs` | | The window closes. The server stops accepting new tickets for this draw. |
+| `+ commitGraceMs` | 250 ms | Last arrival the server accepts. This is the latency allowance: a commit that left the client inside the window and spent up to 250 ms in flight is still a bet. |
+| `settleAtEpochMs` | | The draw settles. |
+
+- **The server's clock is authoritative**, always. The client estimates the
+  offset from `round.open` and uses it only to drive its own countdown; a client
+  whose clock is wrong loses nothing but its own display accuracy, because
+  acceptance is decided server-side on arrival.
+- **A commit arriving after the grace is rejected with `BETTING_CLOSED`**
+  (`docs/ENGINE.md` §9). The stake is unspent, the wallet is untouched, the
+  ticket stays on screen unplaced, and the client shows *"that draw closed —
+  your ticket is still here"*. It is never queued into the next draw: a queued
+  bet is a latency-sensitive money decision by another name, and §10 bans those.
+- **`commitGraceMs < commitLeadMs`**, so the last acceptable arrival is strictly
+  before the settle. Nothing leaks inside the grace: the seed was committed at
+  `round.open` and is revealed only after settlement, so a ticket accepted at the
+  very edge is a ticket on an outcome nobody knows yet.
+- **A closed window never reopens within its draw.** No retry, no "the server was
+  slow, try again" — that is a countdown that can expire into a bet.
 - **The presence row shows a count of tickets.** Not balances, not wins, not
   names, not a leaderboard. The ticker shows *what people bet*, never *how much*
   and never *how they did* — a leaderboard is a wagering incentive in a social
@@ -628,7 +662,7 @@ all of them small:
 | --- | --- | --- | --- |
 | `round.open` — round id, nonce, variant, `seedCommitment`, `settleAtEpochMs` | server → client | ~210 B | once per draw |
 | `presence` — ticket count, up to 8 anonymised claim labels | server → client | ~180 B | 2 Hz while betting is open |
-| `ticket.commit` — the ticket, idempotency key | client → server | ~120–400 B | once per player per draw |
+| `ticket.commit` — the ticket, idempotency key | client → server | ~120–400 B | once per player per draw, accepted until `settleAtEpochMs − commitLeadMs + commitGraceMs` on the **server's** clock, then `BETTING_CLOSED` |
 | `round.reveal` — server seed, settlement, receipt | server → client | ~420 B | once per draw |
 
 At `T = 6 s` that is under 1.5 kB/s down and a few hundred bytes up per player.

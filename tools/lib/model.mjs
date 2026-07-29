@@ -135,6 +135,52 @@ export const PLAY_POLICY = Object.freeze({
   autoplay: 'none',
 });
 
+/**
+ * The shared chamber's betting window (docs/DESIGN.md §5 S10, §13.2).
+ *
+ * §13.2 claims the lobby is "specified rather than gestured at" and lists "the
+ * latency rule" among what is covered, and §10 makes latency-sensitive money
+ * decisions a release blocker. The protocol table nonetheless specified
+ * `ticket.commit` with no rule for a commit that leaves the client inside the
+ * window and reaches the server after it closed: whether it is rejected,
+ * whether there is any lead time, and which clock decides were all unstated,
+ * and `docs/ENGINE.md` §9 had `CYCLE_FLOOR` for pacing and nothing for a closed
+ * window.
+ *
+ * The dangerous failure mode was already structurally impossible — `roundId` is
+ * bound into `ticketDigest`, so a late ticket cannot silently roll into the next
+ * draw — which is why this was a gap in the specification rather than in the
+ * design. What was missing is the part that costs a real player: with no
+ * specified grace, everyone on a slow connection systematically loses the draws
+ * they commit to near the boundary.
+ *
+ * Four values, in the order the boundary is crossed:
+ *
+ *   settleAtEpochMs - commitLeadMs - clientSafetyMs   the CTA disables
+ *   settleAtEpochMs - commitLeadMs                    the window closes
+ *   ... + commitGraceMs                               last accepted arrival
+ *   settleAtEpochMs                                   the draw settles
+ *
+ * `commitGraceMs < commitLeadMs` is required, so the last acceptable arrival is
+ * strictly before the settle. Nothing in the grace period leaks: the seed is
+ * committed at `round.open` and revealed only after settlement, so a ticket
+ * accepted inside the grace is a ticket on an outcome nobody knows.
+ */
+export const SHARED_CHAMBER_POLICY = Object.freeze({
+  /** The server's clock decides. A client's estimate of it never does. */
+  clockAuthority: 'server',
+  /** How long before `settleAtEpochMs` the betting window closes. */
+  commitLeadMs: 750,
+  /** Server-side allowance for a commit that left the client in time. */
+  commitGraceMs: 250,
+  /** The client disables COMMIT this much earlier, so the CTA never lies. */
+  clientSafetyMs: 250,
+  /** Below this the rolling ceiling starts binding — docs/DESIGN.md §5 S10. */
+  minCadenceMs: 4000,
+  /** A window that has closed stays closed for that draw. Never reopened. */
+  reopensWithinDraw: false,
+});
+
 /** The only legal value of `PLAY_POLICY.autoplay` in this specification. */
 export const AUTOPLAY_MODES = Object.freeze(['none']);
 

@@ -49,6 +49,7 @@ import {
   LIMITS,
   MODULE_VERSION,
   PLAY_POLICY,
+  SHARED_CHAMBER_POLICY,
   STAKE_LADDER,
   STAKE_QUANTUM,
   TARGET_RTP,
@@ -400,6 +401,22 @@ const machine = {
   },
   /** Stamped into every round snapshot so loosening the policy leaves a trace. */
   playPolicyDigest: playPolicyDigest(),
+  /**
+   * The shared chamber's betting window. Published because "the bar empties" is
+   * not a rule an implementer can build: a lobby needs to know which clock
+   * decides, how much lead time the close has, and how much in-flight latency
+   * is still a bet. See docs/DESIGN.md §5 S10.
+   */
+  sharedChamber: {
+    clockAuthority: SHARED_CHAMBER_POLICY.clockAuthority,
+    commitLeadMs: SHARED_CHAMBER_POLICY.commitLeadMs,
+    commitGraceMs: SHARED_CHAMBER_POLICY.commitGraceMs,
+    clientSafetyMs: SHARED_CHAMBER_POLICY.clientSafetyMs,
+    minCadenceMs: SHARED_CHAMBER_POLICY.minCadenceMs,
+    reopensWithinDraw: SHARED_CHAMBER_POLICY.reopensWithinDraw,
+    /** The error a late commit raises. Never a queued or delayed bet. */
+    lateCommitErrorCode: 'BETTING_CLOSED',
+  },
   variants: {},
 };
 const markdown = [];

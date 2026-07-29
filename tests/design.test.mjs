@@ -27,6 +27,7 @@ import {
   ELEMENTS,
   PLAY_POLICY,
   REALITY_CHECK_OVERRIDE_MODES,
+  SHARED_CHAMBER_POLICY,
   effectiveRealityChecks,
 } from '../tools/lib/model.mjs';
 
@@ -264,6 +265,70 @@ describe('the speed-of-play policy is quoted consistently everywhere', () => {
     expect(published.minRoundCycleMs).toBe(PLAY_POLICY.minRoundCycleMs);
     expect(published.maxRoundsPerRollingHour).toBe(PLAY_POLICY.maxRoundsPerRollingHour);
     expect(published.skipShortensPresentationOnly).toBe(true);
+  });
+});
+
+/**
+ * The lobby's betting window.
+ *
+ * §13.2 claims the shared chamber is "specified rather than gestured at" and
+ * lists "the latency rule" among what is covered; §10 makes latency-sensitive
+ * money decisions a release blocker. But the protocol table specified
+ * `ticket.commit` with no rule for a commit that leaves the client inside the
+ * window and arrives after it — no authoritative clock, no lead time, no grace,
+ * and no error code in ENGINE §9. The dangerous case was already impossible
+ * (roundId is bound into ticketDigest, so a late ticket cannot roll into the
+ * next draw); what was missing is the part that costs a real player on 4G.
+ */
+describe('the shared-chamber betting window is a rule, not a bar emptying', () => {
+  it('the four instants are ordered so the last acceptance precedes the settle', () => {
+    const p = SHARED_CHAMBER_POLICY;
+    expect(p.clockAuthority).toBe('server');
+    // The grace must fit inside the lead, or a ticket could be accepted at or
+    // after the settle — which is the one thing the lead time exists to prevent.
+    expect(p.commitGraceMs).toBeGreaterThan(0);
+    expect(p.commitGraceMs).toBeLessThan(p.commitLeadMs);
+    // The client closes strictly earlier than the server does, so the CTA is
+    // never live at a moment when a commit could not land.
+    expect(p.clientSafetyMs).toBeGreaterThan(0);
+    // And the whole window fits inside the shortest legal cadence.
+    expect(p.commitLeadMs + p.clientSafetyMs).toBeLessThan(p.minCadenceMs);
+    expect(p.reopensWithinDraw).toBe(false);
+  });
+
+  it('the cadence floor is the one §5 S10 argues for from the rolling ceiling', () => {
+    // T >= 4 s, because below it the 900-round ceiling starts binding and a
+    // player would spend part of every hour locked out of a room they watch.
+    const drawsPerHour = 3_600_000 / SHARED_CHAMBER_POLICY.minCadenceMs;
+    expect(drawsPerHour).toBe(PLAY_POLICY.maxRoundsPerRollingHour);
+    expect(DESIGN).toContain('| 4 s | 900 | the rolling ceiling, exactly |');
+  });
+
+  it('a late commit has an error code of its own, and it means no bet', () => {
+    const errors = ENGINE.slice(ENGINE.indexOf('## 9. Errors and limits'));
+    expect(errors).toContain('`BETTING_CLOSED`');
+    expect(errors).toMatch(/never queued into the next draw/u);
+    // CYCLE_FLOOR is a different thing and must not be reused for this.
+    expect(errors).toContain('`CYCLE_FLOOR`');
+  });
+
+  it('docs/DESIGN.md publishes every value and names the authoritative clock', () => {
+    const s10 = DESIGN.slice(DESIGN.indexOf('### S10 — SHARED CHAMBER'), DESIGN.indexOf('## 6. Art direction'));
+    expect(s10).toContain('lead 750 ms, safety 250 ms');
+    expect(s10).toContain('250 ms');
+    expect(s10).toMatch(/server's clock is authoritative/u);
+    expect(s10).toContain('`BETTING_CLOSED`');
+    expect(s10).toMatch(/closed window never reopens/u);
+  });
+
+  it('docs/paytable.json publishes it for the lobby implementer', () => {
+    const published = JSON.parse(read('docs/paytable.json')).sharedChamber;
+    expect(published.clockAuthority).toBe(SHARED_CHAMBER_POLICY.clockAuthority);
+    expect(published.commitLeadMs).toBe(SHARED_CHAMBER_POLICY.commitLeadMs);
+    expect(published.commitGraceMs).toBe(SHARED_CHAMBER_POLICY.commitGraceMs);
+    expect(published.clientSafetyMs).toBe(SHARED_CHAMBER_POLICY.clientSafetyMs);
+    expect(published.minCadenceMs).toBe(SHARED_CHAMBER_POLICY.minCadenceMs);
+    expect(published.lateCommitErrorCode).toBe('BETTING_CLOSED');
   });
 });
 

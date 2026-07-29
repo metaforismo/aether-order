@@ -21,6 +21,15 @@
     "skipShortensPresentationOnly": true
   },
   "playPolicyDigest": "6d543d966f6425f00464c51d7878ddbbeb95f7f0b7aeb5bfc6593a751aabf0bd",
+  "sharedChamber": {
+    "clientSafetyMs": 250,
+    "clockAuthority": "server",
+    "commitGraceMs": 250,
+    "commitLeadMs": 750,
+    "lateCommitErrorCode": "BETTING_CLOSED",
+    "minCadenceMs": 4000,
+    "reopensWithinDraw": false
+  },
   "variants": {
     "classic": {
       "adapterFingerprint": "7413f2a591dba605916dd1f8c09e713d0b8a45830ad8b31a42e3f1d016cabe1a",
