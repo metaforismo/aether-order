@@ -20,7 +20,7 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
-    testTimeout: 120_000,
+    testTimeout: 300_000,
     hookTimeout: 120_000,
     /*
      * Several files are exhaustive and CPU-bound. File concurrency can starve

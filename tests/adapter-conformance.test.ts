@@ -40,9 +40,10 @@ describe('the packaged adapter', () => {
     ]);
     // No inline timeout. This test used to carry its own 60 s, which was the
     // right instinct applied to one file out of nine — and once vitest.config.ts
-    // set 120 s for every file, the inline value became a *lower* bound that
-    // undercut it. The n = 7 sweep here legitimately runs for over a minute on
-    // a loaded machine.
+    // set a shared proof-suite timeout, the inline value became a *lower* bound
+    // that undercut it. The n = 7 sweep here can take several minutes on a
+    // heavily loaded machine; tools/bench.mjs, not this timeout, is the
+    // performance budget.
   });
 
   it('publishes a play policy that cannot be loosened by a player', () => {
