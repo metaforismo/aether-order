@@ -214,18 +214,29 @@ export class SharedChamber {
 
   #settle(draw: LobbyDraw): void {
     const game = gameFor(draw.variantId);
-    const transcript = makePermutationTranscript(
-      draw.serverSeed,
-      game,
-      {
-        gameId: game.id,
-        variantId: draw.variantId,
-        roundId: draw.roundId,
-        clientSeed: '',
-        nonce: draw.nonce,
-      },
-      draw.previousCommitment,
-    );
+    let transcript: PermutationTranscript;
+    try {
+      transcript = makePermutationTranscript(
+        draw.serverSeed,
+        game,
+        {
+          gameId: game.id,
+          variantId: draw.variantId,
+          roundId: draw.roundId,
+          clientSeed: '',
+          nonce: draw.nonce,
+        },
+        draw.previousCommitment,
+      );
+    } catch (error) {
+      // A draw-wide derivation failure happens before any player can be
+      // credited, so every staged debit belongs to the same failed unit.
+      for (const entry of draw.entries.values()) {
+        this.#store.rollbackStagedTicket(entry.session, entry.round);
+        this.#store.discardUnstagedRound(entry.session, entry.round);
+      }
+      throw error;
+    }
     draw.transcript = transcript;
     draw.settled = true;
     this.#previousCommitment = transcript.commitment;
@@ -237,9 +248,11 @@ export class SharedChamber {
         this.#store.finishRound(entry.session, entry.round, transcript);
         this.#store.markLobbySeedRevealed(entry.round);
       } catch {
-        // One player's settlement must not strand the rest of the room, and
-        // must not stop the next draw from opening. `finishRound` rolled the
-        // player's internal round back, so its seed remains unrevealed.
+        // `finishRound` restores its credit-side patch; this restores the
+        // earlier staged debit and replay identity too. The now-unbet shell is
+        // discarded, while every other entry and the next draw continue.
+        this.#store.rollbackStagedTicket(entry.session, entry.round);
+        this.#store.discardUnstagedRound(entry.session, entry.round);
       }
     }
     this.#emit({ type: 'round.reveal', draw });

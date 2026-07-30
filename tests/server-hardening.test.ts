@@ -45,6 +45,92 @@ function medianGetMs(store: SessionStore, sessionId: string, samples: number): n
 }
 
 describe('AO-01 wallet patches are exception-atomic', () => {
+  it('unwinds the staged debit when solo settlement fails, then retries the whole bet', () => {
+    let crash = true;
+    const faults: SessionStoreTestFaults = {
+      beforeFinishSettlement: () => {
+        if (!crash) return;
+        crash = false;
+        throw new Error('injected debit-to-credit crash');
+      },
+    };
+    const store = new SessionStore({ now: () => 1_800_000_000_000, testFaults: faults });
+    const session = store.create();
+    const round = store.openRound(session);
+    const before = store.get(session.id);
+
+    expect(() =>
+      store.commit(session, {
+        roundId: round.roundId,
+        clientSeed: 'composition-boundary',
+        lines: [LINE],
+      }),
+    ).toThrow('injected debit-to-credit crash');
+
+    const rolledBack = store.get(session.id);
+    expect(rolledBack.balanceChips).toBe(before.balanceChips);
+    expect(rolledBack.stakedChips).toBe(before.stakedChips);
+    expect(rolledBack.creditedChips).toBe(before.creditedChips);
+    expect(rolledBack.commitsByIdempotencyKey.size).toBe(0);
+    expect(store.getRound(rolledBack, round.roundId)).toMatchObject({
+      phase: 'COMMITTED',
+      ticket: null,
+      ticketBinding: null,
+      settlement: null,
+    });
+
+    const retried = store.commit(session, {
+      roundId: round.roundId,
+      clientSeed: 'composition-boundary',
+      lines: [LINE],
+    });
+    expect(retried.replayed).toBe(false);
+    expect(retried.round.phase).toBe('SETTLED');
+    expect(retried.round.settlement).not.toBeNull();
+  });
+
+  it('refunds one failed lobby entry without interrupting the rest of the room', () => {
+    vi.useFakeTimers();
+    let now = 1_800_000_000_000;
+    let finishCalls = 0;
+    const faults: SessionStoreTestFaults = {
+      beforeFinishSettlement: () => {
+        finishCalls += 1;
+        if (finishCalls === 1) throw new Error('injected lobby settlement crash');
+      },
+    };
+    const store = new SessionStore({ now: () => now, testFaults: faults });
+    const chamber = new SharedChamber(store, 4_000);
+    const failedSession = store.create();
+    const settledSession = store.create();
+    const failedBefore = store.get(failedSession.id);
+    try {
+      chamber.start();
+      const draw = chamber.draw!;
+      chamber.commit(failedSession, { roundId: draw.roundId, lines: [LINE] });
+      chamber.commit(settledSession, { roundId: draw.roundId, lines: [LINE] });
+
+      now += 4_000;
+      vi.advanceTimersByTime(4_000);
+
+      const failedAfter = store.get(failedSession.id);
+      expect(failedAfter.balanceChips).toBe(failedBefore.balanceChips);
+      expect(failedAfter.stakedChips).toBe(failedBefore.stakedChips);
+      expect(failedAfter.creditedChips).toBe(failedBefore.creditedChips);
+      expect(failedAfter.commitsByIdempotencyKey.size).toBe(0);
+      expect(failedAfter.roundsById.has(draw.roundId)).toBe(false);
+
+      const settledRound = store.getRound(settledSession, draw.roundId);
+      expect(settledRound.phase).toBe('SETTLED');
+      expect(settledRound.settlement).not.toBeNull();
+      expect(store.get(settledSession.id).stakedChips).toBe(LINE.stake);
+      expect(chamber.draw?.roundId).not.toBe(draw.roundId);
+    } finally {
+      chamber.stop();
+      vi.useRealTimers();
+    }
+  });
+
   it('restores the complete staged-debit state when posting throws', () => {
     const faults: SessionStoreTestFaults = {
       afterStagePatch: () => {

@@ -166,9 +166,22 @@ export type OperatorPublicKey = Readonly<Omit<OperatorKey, 'privateKey'>>;
  */
 export interface SessionStoreTestFaults {
   readonly afterStagePatch?: () => void;
+  /** Throws after debit staging but before settlement computation begins. */
+  readonly beforeFinishSettlement?: () => void;
   readonly afterFinishPatch?: () => void;
   /** Simulates a build change without mutating the frozen vendored adapter. */
   readonly ticketAdapterFingerprint?: (game: PermutationGameDefinition) => string;
+}
+
+interface StagedTicketRollback {
+  readonly balanceChips: bigint;
+  readonly stakedChips: bigint;
+  readonly ticket: Ticket | null;
+  readonly ticketBinding: AdapterTicketBinding | null;
+  readonly previousCommitment: string;
+  readonly lastCommitAt: number | null;
+  readonly commitTimestamps: readonly number[];
+  readonly commitsByIdempotencyKey: readonly (readonly [string, RoundRecord])[];
 }
 
 /**
@@ -208,6 +221,7 @@ export class SessionStore {
   readonly #sessions = new Map<string, Session>();
   readonly #sessionStates = new WeakMap<Session, Session>();
   readonly #roundStates = new WeakMap<RoundRecord, RoundRecord>();
+  readonly #stagedTicketRollbacks = new WeakMap<RoundRecord, StagedTicketRollback>();
   readonly #now: Clock;
   readonly #limits: Readonly<ServerLimits>;
   readonly #operatorKey: OperatorKey;
@@ -712,14 +726,15 @@ export class SessionStore {
       );
 
     const now = this.#now();
-    const before = {
+    const before: StagedTicketRollback = {
       balanceChips: session.balanceChips,
       stakedChips: session.stakedChips,
       ticket: round.ticket,
       ticketBinding: round.ticketBinding,
+      previousCommitment: round.previousCommitment,
       lastCommitAt: session.lastCommitAt,
-      commitTimestampLength: session.commitTimestamps.length,
-      priorCommit: session.commitsByIdempotencyKey.get(ticketBinding.idempotencyKey),
+      commitTimestamps: [...session.commitTimestamps],
+      commitsByIdempotencyKey: [...session.commitsByIdempotencyKey],
     };
     try {
       // Debit and record the matching staged bet as one exception-safe patch.
@@ -733,21 +748,50 @@ export class SessionStore {
       session.lastCommitAt = now;
       session.commitTimestamps.push(now);
       this.#testFaults?.afterStagePatch?.();
+      this.#pruneCommitTimestamps(session);
+      this.#pruneIdempotencyKeys(session);
+      this.#stagedTicketRollbacks.set(round, before);
     } catch (error) {
-      session.balanceChips = before.balanceChips;
-      session.stakedChips = before.stakedChips;
-      round.ticket = before.ticket;
-      round.ticketBinding = before.ticketBinding;
-      session.lastCommitAt = before.lastCommitAt;
-      session.commitTimestamps.length = before.commitTimestampLength;
-      if (before.priorCommit)
-        session.commitsByIdempotencyKey.set(ticketBinding.idempotencyKey, before.priorCommit);
-      else session.commitsByIdempotencyKey.delete(ticketBinding.idempotencyKey);
+      this.#restoreStagedTicket(session, round, before);
       throw error;
     }
-    this.#pruneCommitTimestamps(session);
-    this.#pruneIdempotencyKeys(session);
     return { ticket, replayed: null };
+  }
+
+  /**
+   * Unwind a successful `stageTicket` whose matching credit never landed.
+   *
+   * Solo commit and the shared chamber call this at their composition boundary;
+   * a successful `finishRound` consumes the snapshot, making later calls no-op.
+   */
+  rollbackStagedTicket(session: Session, round: RoundRecord): void {
+    session = this.#sessionState(session);
+    round = this.#roundState(round);
+    const before = this.#stagedTicketRollbacks.get(round);
+    if (!before) return;
+    this.#restoreStagedTicket(session, round, before);
+    this.#stagedTicketRollbacks.delete(round);
+  }
+
+  #restoreStagedTicket(
+    session: Session,
+    round: RoundRecord,
+    before: StagedTicketRollback,
+  ): void {
+    session.balanceChips = before.balanceChips;
+    session.stakedChips = before.stakedChips;
+    round.ticket = before.ticket;
+    round.ticketBinding = before.ticketBinding;
+    round.previousCommitment = before.previousCommitment;
+    session.lastCommitAt = before.lastCommitAt;
+    session.commitTimestamps.splice(
+      0,
+      session.commitTimestamps.length,
+      ...before.commitTimestamps,
+    );
+    session.commitsByIdempotencyKey.clear();
+    for (const [key, priorRound] of before.commitsByIdempotencyKey)
+      session.commitsByIdempotencyKey.set(key, priorRound);
   }
 
   /**
@@ -804,6 +848,7 @@ export class SessionStore {
         'Round has no adapter-bound ticket identity',
         '$.idempotencyKey',
       );
+    this.#testFaults?.beforeFinishSettlement?.();
     assertAdapterTicketBinding(
       this.#ticketIdentity(game),
       ticket.ticketDigest,
@@ -867,6 +912,7 @@ export class SessionStore {
       throw error;
     }
     this.#pruneRetainedRounds(session);
+    this.#stagedTicketRollbacks.delete(round);
     return this.#roundView(round);
   }
 
@@ -891,27 +937,32 @@ export class SessionStore {
     const staged = this.stageTicket(session, round, lines);
     if (staged.replayed) return { round: staged.replayed, replayed: true };
 
-    // The chain binds the previous SETTLED round's commitment as of now, not as
-    // of whenever this round happened to be opened: rounds can be opened and
-    // abandoned, and a stale link would fork the chain the format promises.
-    const previousCommitment = session.previousCommitment;
-    round.previousCommitment = previousCommitment;
-    const transcript = makePermutationTranscript(
-      round.serverSeed,
-      game,
-      {
-        gameId: game.id,
-        variantId: round.variantId,
-        roundId: round.roundId,
-        clientSeed,
-        nonce: round.nonce,
-      },
-      previousCommitment,
-    );
-    this.finishRound(session, round, transcript);
-    session.previousCommitment = transcript.commitment;
-    session.clientSeed = clientSeed;
-    return { round: this.#roundView(round), replayed: false };
+    try {
+      // The chain binds the previous SETTLED round's commitment as of now, not
+      // as of whenever this round happened to be opened: rounds can be opened
+      // and abandoned, and a stale link would fork the chain the format promises.
+      const previousCommitment = session.previousCommitment;
+      round.previousCommitment = previousCommitment;
+      const transcript = makePermutationTranscript(
+        round.serverSeed,
+        game,
+        {
+          gameId: game.id,
+          variantId: round.variantId,
+          roundId: round.roundId,
+          clientSeed,
+          nonce: round.nonce,
+        },
+        previousCommitment,
+      );
+      this.finishRound(session, round, transcript);
+      session.previousCommitment = transcript.commitment;
+      session.clientSeed = clientSeed;
+      return { round: this.#roundView(round), replayed: false };
+    } catch (error) {
+      this.rollbackStagedTicket(session, round);
+      throw error;
+    }
   }
 
   /**
