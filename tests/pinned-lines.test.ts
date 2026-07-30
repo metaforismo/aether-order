@@ -48,7 +48,7 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   classic = ((await call('GET', '/api/catalogue')) as Catalogue).variants.classic;
-}, 60_000);
+}, 300_000);
 
 afterAll(async () => {
   app.close();

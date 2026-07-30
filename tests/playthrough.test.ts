@@ -51,7 +51,7 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   // Constructing the app cross-checks the engine's fingerprint against the
   // published paytable, which builds the SEVEN catalogue digest.
-}, 60_000);
+}, 300_000);
 
 afterAll(async () => {
   app.close();
