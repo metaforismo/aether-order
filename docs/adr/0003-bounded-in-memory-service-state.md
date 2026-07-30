@@ -17,18 +17,22 @@ as long as the process remains alive.
 ceilings:
 
 - at most 1,024 live sessions exist in one process;
+- a round-less session with no staged ticket becomes reclaimable after 30
+  minutes without service activity;
 - each session retains its 128 most recent settled rounds and matching replay
   identities;
 - commit timestamps retain only the active rolling-hour window, with an explicit
   900-entry ceiling matching the published 900-round policy; and
 - the shared chamber accepts at most 256 simultaneous stream listeners.
 
-New sessions are refused with the typed `SERVER_CAPACITY` `ServiceError` at the
-session ceiling. We deliberately refuse instead of evicting: every retained
-session may have an open commitment or a staged shared-chamber ticket, and the
-server cannot infer that money-shaped state is safe to abandon. Streams use the
-same typed capacity failure and release their slot on request, response, or error
-closure.
+At the session ceiling, creation first evicts sessions whose idle time reached
+`sessionIdleEvictMs` and which have neither an open round nor any staged ticket.
+If every retained session still has one of those protected states, creation
+keeps the typed `SERVER_CAPACITY` refusal: the server cannot infer that an open
+commitment or money-shaped state is safe to abandon. The production TTL is 30
+minutes; tests may lower it through the same lower-only limits seam. Streams use
+the same typed capacity failure and release their slot on request, response, or
+error closure.
 
 Settled history uses oldest-first eviction. At the 2.5-second physical cycle
 floor, 128 rounds preserve at least 5 minutes 20 seconds of exact-retry history;
@@ -42,6 +46,8 @@ wallet mutation or retry guarantee exists for them.
 ## Consequences
 
 Memory is bounded without pretending that the prototype offers persistence.
-Callers must treat `SERVER_CAPACITY` as temporary process capacity and must save
-any receipt they need beyond the documented in-memory history window. Process
-restart still loses every session, exactly as before.
+Activity refreshes a session's idle clock, but an inactive, round-less session
+may disappear after the TTL; callers must save any receipt they need beyond the
+documented in-memory windows. `SERVER_CAPACITY` still means every slot is
+currently protected. Process restart still loses every session, exactly as
+before.

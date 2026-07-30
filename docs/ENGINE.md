@@ -1115,6 +1115,7 @@ implementation ceilings, not game mathematics:
 ```ts
 export const SERVER_LIMITS = Object.freeze({
   maxConcurrentSessions: 1024,
+  sessionIdleEvictMs: 30 * 60_000,
   maxRetainedRoundsPerSession: 128,
   maxIdempotencyKeysPerSession: 128,
   maxCommitTimestampsPerSession: 900,
@@ -1122,13 +1123,16 @@ export const SERVER_LIMITS = Object.freeze({
 });
 ```
 
-Creating a session or lobby stream beyond its ceiling fails with the typed
-service code `SERVER_CAPACITY` (HTTP 503). After settlement, oldest history and
-matching idempotency records are evicted beyond their ceilings; the newest 128
-rounds remain available for history, reveal and verification. Lobby entries are
-one `Map` entry per session per draw and become unreachable when the next draw
-replaces that draw. HTTP event-stream subscriptions unsubscribe on request
-close, response close and response error.
+At the session ceiling, creation first reclaims sessions idle for
+`sessionIdleEvictMs` when they have no open round and no staged ticket; protected
+sessions are never evicted. If no slot is reclaimable, creating a session fails
+with `SERVER_CAPACITY` (HTTP 503), as does creating a lobby stream beyond its
+ceiling. After settlement, oldest history and matching idempotency records are
+evicted beyond their ceilings; the newest 128 rounds remain available for
+history, reveal and verification while the session itself remains retained.
+Lobby entries are one `Map` entry per session per draw and become unreachable
+when the next draw replaces that draw. HTTP event-stream subscriptions
+unsubscribe on request close, response close and response error.
 
 ---
 

@@ -129,6 +129,7 @@ export interface Session {
  */
 export interface ServerLimits {
   readonly maxConcurrentSessions: number;
+  readonly sessionIdleEvictMs: number;
   readonly maxRetainedRoundsPerSession: number;
   readonly maxIdempotencyKeysPerSession: number;
   readonly maxCommitTimestampsPerSession: number;
@@ -137,6 +138,7 @@ export interface ServerLimits {
 
 export const SERVER_LIMITS: Readonly<ServerLimits> = Object.freeze({
   maxConcurrentSessions: 1_024,
+  sessionIdleEvictMs: 30 * 60_000,
   maxRetainedRoundsPerSession: 128,
   maxIdempotencyKeysPerSession: 128,
   maxCommitTimestampsPerSession: 900,
@@ -218,6 +220,7 @@ export interface RealityCheck {
 export class SessionStore {
   readonly #sessions = new Map<string, Session>();
   readonly #sessionStates = new WeakMap<Session, Session>();
+  readonly #lastActiveAt = new WeakMap<Session, number>();
   readonly #roundStates = new WeakMap<RoundRecord, RoundRecord>();
   readonly #stagedTicketRollbacks = new WeakMap<RoundRecord, StagedTicketRollback>();
   readonly #now: Clock;
@@ -268,6 +271,9 @@ export class SessionStore {
   }
 
   create(): Session {
+    const now = this.#now();
+    if (this.#sessions.size >= this.#limits.maxConcurrentSessions)
+      this.#evictIdleSessions(now);
     if (this.#sessions.size >= this.#limits.maxConcurrentSessions)
       throw new ServiceError(
         'SERVER_CAPACITY',
@@ -278,7 +284,7 @@ export class SessionStore {
     const id = randomUUID();
     const session: Session = {
       id,
-      startedAt: this.#now(),
+      startedAt: now,
       variantId: 'classic',
       balanceChips: OPENING_BALANCE_CHIPS,
       openingBalanceChips: OPENING_BALANCE_CHIPS,
@@ -300,6 +306,7 @@ export class SessionStore {
       elapsedSkewMs: 0,
     };
     this.#sessionStates.set(session, session);
+    this.#lastActiveAt.set(session, now);
     this.#sessions.set(id, session);
     return this.#sessionView(session);
   }
@@ -307,7 +314,9 @@ export class SessionStore {
   get(id: unknown): Session {
     if (typeof id !== 'string' || !this.#sessions.has(id))
       throw new ServiceError('SESSION_NOT_FOUND', 'No such session', '$.sessionId');
-    return this.#sessionView(this.#sessions.get(id) as Session);
+    const session = this.#sessions.get(id) as Session;
+    this.#lastActiveAt.set(session, this.#now());
+    return this.#sessionView(session);
   }
 
   getRound(session: Session, roundId: string): RoundRecord {
@@ -321,7 +330,21 @@ export class SessionStore {
     const state = this.#sessionStates.get(session);
     if (!state || this.#sessions.get(state.id) !== state)
       throw new ServiceError('SESSION_NOT_FOUND', 'No such session', '$.sessionId');
+    this.#lastActiveAt.set(state, this.#now());
     return state;
+  }
+
+  #evictIdleSessions(now: number): void {
+    for (const [sessionId, session] of this.#sessions) {
+      const lastActiveAt = this.#lastActiveAt.get(session) ?? session.startedAt;
+      if (now - lastActiveAt < this.#limits.sessionIdleEvictMs) continue;
+      if (session.openRound !== null) continue;
+      const hasStagedTicket = [...session.roundsById.values()].some(
+        (round) => round.phase === 'COMMITTED' && round.ticket !== null,
+      );
+      if (hasStagedTicket) continue;
+      this.#sessions.delete(sessionId);
+    }
   }
 
   #roundState(round: RoundRecord): RoundRecord {
@@ -701,7 +724,7 @@ export class SessionStore {
     const identity = this.#ticketIdentity(game);
     const ticketBinding = makeAdapterTicketBinding(identity, ticket.ticketDigest);
     if (round.ticketBinding)
-      assertAdapterTicketBinding(identity, ticket.ticketDigest, round.ticketBinding);
+      this.#assertSubmittedTicketMatchesRound(round, identity, ticket.ticketDigest);
 
     const replayed = session.commitsByIdempotencyKey.get(ticketBinding.idempotencyKey);
     if (replayed) return { ticket, replayed: this.#roundView(replayed) };
@@ -814,10 +837,36 @@ export class SessionStore {
     );
     const identity = this.#ticketIdentity(game);
     if (!round.ticketBinding) return null;
-    assertAdapterTicketBinding(identity, ticket.ticketDigest, round.ticketBinding);
+    this.#assertSubmittedTicketMatchesRound(round, identity, ticket.ticketDigest);
     const ticketBinding = makeAdapterTicketBinding(identity, ticket.ticketDigest);
     const replayed = session.commitsByIdempotencyKey.get(ticketBinding.idempotencyKey);
     return replayed ? this.#roundView(replayed) : null;
+  }
+
+  #assertSubmittedTicketMatchesRound(
+    round: RoundRecord,
+    identity: TicketAdapterIdentity,
+    submittedTicketDigest: string,
+  ): void {
+    const storedTicket = round.ticket;
+    if (storedTicket && storedTicket.ticketDigest !== submittedTicketDigest) {
+      if (round.source === 'lobby')
+        throw new ServiceError(
+          'BETTING_CLOSED',
+          'That draw already has a different ticket from this session',
+          '$.roundId',
+        );
+      throw new ServiceError(
+        'ROUND_ALREADY_SETTLED',
+        'That round already has a different ticket',
+        '$.roundId',
+      );
+    }
+    assertAdapterTicketBinding(
+      identity,
+      storedTicket?.ticketDigest ?? submittedTicketDigest,
+      round.ticketBinding as AdapterTicketBinding,
+    );
   }
 
   /**

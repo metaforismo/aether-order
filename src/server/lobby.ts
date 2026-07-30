@@ -131,11 +131,12 @@ export class SharedChamber {
   }
 
   #emit(event: LobbyEvent): void {
-    // Each listener gets its own detached view. A listener may retain or even
-    // mutate its Map copy without changing settlement state or another stream.
+    // The view is listener-agnostic and its Map surface is immutable, so one
+    // materialisation can be shared safely across every stream for this emit.
+    const emitted = { type: event.type, draw: this.#drawView(event.draw) } as LobbyEvent;
     for (const listener of this.#listeners) {
       try {
-        listener({ type: event.type, draw: this.#drawView(event.draw) } as LobbyEvent);
+        listener(emitted);
       } catch {
         // A broken stream cannot strand settlement or the next draw.
         this.#listeners.delete(listener);
@@ -150,7 +151,7 @@ export class SharedChamber {
   }
 
   #drawView(draw: LobbyDraw): LobbyDraw {
-    const entries = new Map(
+    const entries = new FrozenMap(
       [...draw.entries].map(([sessionId, entry]) => [
         sessionId,
         Object.freeze({
@@ -357,4 +358,22 @@ function deepFreeze<T>(value: T): T {
   if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
   for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
   return Object.freeze(value);
+}
+
+class FrozenMap<K, V> extends Map<K, V> {
+  constructor(entries: readonly (readonly [K, V])[]) {
+    super();
+    for (const [key, value] of entries) Map.prototype.set.call(this, key, value);
+    Object.freeze(this);
+  }
+
+  override set(_key: K, _value: V): this {
+    return this;
+  }
+
+  override delete(_key: K): boolean {
+    return false;
+  }
+
+  override clear(): void {}
 }
