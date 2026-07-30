@@ -46,12 +46,13 @@ function medianGetMs(store: SessionStore, sessionId: string, samples: number): n
 
 describe('AO-01 wallet patches are exception-atomic', () => {
   it('unwinds the staged debit when solo settlement fails, then retries the whole bet', () => {
-    let crash = true;
+    let bindingChecks = 0;
+    const fingerprint = 'a'.repeat(64);
     const faults: SessionStoreTestFaults = {
-      beforeFinishSettlement: () => {
-        if (!crash) return;
-        crash = false;
-        throw new Error('injected debit-to-credit crash');
+      ticketAdapterFingerprint: () => {
+        bindingChecks += 1;
+        if (bindingChecks === 2) throw new Error('injected debit-to-credit crash');
+        return fingerprint;
       },
     };
     const store = new SessionStore({ now: () => 1_800_000_000_000, testFaults: faults });
@@ -92,11 +93,13 @@ describe('AO-01 wallet patches are exception-atomic', () => {
   it('refunds one failed lobby entry without interrupting the rest of the room', () => {
     vi.useFakeTimers();
     let now = 1_800_000_000_000;
-    let finishCalls = 0;
+    let bindingChecks = 0;
+    const fingerprint = 'a'.repeat(64);
     const faults: SessionStoreTestFaults = {
-      beforeFinishSettlement: () => {
-        finishCalls += 1;
-        if (finishCalls === 1) throw new Error('injected lobby settlement crash');
+      ticketAdapterFingerprint: () => {
+        bindingChecks += 1;
+        if (bindingChecks === 3) throw new Error('injected lobby settlement crash');
+        return fingerprint;
       },
     };
     const store = new SessionStore({ now: () => now, testFaults: faults });

@@ -166,8 +166,6 @@ export type OperatorPublicKey = Readonly<Omit<OperatorKey, 'privateKey'>>;
  */
 export interface SessionStoreTestFaults {
   readonly afterStagePatch?: () => void;
-  /** Throws after debit staging but before settlement computation begins. */
-  readonly beforeFinishSettlement?: () => void;
   readonly afterFinishPatch?: () => void;
   /** Simulates a build change without mutating the frozen vendored adapter. */
   readonly ticketAdapterFingerprint?: (game: PermutationGameDefinition) => string;
@@ -848,7 +846,6 @@ export class SessionStore {
         'Round has no adapter-bound ticket identity',
         '$.idempotencyKey',
       );
-    this.#testFaults?.beforeFinishSettlement?.();
     assertAdapterTicketBinding(
       this.#ticketIdentity(game),
       ticket.ticketDigest,
