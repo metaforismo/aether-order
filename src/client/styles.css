@@ -28,6 +28,14 @@
  *     opacity — same 120 ms, same easing, no scale, no sound. Every celebration
  *     in this file is gated on the round, never on a line, and every one of them
  *     is behind `celebrate`.
+ *  4. **Dim a foreground with colour, a border or a fill — never with opacity.**
+ *     §11's floor is stated for tokens, and an `opacity` applied afterwards
+ *     multiplies a token that was checked at full strength by a number no table
+ *     contains. That one declaration is both of this build's shipped contrast
+ *     failures: round 1's dead ticket line at 2.08:1 and round 2's picker slot
+ *     numerals at 2.9:1 — the second shipped in the pass that declared the first
+ *     closed. `tests/client.test.mjs` fails the build on any text-bearing
+ *     selector carrying a fractional `opacity`.
  */
 
 :root {
@@ -881,6 +889,86 @@ button {
   animation: none;
 }
 /*
+ * The celebration, on the objects themselves — the round-2 verdict's biggest
+ * gap, and the whole of the fix.
+ *
+ * Measured across the 147 frames of round 1's celebration window, every `.orb`
+ * held one unchanging transform, opacity 1 and `filter: none`: the win fired an
+ * 18-wedge burst *behind* the tube, a gold ring, a gold rim and a plate that
+ * faded in, and the five objects the player had spent four seconds watching did
+ * nothing at all. So the column runs up itself in the order it settled, each
+ * sphere overshooting its own size while its emissive core blooms out into the
+ * liquid (§6.3's bloom, "applied only to emissive cores and gold").
+ *
+ * `--pop-delay` is written per sphere by `celebrate()` from the settle order, so
+ * the beat reads bottom-up like the round did. Both properties are `transform`
+ * and `opacity` on groups that are already composited (§7.1.1), and the pop's
+ * origin is pinned by the anchor circle in `#spheres` rather than by a box that
+ * the flare underneath it is busy changing.
+ */
+.orb__pop {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+/*
+ * `will-change` is on the `--won` selector, never on the resting one: it is a
+ * promotion hint with a memory cost, and five permanently promoted sphere layers
+ * to serve a beat that fires on a fraction of rounds is the wrong trade. Scoped
+ * to the class that arms the animation, it exists for the ~900 ms it is useful
+ * and the layers are dropped with the class on the next `reset`.
+ */
+.orb--won .orb__pop {
+  animation: orb-pop 620ms cubic-bezier(0.22, 1, 0.3, 1) var(--pop-delay, 0ms) both;
+  will-change: transform;
+}
+@keyframes orb-pop {
+  0% {
+    transform: scale(1);
+  }
+  26% {
+    transform: scale(1.24);
+  }
+  54% {
+    transform: scale(0.955);
+  }
+  78% {
+    transform: scale(1.045);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+/*
+ * The object's own bloom is drawn INSIDE its body, on the emissive core.
+ *
+ * The first version of this beat put a halo on the orb, and a halo is the one
+ * shape a five-slot tube cannot hold: the slots are 78 units apart in a 96-unit
+ * column, so the topmost sphere's halo painted straight over every body beneath
+ * it and a frame dump of the peak caught all five settled spheres milky at the
+ * moment of their own win. Light that has to stay off its neighbours belongs
+ * either inside the silhouette or in the cell (`.cell-flood`), and this is the
+ * inside half: §6.3's bloom on the emissive core, swelling within the body,
+ * unable to touch anything outside it by construction.
+ */
+.orb--won .orb__core {
+  animation: orb-core-bloom 900ms cubic-bezier(0.16, 1, 0.3, 1) var(--pop-delay, 0ms) both;
+  will-change: transform, opacity;
+}
+@keyframes orb-core-bloom {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  22% {
+    transform: scale(1.85);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0.9;
+  }
+}
+/*
  * §6.4's reduced-motion variant: the falls become 120 ms fades rather than fast
  * travel, because fast travel is the thing the preference exists to avoid. The
  * total duration is unchanged, so the audio phrase still lands.
@@ -913,17 +1001,25 @@ button {
 /*
  * The slot numerals. §11's 4.5:1 floor applies to them — they are foreground text
  * and they are not disabled — and round 1 shipped them at 2.36:1: `--ink-dim` at
- * 58% over a tube well that measured rgb(28,47,62). They are `--ink` at 80% over
- * the lit column now, which measures 6.8:1, and 100% once their slot is settled.
+ * 58% over a tube well that measured rgb(28,47,62).
+ *
+ * The unlit-to-lit step is a **colour** step, `--chrome` to `--ink`, and never an
+ * `opacity` one. Dimming a foreground with `opacity` is the single mechanism
+ * behind both of this build's contrast failures — round 1's dead ticket line at
+ * 2.08:1 and round 2's picker numerals at 2.9:1 — because it multiplies a token
+ * that was checked at full strength by a number nothing checks.
+ * `tests/client.test.mjs` now fails the build on any text that does it, and this
+ * declaration is what makes the gate exception-free. Measured across the lit
+ * column: 6.29:1 to 8.02:1 unlit, higher once settled.
  */
 .slot-no {
   font-size: var(--t-xxs);
   font-family: var(--mono);
-  opacity: 0.8;
-  transition: opacity 160ms linear;
+  color: var(--chrome);
+  transition: color 160ms linear;
 }
 .slot-no--lit {
-  opacity: 1;
+  color: var(--ink);
 }
 /*
  * The lock ring, in two stacked strokes.
@@ -1027,6 +1123,42 @@ button {
   }
   100% {
     transform: scale(1);
+  }
+}
+/*
+ * The tube floods with the light of what landed in it.
+ *
+ * Round 1's celebrated close washed the frame with one gold radial centred on
+ * the tube, and the settled cells measured rgb(137,115,88) at the peak of the
+ * win — khaki, on the five objects that carry all the colour in the product. A
+ * gold wash over saturated colour desaturates it; the light of the sphere in the
+ * cell does the opposite. `celebrate()` sets each cell's fill to the flare
+ * gradient of its own settled sphere, so nothing here chooses a colour.
+ *
+ * `--on` carries the resting opacity as a declaration and not only as an
+ * animation fill, so `chamber--restoring` can switch every animation off and the
+ * result screen still keeps its light through a redraw (§5 S5: the record).
+ */
+.cell-flood {
+  opacity: 0;
+}
+.cell-flood--on {
+  opacity: 0.34;
+  animation: cell-flood 1300ms cubic-bezier(0.16, 1, 0.3, 1) var(--pop-delay, 0ms) both;
+  will-change: opacity;
+}
+@keyframes cell-flood {
+  0% {
+    opacity: 0;
+  }
+  14% {
+    opacity: 1;
+  }
+  58% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0.34;
   }
 }
 
@@ -1213,6 +1345,98 @@ button {
   opacity: 1;
   transform: scale(1);
 }
+/*
+ * The landing. §9 step 5 ends the set piece on the number, and round 1 got there
+ * by cross-fading a plate in over 220 ms — the one object a player would screen-
+ * record, arriving like a tooltip. It drops from 2.3×, undershoots, and settles:
+ * a machined plate being seated into the instrument.
+ *
+ * Only on a celebrated close. A losing round still gets the quiet transition
+ * above and no impact at all, which is §9's no-manufactured-near-miss rule
+ * enforced at the render layer rather than in policy.
+ */
+.stamp--land {
+  animation: stamp-land 520ms cubic-bezier(0.2, 0.9, 0.25, 1);
+  will-change: transform, opacity;
+}
+@keyframes stamp-land {
+  0% {
+    opacity: 0;
+    transform: scale(2.3);
+  }
+  16% {
+    opacity: 1;
+  }
+  46% {
+    transform: scale(0.9);
+  }
+  72% {
+    transform: scale(1.055);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+/* The shock the landing throws: one stroke, scaled and faded. */
+.stamp-shock {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  pointer-events: none;
+}
+.stamp-shock--on {
+  animation: stamp-shock 620ms cubic-bezier(0.16, 1, 0.3, 1) 120ms;
+  will-change: transform, opacity;
+}
+@keyframes stamp-shock {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+/*
+ * The instrument answers the landing: a 3 px recoil, over 240 ms, on the tube.
+ *
+ * **On the tube, and that is measured rather than chosen.** The first version put
+ * it on the SVG's outermost group, which is the honest place for "the whole
+ * instrument recoils" and is also the most expensive animation this file could
+ * contain: a transform on the root repaints the entire 390 × 700 drawing every
+ * frame it runs. Measured over a full celebrated round at 390 × 844, that one
+ * declaration took the app from 0–1 frames over 20 ms to 17–40, with 8–14 over
+ * 32 ms; removing it put every other beat added in this pass — the per-sphere
+ * pop, the core bloom, the five cell floods, the stamp landing, the shock ring —
+ * back at 359 frames in six seconds with nothing over 20 ms. The tube is the
+ * subtree the 2 px lock flex has always used, so the cost is known to be
+ * affordable, and it is also the object the stamp lands on.
+ */
+.tube--impact {
+  animation: tube-impact 240ms cubic-bezier(0.3, 0.9, 0.4, 1);
+  will-change: transform;
+}
+@keyframes tube-impact {
+  0% {
+    transform: translate(0, 0);
+  }
+  16% {
+    transform: translate(0, -3px);
+  }
+  40% {
+    transform: translate(1.5px, 3px);
+  }
+  66% {
+    transform: translate(-1px, -1.5px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
 .stamp__value {
   font-size: var(--t-xl);
   font-weight: 700;
@@ -1281,8 +1505,23 @@ button {
  * without the plain-language gloss. The underline is the tier's volatility
  * colour, cool to hot; the label is always there beside it.
  */
+/*
+ * A grid with two shared rows, not three independent flex columns.
+ *
+ * The tabs carry two lines each — the tier and its plain-language gloss — and at
+ * 200% text `the core game` wraps inside its plate while `lands often` and
+ * `rare, big` do not. Laid out per tab, that pushed the active tab's own label
+ * 11.5 px off the baseline its neighbours share and dropped its gloss below
+ * theirs, so the row read as misaligned at exactly the scale where legibility
+ * support is the point. `subgrid` makes the three tabs share the parent's rows,
+ * so every tier name sits on one baseline and every gloss starts on another,
+ * whatever wraps.
+ */
 .tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: auto auto;
+  align-items: stretch;
   /* The second half of §11's tap rule, and it is a rule about *separation*, not
      only about size: three 44 px targets 4 px apart is three targets a thumb
      can miss into. 8 px costs 4.6 px of width per tab and each one is still
@@ -1301,15 +1540,15 @@ button {
  */
 .tab {
   position: relative;
-  flex: 1;
   min-height: var(--tap);
   padding: 4px 2px 6px;
   border-radius: 3px 3px 0 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
   align-items: center;
-  justify-content: center;
-  gap: 1px;
+  justify-items: center;
+  row-gap: 1px;
   color: var(--ink-dim);
   line-height: 1.05;
 }
@@ -1317,10 +1556,13 @@ button {
   font-size: var(--t-xs);
   letter-spacing: 0.1em;
   font-weight: 600;
+  align-self: end;
 }
 .tab span {
   font-size: var(--t-xxs);
   letter-spacing: 0.02em;
+  align-self: start;
+  text-align: center;
 }
 .tab::after {
   content: '';
@@ -1623,6 +1865,20 @@ button {
 .cta {
   position: relative;
   min-height: 56px;
+  /*
+   * The primary tap stays on screen at every text scale.
+   *
+   * At 200% the deck is taller than the viewport and `COMMIT` landed at y = 1045
+   * against an 844 px screen: §11's letter was met — nothing clipped, no
+   * horizontal overflow — while the one control the screen exists for required a
+   * scroll to reach. Sticky costs nothing at 100%, where the button's natural
+   * position is already above this line and the rule is inert; above it the
+   * button rides the bottom of the viewport over its own deck, which is opaque
+   * and full-width, so it reads as the action bar it already is.
+   */
+  position: sticky;
+  bottom: 6px;
+  z-index: 2;
   border-radius: 6px;
   border: 1px solid var(--glass-edge);
   background:
@@ -1631,7 +1887,10 @@ button {
   box-shadow:
     inset 0 1px 0 rgba(234, 243, 250, 0.5),
     inset 0 -1px 0 rgba(5, 7, 12, 0.5),
-    0 4px 18px rgba(23, 64, 92, 0.55);
+    0 4px 18px rgba(23, 64, 92, 0.55),
+    /* Upward, for the scale where the button is pinned over its own deck: a
+       control that floats needs an edge or it reads as a rendering fault. */
+      0 -10px 22px rgba(5, 7, 12, 0.62);
   color: var(--ink);
   font-size: var(--t-md);
   font-weight: 600;
@@ -1676,11 +1935,20 @@ button {
  * 6.8:1 and the control still reads plainly as unavailable, because the light
  * has gone out of it.
  */
+/*
+ * Opaque, and that is not cosmetic: the control is sticky (see above), so at
+ * large text scales it is painted over the chip rail. A translucent fill let the
+ * chips read straight through the most important button on the screen.
+ */
 .cta:disabled {
   color: var(--ink-dim);
   border-color: var(--chrome-dark);
-  background: linear-gradient(180deg, rgba(65, 75, 88, 0.5), rgba(20, 26, 38, 0.9));
-  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.12);
+  background:
+    linear-gradient(180deg, rgba(65, 75, 88, 0.5), rgba(20, 26, 38, 0.9)),
+    var(--void);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.12),
+    0 -10px 22px rgba(5, 7, 12, 0.62);
   cursor: not-allowed;
 }
 .cta:disabled::before {
@@ -1934,14 +2202,38 @@ button {
     opacity: 0;
   }
 }
+/*
+ * The sheet is a lit surface, not a hole.
+ *
+ * Round 2 measured the FULL ORDER picker — the screen where the headline 115.20×
+ * bet is actually placed — at 86.6% near-black with 0.8% of its pixels above
+ * luminance 0.30 and 0.6% vividly chromatic: the flattest, darkest screen in the
+ * product was the one selling its biggest number, and it sat inside a game whose
+ * whole art direction is "a jewel instrument in a dark laboratory".
+ *
+ * So the sheet gets the laboratory's own light rather than a fill: the same
+ * volumetric key the app's background carries (§6.3, cool, above), over a brine
+ * field that fades to `--abyss` at the foot. Every stop is a §6.1 token at an
+ * alpha, so no colour enters the world, and the panel is now something the
+ * spheres sit *on* instead of a void they float in.
+ */
 .sheet {
   width: 100%;
   max-width: 430px;
   max-height: 92dvh;
   background:
-    radial-gradient(120% 40% at 50% 0%, rgba(23, 64, 92, 0.3), rgba(23, 64, 92, 0) 70%),
+    radial-gradient(
+      150% 42% at 50% 0%,
+      rgba(127, 166, 196, 0.28),
+      rgba(127, 166, 196, 0.07) 44%,
+      rgba(127, 166, 196, 0) 76%
+    ),
+    linear-gradient(180deg, rgba(23, 64, 92, 0.62), rgba(23, 64, 92, 0.16) 42%, rgba(23, 64, 92, 0.04)),
     var(--abyss);
-  border-top: 1px solid var(--chrome-dark);
+  border-top: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.34),
+    0 -12px 40px rgba(5, 7, 12, 0.7);
   border-radius: 12px 12px 0 0;
   display: flex;
   flex-direction: column;
@@ -1988,10 +2280,17 @@ button {
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+/*
+ * `--chrome`, not `--ink-dim`, and the reason is the light above it: the sheet's
+ * volumetric key peaks at the panel's top edge, which is exactly where this line
+ * sits, so `--ink-dim` measured 3.82:1 there once the sheet stopped being black.
+ * Lighting a surface moves its foreground floor with it (§11), and this is the
+ * one line the new key light put under it.
+ */
 .sheet__head p {
   margin: 0;
   font-size: var(--t-xxs);
-  color: var(--ink-dim);
+  color: var(--chrome);
   letter-spacing: 0.04em;
 }
 .sheet__body {
@@ -2002,18 +2301,69 @@ button {
   gap: 12px;
   flex: 1;
 }
+/*
+ * The foot is a machined shelf: it carries the stake and the primary tap, so it
+ * is the one band of the sheet that must read as solid. A flat `--abyss` slab
+ * under a lit sheet reads as the panel ending rather than as a control surface.
+ */
 .sheet__foot {
-  border-top: 1px solid var(--edge);
+  border-top: 1px solid var(--chrome-dark);
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 10px;
   flex: none;
-  background: var(--abyss);
+  background:
+    linear-gradient(180deg, rgba(195, 206, 218, 0.12), rgba(195, 206, 218, 0.02) 40%),
+    linear-gradient(180deg, rgba(23, 64, 92, 0.4), rgba(10, 18, 32, 0.96)),
+    var(--abyss);
+  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.22);
+}
+
+/*
+ * The price plate: the number the sheet exists to sell, as an object.
+ *
+ * §6.5's 28 px step in `--ink` on a lit face, with the odds and the 96% set
+ * beside it in the same block — §10's rule is that the price is never allowed to
+ * be louder than the honesty, and putting both on one plate is how that is kept
+ * while the figure still carries weight. `--ink` on this face measures 8.9:1.
+ */
+.price {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--chrome-dark);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(234, 243, 250, 0.14), rgba(234, 243, 250, 0.01) 44%),
+    linear-gradient(180deg, rgba(23, 64, 92, 0.72), rgba(10, 18, 32, 0.9));
+  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.28);
+}
+.price b {
+  font-size: var(--t-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  color: var(--ink);
+}
+.price span {
+  font-size: var(--t-xs);
+  color: var(--ink-dim);
+  letter-spacing: 0.02em;
+  min-width: 0;
 }
 
 /* The live sentence is the confirmation in every picker, not the icons (§5 S2). */
 .sentence {
+  /*
+   * `p` carries a 1em UA margin, and the sheet body is a flex column with its
+   * own 12 px gap — so every paragraph in every picker was separated by 38 px
+   * instead of 12, which is why the FULL ORDER sheet needed a scroll to reach
+   * its own confirmation line. The gap is the layout's, not the UA's.
+   */
+  margin: 0;
   font-size: var(--t-md);
   min-height: 26px;
   color: var(--ink);
@@ -2053,11 +2403,17 @@ button {
   align-items: center;
   justify-content: center;
   gap: 3px;
-  padding: 6px 2px;
+  padding: 7px 2px;
+  /*
+   * A lit face under the object. The token is the brightest thing on the picker
+   * and it was sitting on a near-black card, so the sphere read as a sticker on a
+   * hole; a top-lit steel face at 26% gives it a surface to sit on and lifts the
+   * screen the round-2 verdict measured at 86.6% near-black.
+   */
   background:
-    linear-gradient(180deg, rgba(195, 206, 218, 0.18), rgba(195, 206, 218, 0.03) 46%),
-    linear-gradient(180deg, rgba(23, 64, 92, 0.36), rgba(10, 18, 32, 0.88));
-  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.2);
+    linear-gradient(180deg, rgba(195, 206, 218, 0.26), rgba(195, 206, 218, 0.05) 48%),
+    linear-gradient(180deg, rgba(23, 64, 92, 0.6), rgba(10, 18, 32, 0.88));
+  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.32);
   transition:
     transform 60ms cubic-bezier(0.2, 0.8, 0.2, 1),
     border-color 140ms linear,
@@ -2067,18 +2423,33 @@ button {
 .colour span {
   font-size: var(--t-xxs);
   letter-spacing: 0.08em;
-  color: var(--ink-dim);
+  color: var(--chrome);
 }
 .colour[aria-pressed='true'] {
   border-color: var(--ink);
-  background-color: rgba(195, 206, 218, 0.12);
+  background-color: rgba(195, 206, 218, 0.14);
 }
 .colour[aria-pressed='true'] span {
   color: var(--ink);
 }
+/*
+ * §11: "a disabled control dims its fill and its border, never its label". An
+ * `opacity` on the whole button dims the label with everything else, which is the
+ * exact defect the document names — and in shapes C, D and E most of the row is
+ * disabled most of the time, so it is most of the picker.
+ */
 .colour:disabled {
-  opacity: 0.3;
+  border-color: var(--chrome-dark);
+  background:
+    linear-gradient(180deg, rgba(65, 75, 88, 0.36), rgba(20, 26, 38, 0.92));
+  box-shadow: none;
   cursor: not-allowed;
+}
+.colour:disabled .orb-svg {
+  opacity: 0.45;
+}
+.colour:disabled span {
+  color: var(--ink-dim);
 }
 .orb-svg {
   display: block;
@@ -2092,24 +2463,33 @@ button {
 .well {
   flex: 1;
   min-height: 84px;
-  border: 1px dashed var(--chrome-dark);
+  border: 1px dashed var(--chrome-mid);
   border-radius: 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  color: var(--ink-dim);
+  color: var(--chrome);
   font-size: var(--t-xxs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 6px;
+  /* A recess, not a hole: an empty well is a machined seat waiting for an
+     object, and it needs a floor for the object to land on. */
+  background:
+    linear-gradient(180deg, rgba(5, 7, 12, 0.5), rgba(23, 64, 92, 0.28)),
+    var(--abyss);
+  box-shadow: inset 0 2px 6px rgba(5, 7, 12, 0.7);
 }
 .well[data-filled='true'] {
   border-style: solid;
-  border-color: var(--chrome-mid);
+  border-color: var(--glass-edge);
   color: var(--ink);
-  background: var(--lift);
+  background:
+    linear-gradient(180deg, rgba(195, 206, 218, 0.22), rgba(195, 206, 218, 0.04) 46%),
+    linear-gradient(180deg, rgba(23, 64, 92, 0.6), rgba(10, 18, 32, 0.88));
+  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.3);
 }
 .well b {
   font-weight: 600;
@@ -2151,19 +2531,30 @@ button {
    * … every other picker inherits from it". A dark empty box with numbers in it is
    * a number list wearing a border.
    */
+  /*
+   * The cylinder read, and the numerals' background.
+   *
+   * The 90° overlay is what turns a flat rectangle into a tube, and round 2's
+   * version put its darkest stop (78% of `--void`) across the whole left inset —
+   * which is exactly where the slot numerals sit. Measured from rendered pixels
+   * with the target text hidden, the numerals came out at 2.69:1 to 2.95:1
+   * against §11's unconditional 4.5:1 floor. The wall shadow is narrower now, so
+   * the numerals sit on lit liquid rather than in the wall, and the column reads
+   * brighter for the same reason.
+   */
   background:
     linear-gradient(
       90deg,
-      rgba(5, 7, 12, 0.78),
-      rgba(5, 7, 12, 0.2) 22%,
-      rgba(234, 243, 250, 0.07) 40%,
-      rgba(5, 7, 12, 0.24) 74%,
-      rgba(5, 7, 12, 0.72)
+      rgba(5, 7, 12, 0.56),
+      rgba(5, 7, 12, 0.14) 13%,
+      rgba(234, 243, 250, 0.12) 40%,
+      rgba(5, 7, 12, 0.16) 76%,
+      rgba(5, 7, 12, 0.52)
     ),
-    linear-gradient(180deg, var(--brine-lit), var(--brine) 34%, var(--brine-deep));
+    linear-gradient(180deg, var(--brine-lit), var(--brine) 46%, var(--brine-deep));
   box-shadow:
-    inset 0 1px 0 rgba(234, 243, 250, 0.4),
-    inset 0 0 0 1px rgba(127, 166, 196, 0.16),
+    inset 0 1px 0 rgba(234, 243, 250, 0.5),
+    inset 0 0 0 1px rgba(127, 166, 196, 0.2),
     0 6px 20px rgba(5, 7, 12, 0.6);
 }
 .slot-cell {
@@ -2173,12 +2564,40 @@ button {
   align-items: center;
   gap: 8px;
   padding: 0 8px;
-  color: var(--ink-dim);
+  color: var(--ink);
   font-size: var(--t-xs);
-  border-top: 1px solid rgba(127, 166, 196, 0.16);
+  border-top: 1px solid rgba(127, 166, 196, 0.22);
   transition:
     background-color 140ms linear,
     color 140ms linear;
+}
+/*
+ * The place the next tap fills. The hint sentence says a colour "falls into the
+ * lowest empty slot"; this is that sentence drawn, so the affordance is on the
+ * tube rather than only in the prose — and on an empty FULL ORDER column it is
+ * the one lit target on the screen.
+ */
+.slot-cell[data-next='true'] {
+  background-image: linear-gradient(
+    90deg,
+    rgba(127, 166, 196, 0.22),
+    rgba(127, 166, 196, 0.06) 60%,
+    rgba(127, 166, 196, 0)
+  );
+  box-shadow: inset 2px 0 0 var(--glass-edge);
+}
+/*
+ * Shape B (SLOT) awaiting its second tap. Every slot is a valid target here, so
+ * the whole tube lights rather than one cell — five "next" markers at once would
+ * read as a fault, not as an instruction.
+ */
+.slot-strip[data-await='true'] {
+  border-color: var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.5),
+    inset 0 0 0 1px rgba(127, 166, 196, 0.44),
+    0 0 0 3px rgba(127, 166, 196, 0.16),
+    0 6px 20px rgba(5, 7, 12, 0.6);
 }
 /*
  * `:last-child`, not `:first-child`.
@@ -2194,16 +2613,31 @@ button {
 .slot-cell:last-child {
   border-top: 0;
 }
+/*
+ * The numeral is the only thing identifying a slot before a colour is placed, so
+ * §11's floor binds it hardest.
+ *
+ * Round 2 declared this class closed by fixing the *tube's* numerals and left the
+ * picker's: `opacity: 0.55` over an inherited `--ink-dim`, measured from rendered
+ * pixels at 2.69:1 to 2.95:1 on every shape-B/D/E picker — SLOT, PODIUM and FULL
+ * ORDER, i.e. the decision surface for the headline 115.20× bet. `--chrome` is
+ * the instrument's own metal and clears the floor against every part of the lit
+ * column, and nothing here dims a foreground with `opacity` any more.
+ */
 .slot-cell small {
   font-family: var(--mono);
-  opacity: 0.55;
+  color: var(--chrome);
   flex: none;
   width: 2.6em;
+}
+/* The empty placeholder is a foreground too, and it is held to the same floor. */
+.slot-cell span {
+  color: var(--chrome);
 }
 .slot-cell[aria-pressed='true'],
 .slot-cell[data-filled='true'] {
   color: var(--ink);
-  background-color: rgba(127, 166, 196, 0.1);
+  background-color: rgba(127, 166, 196, 0.14);
 }
 .slot-cell b {
   font-weight: 600;
@@ -2239,6 +2673,8 @@ button {
 }
 
 .note {
+  /* See `.sentence`: the 1em UA margin on `p` fought the sheet's own gap. */
+  margin: 0;
   font-size: var(--t-xs);
   color: var(--ink-dim);
   line-height: 1.45;
@@ -2646,6 +3082,10 @@ table.paytable td.pays {
   .pulse--on,
   .burst__ring,
   .stamp--on .stamp__shine,
+  .stamp--land,
+  .stamp-shock--on,
+  .tube--impact,
+  .orb--won .orb__pop,
   .tube--won .orb--seated .orb__bleed,
   .cta::before,
   .tube-caustic,
@@ -2679,6 +3119,34 @@ table.paytable td.pays {
     }
     100% {
       opacity: 0;
+    }
+  }
+  /*
+   * The column still lights, and that is deliberate. The pop's *travel* is what
+   * the preference is about — five objects scaling in sequence — and it is gone
+   * above, along with the emissive core's swell. The light is not travel: the
+   * cell flood is an `opacity` ramp on a stationary rect, so a reduced-motion
+   * player still sees the tube take the colour of what landed in it rather than a
+   * switched-off celebration. The floods arrive together instead of running up
+   * the column, because the stagger is the motion.
+   */
+  .orb--won .orb__core {
+    animation: none !important;
+  }
+  .cell-flood--on {
+    animation-delay: 0ms !important;
+    animation-timing-function: linear !important;
+    animation-name: reduced-lift !important;
+  }
+  @keyframes reduced-lift {
+    0% {
+      opacity: 0;
+    }
+    30% {
+      opacity: 0.9;
+    }
+    100% {
+      opacity: 0.34;
     }
   }
   /*

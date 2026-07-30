@@ -192,3 +192,83 @@ describe('§11’s tap floor is a token, not a per-control decision', () => {
     expect(CSS).toMatch(/\.skip\s*\{[^}]*width:\s*var\(--tap\);\s*height:\s*var\(--tap\)/u);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * §11's contrast floor, gated at its actual failure mechanism.         *
+ * ------------------------------------------------------------------ */
+
+/**
+ * **No foreground text is dimmed with `opacity`. Ever.**
+ *
+ * Both of this build's shipped contrast failures are the same declaration in
+ * different places, and neither was reachable by the gates that existed:
+ *
+ *   - round 1, `.line[data-state='lost'] { opacity: 0.4 }` over `--ink-dim`,
+ *     which put a dead line's stake and multiplier at **2.08:1** and, compounded
+ *     with a second 0.8 on the claim cell, its claim text at **1.72:1**;
+ *   - round 2, `.slot-cell small { opacity: 0.55 }`, which put the picker's slot
+ *     numerals at **2.69:1 to 2.95:1** on every shape-B/D/E picker — SLOT,
+ *     PODIUM and FULL ORDER, i.e. the surface where the headline 115.20× bet is
+ *     placed. That one shipped in the same pass that declared the class closed.
+ *
+ * The palette gate could not see either, because it recomputes *tokens* and the
+ * defect is a token multiplied afterwards by a number no table contains: a
+ * foreground checked at 7.81:1 and rendered at 40% of it. Measuring rendered
+ * composites needs a browser and this suite has none — so the gate is on the
+ * mechanism instead, which is stronger than a spot check because it fails
+ * *before* anything is rendered.
+ *
+ * §11's own words for the same rule: "a disabled control dims its fill and its
+ * border, never its label". Dim with `color`, with a border, with a fill. Not
+ * with `opacity`.
+ */
+describe('§11’s floor is gated at the mechanism that broke it twice', () => {
+  /**
+   * The last compound selector of a rule — the element the declaration actually
+   * lands on. `.colour:disabled .orb-svg` dims an image and is fine; `.slot-cell
+   * small` dims text and is not.
+   */
+  const leafOf = (selector) => selector.trim().split(/[\s>+~]+/u).pop() ?? '';
+
+  /** Leaves that carry text a player must read. */
+  const TEXT_LEAF =
+    /^(?:small|span|b|em|u|p|h2|text|\.note|\.line|\.sentence|\.footnote|\.premise|\.badge|\.slot-no|\.stamp__value|\.cta__sub|\.lit|\.dim)(?:[.:[]|$)/u;
+
+  /** Every rule outside `@keyframes` that sets a fractional `opacity`. */
+  function dimmingRules() {
+    // Keyframe bodies are animation, not state, and `opacity` is the one
+    // property §7.1.1 wants animations expressed in — they are not this rule.
+    const body = CSS.replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\}\s*)*\}/gu, '');
+    const found = [];
+    for (const match of body.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+      const value = /(?:^|[;\s])opacity:\s*([0-9.]+)\s*;/u.exec(match[2]);
+      if (!value || Number.parseFloat(value[1]) >= 1) continue;
+      for (const selector of match[1].split(',')) {
+        const trimmed = selector.trim();
+        if (trimmed === '' || trimmed.includes('::')) continue;
+        found.push({ selector: trimmed, opacity: value[1] });
+      }
+    }
+    return found;
+  }
+
+  it('finds the dimming rules at all, so the gate cannot pass by parsing nothing', () => {
+    // If the walk breaks, everything below passes vacuously. The chamber's art
+    // layers are legitimately full of these, so a healthy parse finds plenty.
+    expect(dimmingRules().length).toBeGreaterThan(12);
+  });
+
+  it('dims no text-bearing element with opacity', () => {
+    const offenders = dimmingRules().filter(({ selector }) => TEXT_LEAF.test(leafOf(selector)));
+    expect(
+      offenders.map((rule) => `${rule.selector} { opacity: ${rule.opacity} }`),
+      'a foreground token dimmed by opacity is a contrast floor nothing checks',
+    ).toEqual([]);
+  });
+
+  it('states the rule where a designer will read it', () => {
+    expect(SOURCE).toMatch(
+      /Dim a foreground with colour, a border or a fill — never with opacity/u,
+    );
+  });
+});

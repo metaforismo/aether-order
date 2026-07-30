@@ -56,7 +56,7 @@ export function openPicker(options: PickerOptions): void {
     return `<button class="colour" data-colour="${index}" ${
       disabled ? 'disabled' : ''
     } aria-pressed="${pressed}" aria-label="${esc(element.name)}">
-      ${orbSvg(element, 30)}
+      ${orbSvg(element, 36)}
       <span>${esc(element.name)}</span>
     </button>`;
   };
@@ -66,14 +66,31 @@ export function openPicker(options: PickerOptions): void {
       .map((_element, index) => colourToken(index, used.includes(index), picks.includes(index)))
       .join('')}</div>`;
 
+  /*
+   * The lowest empty place, which is where the next tap lands.
+   *
+   * The hint says "it falls into the lowest empty slot" and round 2 left the
+   * player to take that on trust: five identical dashes, no target. Marking the
+   * cell the next tap will fill turns the sentence into an affordance — and on
+   * the picker for the headline 115.20× bet it is also the one lit thing on an
+   * otherwise empty column.
+   */
+  const nextEmpty = (count: number): number => {
+    for (let index = 0; index < count; index += 1) if (picks[index] === undefined) return index;
+    return -1;
+  };
+
   const tubeCells = (count: number, labels: string[] | null): string => {
     const cells: string[] = [];
+    const next = nextEmpty(count);
     for (let index = 0; index < count; index += 1) {
       const filled = picks[index];
       const element = filled === undefined ? null : variant.elements[filled];
-      cells.push(`<button class="slot-cell" data-cell="${index}" data-filled="${element ? 'true' : 'false'}">
+      cells.push(`<button class="slot-cell" data-cell="${index}" data-filled="${
+        element ? 'true' : 'false'
+      }" data-next="${index === next ? 'true' : 'false'}">
         <small>${esc(labels ? (labels[index] ?? '') : index + 1)}</small>
-        ${element ? `${orbSvg(element, 26)}<b>${esc(element.name)}</b>` : '<span>—</span>'}
+        ${element ? `${orbSvg(element, 30)}<b>${esc(element.name)}</b>` : '<span>—</span>'}
       </button>`);
     }
     return `<div class="slot-strip">${cells.join('')}</div>`;
@@ -86,12 +103,20 @@ export function openPicker(options: PickerOptions): void {
       const element = chosen ? variant.elements[picks[0] as number] : null;
       cells.push(`<button class="slot-cell" data-slot="${index}" data-filled="${
         chosen ? 'true' : 'false'
-      }" aria-pressed="${slot === index}" aria-label="Slot ${index + 1}">
+      }" data-next="false" aria-pressed="${slot === index}" aria-label="Slot ${index + 1}">
         <small>${index + 1}</small>
-        ${element ? `${orbSvg(element, 26)}<b>${esc(element.name)}</b>` : '<span>—</span>'}
+        ${element ? `${orbSvg(element, 30)}<b>${esc(element.name)}</b>` : '<span>—</span>'}
       </button>`);
     }
-    return `<div class="slot-strip">${cells.join('')}</div>`;
+    /*
+     * Shape B's second tap is "pick the slot on the tube", and *every* slot is a
+     * valid target — so the affordance belongs to the strip, not to a cell.
+     * Marking each cell as next would light five targets at once, which reads as
+     * a rendering fault rather than as an instruction.
+     */
+    return `<div class="slot-strip" data-await="${
+      slot === null && picks[0] !== undefined ? 'true' : 'false'
+    }">${cells.join('')}</div>`;
   };
 
   const currentParams = (): Params | null => paramsFor(bet.code, picks, slot, n);
@@ -134,10 +159,26 @@ export function openPicker(options: PickerOptions): void {
       picker = `${tubeCells(3, ['1st', '2nd', '3rd'])}${colourRow(picks)}`;
     else picker = `${tubeCells(n, null)}${colourRow(picks)}`;
 
+    /*
+     * The price plate.
+     *
+     * Round 2 set the whole of this in one 13 px `--ink-dim` paragraph, so the
+     * screen where the 115.20× bet is actually placed measured 86.6% near-black
+     * with 0.8% of its pixels above luminance 0.30 — the flattest, darkest screen
+     * in the product was the one selling its biggest number. The multiple is now
+     * the object: §6.5's 28 px step, `--ink`, on a lit face, with the odds and the
+     * 96% beside it so the price is never louder than the honesty (§10).
+     *
+     * Not gold, and not the tier colour. §6.1 allows gold on nothing speculative
+     * and §6.1's accents are the chrome layer's tab-and-numeral scope; a plate is
+     * a fill, which constraint 2 excludes.
+     */
     return `
-      <p class="note">${esc(bet.rule)} <b class="lit">${esc(bet.multiplierDecimal)}</b> · ${esc(
-        bet.probability ?? '',
-      )} · pays the same 96% as every other chip.</p>
+      <div class="price">
+        <b>${esc(bet.multiplierDecimal)}</b>
+        <span>${esc(bet.probability ?? '')} · pays the same 96% as every other chip</span>
+      </div>
+      <p class="note">${esc(bet.rule)}</p>
       <p class="note">${esc(hint)}</p>
       ${picker}
       ${bet.shape === 'E' ? '<div class="row"><button class="btn" data-randomise>RANDOMISE</button><button class="btn btn--quiet" data-clear>CLEAR</button></div>' : ''}

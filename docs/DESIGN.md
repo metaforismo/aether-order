@@ -430,6 +430,18 @@ and costs `n−1`. Nothing is ever more taps than it is decisions.
 Five shapes. The first three fill 62% of the screen height; the last two are
 full-height because they contain a tube.
 
+**The sheet is a lit surface and the price is an object on it.** Both are stated
+here because round 2 shipped neither, and the screen it cost is the one that
+matters most: the FULL ORDER picker — where the headline 115.20× bet is actually
+placed — measured 86.6% near-black with 0.8% of its pixels above luminance 0.30
+and 0.6% vividly chromatic, the flattest and darkest screen in a product whose
+art direction is *a jewel instrument in a dark laboratory*. So the sheet carries
+the laboratory's own key light from above (§6.3) rather than a flat `--abyss`
+fill; the multiple is set at §6.5's 28 px step on a lit face with the odds and
+the 96% beside it, never louder than the honesty (§10) and never gold (§6.1);
+and the cell the next tap will fill is marked, so the sentence *"it falls into
+the lowest empty slot"* is drawn as well as written.
+
 **A. One colour** (EARLY, LATE, FIRST, LAST) — a row of colour tokens, 56 px,
 each with its glyph and its name. One tap. Live sentence: *"AMBER settles
 first."*
@@ -878,6 +890,12 @@ never on a balance, never on a call to action.
 - **Liquid** — glycerol-like, faintly cyan-absorbing. Vertical gradient
   `--brine-deep` → `--brine` → `--brine-lit`, plus a scrolling caustic.
   Beer–Lambert depth is faked with the gradient; there is no volumetric pass.
+  **The three stops are spread across the depth**, roughly 0 / 0.44 / 0.86 from
+  the floor up. That is written down because it was not obeyed: round 2 held
+  `--brine-deep` flat for the bottom 58% and reached `--brine-lit` only in the
+  last 13%, so five sixths of the instrument was one dark slate value and the
+  frame measured 66% near-black. A gradient stated as three colours and shipped
+  as one is a gradient in name only.
 - **Housing** — brushed 316 steel. Anisotropic highlight runs *horizontally*
   across the collar rings; grain is a 128 × 128 tiled noise at 6% opacity.
 - **Spheres** — cast resin with an emissive core, **not chrome**. Chrome balls
@@ -928,6 +946,8 @@ overlapping, organic during agitation; crisp, staggered, snapped during settle.
 | Line state change | 120 ms | `cubic-bezier(.2,.8,.2,1)` | identical for won and lost; fires at the deciding lock, never later |
 | Close, neutral | 430 ms | same fall + rebound | the last sphere, at full speed, undramatised |
 | Close, celebrated | 1,060 ms | fall at 0.35× | §9; fires only when `creditedChips > totalStakeChips` |
+| Celebration pop | 620 ms per sphere, 68 ms apart | `cubic-bezier(.22,1,.3,1)` | §9 step 6: the settled column runs up itself in settle order, 1.24× overshoot; the flare and the cell flood ride the same stagger |
+| Stamp landing | 520 ms | `cubic-bezier(.2,.9,.25,1)` | §9 step 5: 2.3× → 0.90 → 1.055 → 1, with a 240 ms 3 px recoil on the chamber |
 | Stamp | 220 ms | `cubic-bezier(0,.7,.2,1)` | multiplier scales 1.18 → 1.00 |
 
 There is no "resolve" beat. Round 2 budgeted 600 ms for *"lines still undecided
@@ -1477,7 +1497,25 @@ mathematically already won:
 4. The tube's full-height gold rim ignites from the bottom up, tracking the
    fall.
 5. On lock: full-frequency return, the pentatonic chord, and the multiplier
-   stamps over the tube.
+   **lands** over the tube — dropping from 2.3× with an overshoot, throwing one
+   shock ring, and the instrument recoiling 3 px under it. It arrives; it does
+   not fade in.
+6. **And the settled column celebrates itself, in the order it settled.** Each
+   sphere overshoots its own size — 1.24× and back, 68 ms behind the one below
+   it — while its emissive core blooms out into the liquid and the cell it
+   landed in floods with that same light, ending lit rather than dark so the
+   record screen keeps the colour of what landed in it (§5 S5).
+
+**Why step 6 is a step and not a decoration.** Round 2 shipped steps 1 to 5 and
+nothing else, and a frame dump of the whole celebration window found every
+sphere holding one unchanging transform, opacity 1 and no filter: the burst was
+*behind* the tube, the ring and the rim were *around* it, and at the moment the
+game has to be clip-worthy nothing happened to the five objects the player had
+spent four seconds watching. Measured, the tube's cells went khaki —
+rgb(137,115,88) — because a full-frame gold wash centred on the column
+desaturates the only colour in the world. The celebration is the objects. The
+light in the frame is the light the objects emit, and the frame lift is a ring
+around them rather than a disc over them, for exactly that reason.
 
 The set piece itself is 1,280 ms — the 1,060 ms celebrated close plus the
 220 ms stamp — and it ends on the number. The shareable cut is longer: 3.4 s,
@@ -1760,6 +1798,22 @@ exist.
   label. WCAG exempts a disabled control; this document does not, because the
   disabled `COMMIT` carries the stake the player is about to place.
 
+  **And the floor binds the mechanism, not only the token: no foreground text is
+  dimmed with `opacity`.** Dim it with colour, with a border, with a fill. The
+  two failures above are one declaration in different places — `opacity: 0.4` on
+  a dead line, `opacity: 0.55` on the picker's slot numerals — and the second
+  shipped in the same pass that declared the first closed, because a gate that
+  recomputes *tokens* cannot see a token multiplied afterwards by a number no
+  table contains. A build that dims text with `opacity` has left the floor
+  uncheckable, which is worse than being under it, and `tests/client.test.mjs`
+  fails on any text-bearing selector that does.
+
+  **A surface that is lit moves its own foreground floor with it.** Lighting a
+  panel is the right instinct for this art direction and it is not free: the
+  sheet's key light raised the plate under its subtitle until `--ink-dim`
+  measured 3.82:1 there. Every foreground on a newly lit surface is re-measured
+  against the composite it actually renders on, not against `--void`.
+
   **Surface tokens are explicitly exempt and must be**, because they are the
   dark world the spheres glow inside: `--abyss` is 1.07:1, `--brine-deep` 1.19:1,
   `--brine` 1.34:1, `--brine-lit` 1.85:1, `--chrome-dark` 2.28:1. Requiring 4.5:1
@@ -1783,6 +1837,15 @@ exist.
 - **Tap targets** ≥ 44 × 44 with 8 px minimum separation. No gesture is required
   anywhere; every drag has a tap equivalent.
 - **Text scaling** to 200% without clipping; the chip rail reflows to two rows.
+  **And the primary action stays on screen at every scale.** No clipping and no
+  horizontal overflow is the letter of the rule and it was met at 200% while
+  `COMMIT` sat at y = 1045 on an 844 px viewport — the one control the screen
+  exists for, reachable only by scrolling. The CTA is sticky to the foot of the
+  viewport, which is inert at 100% because the button is already above that line.
+  The tier tabs share a two-row grid for the same reason: at 200% one tier's
+  gloss wraps and the others do not, and three labels on three different
+  baselines is a ragged row at exactly the scale where legibility support is the
+  point.
 
 ---
 

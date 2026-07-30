@@ -116,6 +116,17 @@ const IMPELLER_OMEGA = (Math.PI * 2) / 1.6;
 const BURST_MS = 1400;
 
 /**
+ * The interval between one sphere's celebration pop and the next one's.
+ *
+ * 68 ms rather than §6.4's 420 ms settle stagger: the settle stagger is a
+ * sequence of *decisions* and has to be read one at a time, and this is one
+ * event running up a column that is already settled. Five spheres at 68 ms plus
+ * the 620 ms pop is 892 ms — inside the 1,060 ms celebrated close plus the
+ * 220 ms stamp (§9), so the column has finished celebrating when the beat ends.
+ */
+const POP_STAGGER_MS = 68;
+
+/**
  * Where the spheres drift while the tube is empty: a lane (x) and a fraction of
  * the **tube's** vertical extent.
  *
@@ -214,12 +225,15 @@ export class Chamber {
   #rings = new Map<number, SVGGElement>();
   #pulses = new Map<number, SVGGElement>();
   #numerals = new Map<number, SVGTextElement>();
+  /** One rect per slot, filled at `celebrate` with the settled sphere's light. */
+  #floods = new Map<number, SVGRectElement>();
   #impellers: SVGGElement[] = [];
   #tube: SVGGElement | null = null;
   #rim: SVGGElement | null = null;
   #burst: SVGGElement | null = null;
   #flash: SVGRectElement | null = null;
   #stamp: SVGGElement | null = null;
+  #shock: SVGGElement | null = null;
   #motes: HTMLElement | null = null;
   #svg: SVGSVGElement | null = null;
 
@@ -231,6 +245,7 @@ export class Chamber {
   #burstAt = 0;
   #stampText = '';
   #stampOn = false;
+  #won = false;
   #voicing: Voicing = 'FORM';
 
   /* The motion driver: one registration on the shared ticker. */
@@ -457,6 +472,7 @@ export class Chamber {
     this.#rings = new Map();
     this.#pulses = new Map();
     this.#numerals = new Map();
+    this.#floods = new Map();
     const radius = diameter / 2;
     /*
      * The travel window, in column-local units.
@@ -490,12 +506,15 @@ export class Chamber {
       this.#pulses.set(Number(node.dataset.slot), node);
     for (const node of this.#root.querySelectorAll<SVGTextElement>('.slot-no'))
       this.#numerals.set(Number(node.dataset.slot), node);
+    for (const node of this.#root.querySelectorAll<SVGRectElement>('.cell-flood'))
+      this.#floods.set(Number(node.dataset.slot), node);
     this.#impellers = [...this.#root.querySelectorAll<SVGGElement>('.impeller')];
     this.#tube = this.#root.querySelector('[data-tube]');
     this.#rim = this.#root.querySelector('.tube-rim');
     this.#burst = this.#root.querySelector('.burst');
     this.#flash = this.#root.querySelector('.cham-flash');
     this.#stamp = this.#root.querySelector('.stamp');
+    this.#shock = this.#root.querySelector('.stamp-shock');
 
     this.#restore();
     this.fit(this.#visibleCss);
@@ -563,16 +582,23 @@ export class Chamber {
       .join('');
     return `
       <!--
-        The liquid, weighted rather than evenly ramped. §6.1 scopes --brine-lit to
-        "liquid where the key light PASSES", which is a band near the top collar and
-        not half the vessel: a linear brine-deep → brine → brine-lit ramp over 700
-        units made the whole chamber a flat mid-blue box with the spheres no longer
-        the brightest things in it (§6.1's first sentence, §6.6 reference 3).
+        The liquid, and the argument that settled where its stops go.
+
+        §6.1 scopes --brine-lit to "liquid where the key light PASSES", which is a
+        band and not half the vessel — so round 2 weighted the ramp hard, holding
+        --brine-deep flat for the bottom 58% and reaching --brine-lit only in the
+        last 13%. That over-corrected: five sixths of the instrument became one
+        dark slate value and the frame measured 66% near-black, which is not "the
+        spheres are the only colour" but "the lights are off". §6.2 states three
+        stops and the shipped gradient is now the three stops, spread across the
+        depth. What keeps the spheres the brightest objects in the frame is the
+        vignette drawn over this, which is the right tool for it — the liquid's
+        own darkness never was.
       -->
       <linearGradient id="brine" x1="0" y1="1" x2="0" y2="0">
         <stop offset="0" stop-color="var(--brine-deep)"/>
-        <stop offset="0.58" stop-color="var(--brine-deep)"/>
-        <stop offset="0.87" stop-color="var(--brine)"/>
+        <stop offset="0.44" stop-color="var(--brine)"/>
+        <stop offset="0.86" stop-color="var(--brine-lit)"/>
         <stop offset="1" stop-color="var(--brine-lit)"/>
       </linearGradient>
       <!-- §6.2: brushed 316 steel, anisotropic highlight running horizontally. -->
@@ -608,10 +634,15 @@ export class Chamber {
         <stop offset="0.6" stop-color="var(--specular)" stop-opacity="0.22"/>
         <stop offset="1" stop-color="var(--specular)" stop-opacity="0"/>
       </linearGradient>
-      <!-- Volumetric key from above, so the chamber is the only bright object. -->
+      <!--
+        Volumetric key from above, so the chamber is the only bright object.
+        §6.3 gives the key intensity 1.0; at 20% of --specular it was a haze
+        rather than a source, and a laboratory whose light you cannot see is a
+        laboratory with the lights off.
+      -->
       <radialGradient id="shaft">
-        <stop offset="0" stop-color="var(--specular)" stop-opacity="0.2"/>
-        <stop offset="0.4" stop-color="var(--glass-edge)" stop-opacity="0.09"/>
+        <stop offset="0" stop-color="var(--specular)" stop-opacity="0.34"/>
+        <stop offset="0.4" stop-color="var(--glass-edge)" stop-opacity="0.15"/>
         <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0"/>
       </radialGradient>
       <radialGradient id="caustic">
@@ -635,14 +666,19 @@ export class Chamber {
         The liquid column inside the tube, which round 1 drew as --void at 30
         to 72% over the brine — a back plate that measured a constant
         rgb(14,29,44) with no surface, no bubbles and no caustic in it. It is a
-        lit column of brine now: the same three published liquid tokens, bottom
-        to top, at full strength, because the tube is where the key light is
+        lit column of brine now, because the tube is where the key light is
         channelled and it is the one part of the frame the player reads.
+
+        Its stops sit higher than the chamber's for a reason that only appeared
+        once the chamber's own liquid was spread across its depth: the column
+        carries three darkening overlays for the cylinder read, so at the same
+        stops it became a shadow running down the middle of a lit box — the hero
+        object as the darkest band in the frame, which inverts the hierarchy the
+        whole instrument is built on.
       -->
       <linearGradient id="tube-column" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0" stop-color="var(--brine-deep)"/>
-        <stop offset="0.34" stop-color="var(--brine)"/>
-        <stop offset="0.82" stop-color="var(--brine-lit)"/>
+        <stop offset="0" stop-color="var(--brine)"/>
+        <stop offset="0.3" stop-color="var(--brine-lit)"/>
         <stop offset="1" stop-color="var(--brine-lit)"/>
       </linearGradient>
       <!-- Cylinder shading: the column is round, so it darkens at both walls. -->
@@ -730,10 +766,21 @@ export class Chamber {
         <stop offset="0.45" stop-color="var(--gold)" stop-opacity="0.16"/>
         <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
       </radialGradient>
+      <!--
+        The frame lift, and it is a **ring** rather than a disc.
+        A radial centred on the drawing is centred on the tube, so round 1's
+        version put its hottest gold exactly where the five settled spheres are:
+        measured at the peak of a win, the tube's cells read rgb(137,115,88) —
+        khaki — because a gold wash over saturated colour is a desaturation of
+        it. The centre is clear to 0.3 of the box, which is 58 units against the
+        tube's 48-unit half-width, so the column keeps its own light and the
+        chamber around it is what lifts.
+      -->
       <radialGradient id="flash">
-        <stop offset="0" stop-color="var(--gold-hot)" stop-opacity="0.5"/>
-        <stop offset="0.55" stop-color="var(--gold)" stop-opacity="0.16"/>
-        <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
+        <stop offset="0" stop-color="var(--gold-hot)" stop-opacity="0"/>
+        <stop offset="0.3" stop-color="var(--gold-hot)" stop-opacity="0.1"/>
+        <stop offset="0.62" stop-color="var(--gold)" stop-opacity="0.3"/>
+        <stop offset="1" stop-color="var(--gold)" stop-opacity="0.08"/>
       </radialGradient>
       <!--
         The core is deliberately small and not very bright. The burst's job is to
@@ -893,9 +940,14 @@ export class Chamber {
           // x = TUBE_X + 8, not + 13: a 64 px sphere centred at 195 spans
           // 163..227, so a numeral set at 160 had its digit clipped by the
           // sphere's left edge the moment its slot filled.
+          // `currentColor`, so the unlit-to-lit step is a COLOUR change rather
+          // than an opacity one. A foreground dimmed by opacity is exactly the
+          // mechanism that shipped a dead ticket line at 2.08:1 in round 1 and
+          // the picker's slot numerals at 2.9:1 in round 2, and
+          // `tests/client.test.mjs` now fails the build on any text that does it.
           `<text class="slot-no" data-slot="${index + 1}" x="${TUBE_X + 8}" y="${
             y + 4
-          }" fill="var(--ink)">${index + 1}</text>`,
+          }" fill="currentColor">${index + 1}</text>`,
       )
       .join('');
     // Three caustic bands drifting up the column, on the same 19 s period as the
@@ -924,10 +976,36 @@ export class Chamber {
         0,
       )}px;animation-delay:${delay.toFixed(2)}s;animation-duration:${duration.toFixed(2)}s"/>`;
     }).join('');
+    /*
+     * The cells the celebration floods.
+     *
+     * Round 1's celebrated close washed the whole frame with one gold radial
+     * centred on the tube, so the settled column measured rgb(137,115,88) —
+     * khaki — at the peak of its own win: the five objects carrying all the
+     * colour in the product were the one thing the celebration desaturated. This
+     * is the honest version. Each cell is filled, at `celebrate`, with the bloom
+     * gradient of the sphere that settled *into that cell*, so the liquid takes
+     * the colour of the object rather than the colour of the party, and the tube
+     * ends the round lit by what landed in it.
+     *
+     * Empty and unfilled until then: `fill` is `none` and `opacity` is 0, so a
+     * losing round never touches them and the neutral close is byte-identical
+     * (§9's no-near-miss rule).
+     */
+    const floods = this.#slots
+      .map(
+        (y, index) =>
+          `<rect class="cell-flood" data-slot="${index + 1}" x="${TUBE_X}" y="${(
+            y -
+            pitch / 2
+          ).toFixed(1)}" width="${TUBE_WIDTH}" height="${pitch.toFixed(1)}" fill="none"/>`,
+      )
+      .join('');
     return `
       <g class="tube-well" clip-path="url(#tube-clip)">
         <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" fill="url(#tube-column)"/>
         <g class="tube-bands">${bands}</g>
+        <g class="cell-floods">${floods}</g>
         ${engraved}
         <g class="bubbles bubbles--tube">${fizz}</g>
         <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" fill="url(#tube-round)"/>
@@ -1013,15 +1091,29 @@ export class Chamber {
   }
 
   /**
-   * The spheres, and the three nested transforms each one needs.
+   * The spheres, and the four nested transforms each one needs.
    *
-   * `.orb` carries x, `.orb__y` carries y and `.orb__m` carries motion — the
-   * idle drift as a CSS keyframe, the agitation as a per-frame write from the
-   * shared ticker. They are separate elements because x and y are *different
-   * eases*: §6.4's 340 ms expo-out belongs to the fall, and a sphere that
-   * traverses horizontally on the same curve slides rather than swoops. Splitting
-   * them buys the arc — across, then down — inside the beat's published duration,
-   * with the vertical curve exactly as published.
+   * `.orb` carries x, `.orb__y` carries y, `.orb__m` carries motion — the idle
+   * drift as a CSS keyframe, the agitation as a per-frame write from the shared
+   * ticker — and `.orb__pop` carries the celebration. They are separate elements
+   * because x and y are *different eases*: §6.4's 340 ms expo-out belongs to the
+   * fall, and a sphere that traverses horizontally on the same curve slides
+   * rather than swoops. Splitting them buys the arc — across, then down — inside
+   * the beat's published duration, with the vertical curve exactly as published.
+   *
+   * `.orb__pop` is its own group and not a fifth job for `.orb__m` because
+   * `.orb__m` is written every frame during AGITATE: a class-driven keyframe on
+   * an element whose `style.transform` is also being set from JavaScript is a
+   * fight, and the frame the fight is lost on is the hero frame of the round.
+   *
+   * **The anchor circle is why the pop is stable.** `transform-box: fill-box`
+   * resolves `transform-origin: center` against the group's own bounding box,
+   * and this group's box would otherwise be defined by children that are
+   * themselves animating — the emissive bleed scales to 1.55 on a win, the
+   * interior caustic translates on a loop — so the origin would drift with the
+   * animation it is the origin of. One invisible circle, larger than anything
+   * inside it and centred on the sphere, pins the box to a constant square: the
+   * sphere scales about its own centre, exactly, in every frame.
    */
   #spheres(
     variant: VariantInfo,
@@ -1029,6 +1121,7 @@ export class Chamber {
     tubeHeight: number,
     diameter: number,
   ): string {
+    const anchor = (diameter * 2.3).toFixed(0);
     return variant.elements
       .map((element: ElementInfo, index: number) => {
         const [x, fraction] = DRIFT[index] ?? [CENTRE_X, 0.5];
@@ -1036,7 +1129,10 @@ export class Chamber {
         return `<g class="orb" data-element="${index}" style="transform:translateX(${x}px)">
           <g class="orb__y" style="transform:translateY(${y}px)">
             <g class="orb__m" style="animation-delay:${(index * -1.7).toFixed(1)}s">
-              ${orbArt(element, diameter / 2)}
+              <g class="orb__pop">
+                <circle class="orb__anchor" r="${anchor}" fill="none"/>
+                ${orbArt(element, diameter / 2)}
+              </g>
             </g>
           </g>
         </g>`;
@@ -1155,7 +1251,19 @@ export class Chamber {
     const width = 302;
     const inner = half - 6;
     return `<g class="stamp-at" transform="translate(${CENTRE_X},${y})" data-half="${half}">
+      <!--
+        The landing shock: one stroked ellipse, scaled and faded, thrown outward
+        from the plate at the instant it lands. It is the impact the round-1
+        stamp did not have — that one cross-faded in over 220 ms, which reads as
+        a tooltip appearing rather than as a machined plate arriving.
+      -->
+      <g class="stamp-shock">
+        <ellipse rx="${width * 0.44}" ry="${half * 1.9}" fill="none" stroke="var(--gold-hot)" stroke-width="2" stroke-opacity="0.8"/>
+      </g>
       <g class="stamp">
+        <!-- The pop's origin anchor; see the sphere markup. The shine translates
+             300 px inside a clip, which would otherwise drag the box with it. -->
+        <circle class="stamp__anchor" r="${(width * 0.8).toFixed(0)}" fill="none"/>
         <ellipse class="stamp__glow" rx="${width * 0.62}" ry="${half * 3.4}" fill="url(#stamp-glow)"/>
         <rect class="stamp__plate" x="${-width / 2}" y="${-half}" width="${width}" height="${
           half * 2
@@ -1213,6 +1321,11 @@ export class Chamber {
       const ring = this.#rings.get(slot);
       if (ring) ring.classList.add('lock-ring--on', 'lock-ring--settled');
       this.#numerals.get(slot)?.classList.add('slot-no--lit');
+      // A celebrated tube stays lit by what landed in it, so the record screen
+      // survives a redraw with its colour. `--on` carries the resting opacity as
+      // a declaration rather than as an animation fill, which is what lets
+      // `chamber--restoring` switch every animation off and keep the state.
+      if (this.#won) this.#floodCell(slot, element, 0);
     }
     // The burst is the one thing that is legitimately mid-flight across a
     // redraw, so it resumes rather than restarting: a negative animation delay
@@ -1240,9 +1353,18 @@ export class Chamber {
     this.setStamp('', false);
     this.desaturate(false);
     this.#burstAt = 0;
+    this.#won = false;
     this.#burst?.classList.remove('burst--on', 'burst--calm');
     this.#flash?.classList.remove('cham-flash--on');
     this.#tube?.classList.remove('tube--won');
+    this.#tube?.classList.remove('tube--impact');
+    this.#shock?.classList.remove('stamp-shock--on');
+    this.#stamp?.classList.remove('stamp--land');
+    for (const flood of this.#floods.values()) {
+      flood.classList.remove('cell-flood--on');
+      flood.style.removeProperty('--pop-delay');
+      flood.setAttribute('fill', 'none');
+    }
     if (this.#motes) this.#motes.innerHTML = '';
     for (const [index, orb] of this.#orbs) {
       const [x, fraction] = DRIFT[index] ?? [CENTRE_X, 0.5];
@@ -1252,7 +1374,8 @@ export class Chamber {
       orb.style.transition = 'none';
       orb.style.transform = `translateX(${x}px)`;
       orb.style.opacity = '';
-      orb.classList.remove('orb--seated');
+      orb.classList.remove('orb--seated', 'orb--won');
+      orb.style.removeProperty('--pop-delay');
       if (orbY) {
         orbY.style.transition = 'none';
         orbY.style.transform = `translateY(${Math.round(
@@ -1498,6 +1621,7 @@ export class Chamber {
    */
   celebrate(voicing: Voicing): void {
     this.#voicing = voicing;
+    this.#won = true;
     this.#burstAt = performance.now();
     const burst = this.#burst;
     if (burst) {
@@ -1524,7 +1648,91 @@ export class Chamber {
       void tube.getBoundingClientRect();
       tube.classList.add('tube--won');
     }
+    /*
+     * **The spheres are the celebration.** Round 1's win fired an eighteen-wedge
+     * burst behind the tube, a gold ring, a gold rim and a plate that faded in —
+     * and across all 147 frames of the window every `.orb` held one unchanging
+     * transform, opacity 1 and `filter: none`. Everything that moved was drawn
+     * behind or around the five objects the player had just spent four seconds
+     * watching, which is the difference between a celebration and a backdrop.
+     *
+     * So the column runs up itself, **in the order it settled** — slot 1 first,
+     * one stagger behind the next, the same bottom-up reading the round already
+     * taught. Each sphere overshoots its own size, its emissive core swells
+     * inside its body, and the cell it landed in floods with its light. The
+     * bloom is split between the body's inside and the cell around it for a
+     * geometric reason, not a stylistic one: the slots are 78 units apart in a
+     * 96-unit tube, so any halo big enough to read crosses into the sphere
+     * above (see `sphere.ts`). Every one of these is `transform` or `opacity` on
+     * a group that is already composited (§7.1.1), and nothing here is per-line:
+     * §2.1 gates every celebration on the round, and this fires on `celebrate`
+     * alone.
+     */
+    for (const [slot, element] of this.#seated) {
+      const delay = (slot - 1) * POP_STAGGER_MS;
+      const orb = this.#orbs.get(element);
+      if (orb) {
+        orb.style.setProperty('--pop-delay', `${delay}ms`);
+        orb.classList.remove('orb--won');
+        void orb.getBoundingClientRect();
+        orb.classList.add('orb--won');
+      }
+      this.#floodCell(slot, element, delay);
+    }
+    /*
+     * And the stamp lands rather than appearing. §9 step 5 puts the number on
+     * the last beat of the set piece, and round 1 cross-faded a plate in over
+     * 220 ms — the one object a player would screen-record, arriving like a
+     * tooltip. It drops from 2.3× with an overshoot, throws a shock ring, and
+     * the tube recoils under it.
+     *
+     * **The recoil is on the tube and not on the chamber, and that is a measured
+     * decision.** Written as a translate on the outermost group it was correct,
+     * cheap-looking and the single most expensive thing in this file: a
+     * transform on the SVG root repaints the whole 390 × 700 drawing for every
+     * frame it runs, and a full celebration measured 17 to 40 frames over 20 ms
+     * against a baseline of 0 to 1. On the tube — the same subtree the 2 px lock
+     * flex has always used — the whole beat is back inside 60 fps with nothing
+     * removed from it. It replaces `tube--flex` rather than fighting it: both
+     * animate the same element and `lock(n)` fires one tick earlier.
+     *
+     * All of it is behind `celebrate` and none of it exists on a losing round,
+     * which is §9's no-manufactured-near-miss rule at the render layer: the
+     * neutral close is still one fall, one lock and no dramatic beat.
+     */
+    if (!this.#reduced) {
+      this.#tube?.classList.remove('tube--flex');
+      for (const [node, name] of [
+        [this.#stamp, 'stamp--land'],
+        [this.#shock, 'stamp-shock--on'],
+        [this.#tube, 'tube--impact'],
+      ] as const) {
+        if (!node) continue;
+        node.classList.remove(name);
+        void node.getBoundingClientRect();
+        node.classList.add(name);
+      }
+    }
     this.#dropMotes(voicing);
+  }
+
+  /**
+   * Fill one tube cell with the light of the sphere that settled into it.
+   *
+   * The fill is the sphere's own bloom gradient (`sphere.ts`), so the cell takes
+   * the object's colour rather than a colour chosen for the party — and because
+   * the gradient is `objectBoundingBox`, one definition serves a 64 px sphere and
+   * a 96 × 78 cell without a second asset.
+   */
+  #floodCell(slot: number, element: number, delay: number): void {
+    const flood = this.#floods.get(slot);
+    const id = this.#variant?.elements[element]?.id;
+    if (!flood || id === undefined) return;
+    flood.setAttribute('fill', `url(#orb-bloom-${id})`);
+    flood.style.setProperty('--pop-delay', `${delay}ms`);
+    flood.classList.remove('cell-flood--on');
+    void flood.getBoundingClientRect();
+    flood.classList.add('cell-flood--on');
   }
 
   /**

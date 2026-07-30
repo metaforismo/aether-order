@@ -90,6 +90,32 @@ function elementGradients(element: ElementInfo): string {
     <radialGradient id="orb-core-${id}">
       <stop offset="0" stop-color="${core}" stop-opacity="0.55"/>
       <stop offset="1" stop-color="${core}" stop-opacity="0"/>
+    </radialGradient>
+    <!--
+      The light this sphere throws into the liquid when the round wins, and it is
+      §6.3's own bloom rather than a new light: "threshold 0.78, radius 12 px …
+      applied only to emissive cores and gold". White-hot at the centre, the
+      element's saturated hue outward.
+
+      It is painted by the tube's **cells**, not by the sphere, and that is a
+      correction rather than a preference. Drawn as a halo on the orb it is a
+      sibling of four other orbs 78 units away in a 96-unit tube, so the topmost
+      sphere's halo painted over every body beneath it — a frame dump of the
+      celebration caught all five settled spheres milky at the peak of their own
+      win. In the cell it is clipped to one slot by construction and can never
+      cross into another object's silhouette, and light in the liquid around a
+      glowing body is what §6.6 reference 3 describes anyway.
+
+      It is shaped for the cell rather than for the object, which is why it holds
+      most of its opacity out to 0.78: the sphere covers the middle of its own
+      slot, so a gradient that has already decayed by then floods only the part
+      of the cell nobody can see.
+    -->
+    <radialGradient id="orb-bloom-${id}">
+      <stop offset="0" stop-color="${core}" stop-opacity="0.95"/>
+      <stop offset="0.42" stop-color="${hex}" stop-opacity="0.92"/>
+      <stop offset="0.78" stop-color="${hex}" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="${hex}" stop-opacity="0.16"/>
     </radialGradient>`;
 }
 
