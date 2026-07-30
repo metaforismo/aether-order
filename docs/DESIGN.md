@@ -685,8 +685,19 @@ as `sharedChamber` and frozen in `tools/lib/model.mjs`:
   before the settle. Nothing leaks inside the grace: the seed was committed at
   `round.open` and is revealed only after settlement, so a ticket accepted at the
   very edge is a ticket on an outcome nobody knows yet.
-- **A closed window never reopens within its draw.** No retry, no "the server was
-  slow, try again" — that is a countdown that can expire into a bet.
+- **A closed window never reopens within its draw.** A new ticket cannot become
+  a bet after close. An exact retry of a ticket the service already recorded is
+  different: it returns that stored round and receipt without staking or
+  crediting again, even after settlement. This makes a lost success response
+  recoverable without turning the countdown into a late bet.
+- **Seed-control boundary.** In this single-process chamber, `start()` cannot
+  replace a live draw and the only next-seed path runs after the current draw is
+  settled and its reveal event emitted. Thus the implementation has no
+  in-process discard-and-redraw path for an opened round. This does not prove
+  operator seed custody: an operator who controls the process can replace code,
+  suppress publication, or restart the in-memory prototype. Production claims
+  still require reviewed CSPRNG custody and operational controls; commit-reveal
+  makes a published draw verifiable, not an untrusted process self-policing.
 - **The presence row shows a count of tickets.** Not balances, not wins, not
   names, not a leaderboard. The ticker shows *what people bet*, never *how much*
   and never *how they did* — a leaderboard is a wagering incentive in a social

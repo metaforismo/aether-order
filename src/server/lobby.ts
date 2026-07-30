@@ -134,6 +134,22 @@ export class SharedChamber {
       transcript: null,
       settled: false,
     };
+    // The seed and commitment are fixed properties of this draw object. They
+    // cannot be rewritten through the public `draw`/event references while the
+    // settlement fields below remain intentionally mutable.
+    Object.defineProperties(draw, {
+      serverSeed: { value: serverSeed, enumerable: true, writable: false, configurable: false },
+      seedCommitment: {
+        value: draw.seedCommitment,
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      },
+    });
+    // There is no in-process discard-and-redraw path: `start()` is a no-op
+    // whenever `#draw` is non-null, failures leave that same draw referenced,
+    // and the only other call to `#open` is the final step of `#settle`, after
+    // this draw's transcript and reveal have been fixed and published.
     this.#draw = draw;
     this.#emit({ type: 'round.open', draw });
     this.#timer = setTimeout(() => this.#settle(draw), this.cadenceMs);
@@ -171,6 +187,8 @@ export class SharedChamber {
       }
     }
     this.#emit({ type: 'round.reveal', draw });
+    // Ordering is the anti-grinding guarantee for this single process: the next
+    // seed is not drawn until this draw is settled and its reveal event emitted.
     this.#open();
   }
 

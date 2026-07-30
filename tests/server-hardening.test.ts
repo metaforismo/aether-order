@@ -93,3 +93,42 @@ describe('AO-02 shared-chamber idempotency', () => {
     }
   });
 });
+
+describe('AO-03 shared-draw seed custody', () => {
+  it('cannot replace a live draw and cannot rewrite its seed fields across settlement', () => {
+    vi.useFakeTimers();
+    let now = 1_800_000_000_000;
+    const store = new SessionStore({ now: () => now });
+    const chamber = new SharedChamber(store, 4_000);
+    try {
+      chamber.start();
+      const opened = chamber.draw!;
+      const identity = {
+        roundId: opened.roundId,
+        serverSeed: opened.serverSeed,
+        seedCommitment: opened.seedCommitment,
+      };
+      expect(Object.getOwnPropertyDescriptor(opened, 'serverSeed')?.writable).toBe(false);
+      expect(Object.getOwnPropertyDescriptor(opened, 'seedCommitment')?.writable).toBe(false);
+
+      chamber.start();
+      expect(chamber.draw).toBe(opened);
+      expect(() => {
+        (opened as { serverSeed: string }).serverSeed = '00'.repeat(32);
+      }).toThrow();
+
+      now += 4_000;
+      vi.advanceTimersByTime(4_000);
+      expect(opened.settled).toBe(true);
+      expect({
+        roundId: opened.roundId,
+        serverSeed: opened.serverSeed,
+        seedCommitment: opened.seedCommitment,
+      }).toEqual(identity);
+      expect(chamber.draw?.roundId).not.toBe(opened.roundId);
+    } finally {
+      chamber.stop();
+      vi.useRealTimers();
+    }
+  });
+});
