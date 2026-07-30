@@ -5,8 +5,13 @@
  * needed to play sits in the thumb zone; S2 is the picker; S4 is the round with
  * the ticket strip pinned so lines resolve lock by lock; S5 reports the result
  * through the server's celebration gate and never through a comparison of its
- * own; S6 to S10 are sheets. The chamber is placeholder art (see chamber.ts);
- * the information architecture is not.
+ * own; S6 to S10 are sheets.
+ *
+ * The chamber is no longer placeholder art. It is the jewel instrument §6
+ * describes, built from gradients, SVG and CSS with no downloaded asset of any
+ * kind, and the sound is synthesised the same way; what is still a substitution
+ * is the *renderer* rather than the look, and chamber.ts enumerates every
+ * trade-off that lane makes against §7's WebGL2 one.
  *
  * The client computes no money. Stakes, payouts, the best-possible-outcome
  * figure and the win/lose verdict all arrive from the service, which gets them
@@ -15,12 +20,14 @@
 
 import './styles.css';
 import { ApiFailure, api, type TicketLineInput } from './api.js';
+import { haptics, sound, type WinVoicing } from './audio.js';
 import { Chamber } from './chamber.js';
+import { turbulence } from './choreo.js';
 import { claimKey, claimSummary, elementName, type Params } from './claims.js';
-import { glyphSvg } from './glyphs.js';
 import { credits, signedCredits } from './money.js';
 import { openPicker, stakeLadder } from './picker.js';
 import { draftRows, roundRows } from './rows.js';
+import { orbSvg } from './sphere.js';
 import {
   openFairness,
   openHistory,
@@ -131,11 +138,32 @@ async function boot(): Promise<void> {
         keeps every control needed to play inside the thumb zone.
       -->
       <p class="stage__note">They settle in a random order. Bet on the order.</p>
+      <!--
+        §9's mote fall lives here rather than inside the chamber, because the
+        chamber's markup is replaced whenever the layout gives it a different
+        height — and one of those moments is 220 ms into the celebration.
+      -->
+      <div class="motes" id="motes" aria-hidden="true"></div>
     </main>
     <section class="deck" id="deck"></section>`;
 
-  chamber = new Chamber(document.getElementById('chamber') as HTMLElement);
+  chamber = new Chamber(
+    document.getElementById('chamber') as HTMLElement,
+    document.getElementById('motes'),
+  );
   chamber.render(variant());
+
+  /*
+   * The sound layer arms itself on the first real touch and never before.
+   *
+   * Browsers refuse to start an `AudioContext` outside a user gesture, and that
+   * refusal is the right default rather than an obstacle to work around: §8's
+   * chamber bed is "present from IDLE, always", but a game that makes noise
+   * before the player has touched the screen is a game they mute at the OS level
+   * and never unmute. `once` because arming is idempotent and the listener has no
+   * second job.
+   */
+  document.addEventListener('pointerdown', () => sound.arm(), { once: true });
 
   // Delegated, because the top rail is re-rendered: S10's rail carries `←` and
   // the room's name where S1's carries the menu, the balance and the variant.
@@ -320,10 +348,52 @@ function railMarkup(): string {
       ${fairness}`;
   return `
     <button class="icon-btn" data-menu aria-label="Menu">${ICON_HOME}</button>
-    <span class="rail__balance"><b>${esc(credits(BigInt(session.balanceChips)))}</b><span>balance</span></span>
+    <span class="rail__balance"><b data-balance>${esc(
+      credits(BigInt(session.balanceChips)),
+    )}</b><span>balance</span></span>
     <button class="variant-toggle" data-variant>${esc(variant().label)}</button>
     <span class="badge">free play</span>
     ${fairness}`;
+}
+
+/**
+ * The balance, counted up — and only when the server said the round won.
+ *
+ * §10: "Below the gate the balance **writes to its new value without animating
+ * upward**. A rising balance is a celebration whatever the copy says." So this
+ * runs behind `presentation.balanceCountsUp`, which is `roundPresentation`'s
+ * output and not a comparison of this client's, and every other path simply
+ * re-renders the rail with the new figure.
+ *
+ * The interpolation is in chips — integers — so the figure never shows a value
+ * the wallet could not hold, and the type is tabular (§6.5) so nothing jitters
+ * as it climbs.
+ */
+function countBalanceUp(fromChips: bigint, toChips: bigint): void {
+  const node = app().querySelector<HTMLElement>('[data-balance]');
+  if (!node || toChips <= fromChips) return;
+  const span = Number(toChips - fromChips);
+  const started = performance.now();
+  const duration = 620;
+  node.dataset.counting = 'yes';
+  // Set synchronously as well as in the frame loop: the rail was just rendered
+  // with the final figure, and starting the climb one frame later would show the
+  // number drop before it rose.
+  node.textContent = credits(fromChips);
+  const step = (): void => {
+    const t = Math.min(1, (performance.now() - started) / duration);
+    // Ease-out, so the number decelerates onto its final value rather than
+    // stopping dead on it.
+    const eased = 1 - (1 - t) ** 3;
+    node.textContent = credits(fromChips + BigInt(Math.round(span * eased)));
+    if (t < 1) {
+      requestAnimationFrame(step);
+      return;
+    }
+    node.textContent = credits(toChips);
+    window.setTimeout(() => node.removeAttribute('data-counting'), 500);
+  };
+  requestAnimationFrame(step);
 }
 
 /**
@@ -361,7 +431,18 @@ function render(): void {
   deck.innerHTML =
     state.mode === 'round' ? roundDeck() : state.mode === 'result' ? resultDeck() : buildDeck();
   wireDeck(deck);
-  if (state.mode === 'build') startFloorTicker();
+  /*
+   * The cycle floor unlocks on the result screen too.
+   *
+   * §5 S5: "Neither is pre-focused, and both are disabled until the cycle floor
+   * elapses (§2.2)" — and §2.2's whole point is that the wait *unlocks*, it never
+   * expires. Round 1 started the ticker in build mode only, so after a SKIPped
+   * round — which finishes in about 1.5 s against a 2,500 ms floor — `REBET` and
+   * `NEW TICKET` were rendered disabled and nothing ever re-enabled them: the
+   * player had to open a sheet to force a re-render. A control that never unlocks
+   * is exactly the broken button §4 says a rejected tap reads as.
+   */
+  if (state.mode !== 'round') startFloorTicker();
   fitChamber();
 }
 
@@ -444,15 +525,30 @@ function tierTabs(): string {
 }
 
 /**
- * The chip rail.
+ * The chip rail — tiered cards, volatility as colour, the price set loud.
  *
- * `NEIGHBOURS` is the reason the name carries a length flag. §6.5 sets bet names
- * uppercase at +0.06em, and at the 13 px step that word is 103 px wide inside a
- * 96 px chip: it overhung its own border at 100% text and was cut off by the
- * right edge of the screen at 200%, which §11 forbids. A word longer than the
- * ~8 characters the chip holds drops to 11 px — the *next step down on §6.5's
- * own scale*, not an arbitrary size — and stays on one line. `FULL ORDER` is
- * unaffected: its longest word is five characters and it wraps at the space.
+ * Two length flags, and both are §11's no-clipping rule rather than typography
+ * taste:
+ *
+ * - **The name.** §6.5 sets bet names uppercase at +0.06em, and at the 13 px step
+ *   `NEIGHBOURS` is 103 px wide inside a 96 px chip: it overhung its own border
+ *   at 100% text and was cut off by the right edge of the screen at 200%. A word
+ *   longer than the ~8 characters the chip holds drops to 11 px — the *next step
+ *   down on §6.5's own scale*, not an arbitrary size. `FULL ORDER` is unaffected:
+ *   its longest word is five characters and it wraps at the space.
+ * - **The multiplier.** The price is now set at the 22 px step, because four
+ *   different-looking bets all reading `4.80×` is the product's whole claim (§1)
+ *   and it should be the loudest thing on the card. Seven characters is where it
+ *   stops fitting — `115.20×` measured 88 px inside an 82 px content box, and
+ *   SEVEN's `201.60×` and `4838.40×` are worse — so anything longer than six
+ *   takes the next step down. That threshold is measured, not guessed: the first
+ *   draft cut at eight characters and let both ORDER-tier prices overhang their
+ *   own cards by 6 px. Nothing is clipped and nothing leaves the published scale.
+ *
+ * The tier travels as `data-tier`, which drives the hairline across the top of
+ * the card and the colour of the numeral — cool for FLOW, neutral for FORM, hot
+ * for ORDER. It is volatility, never value (§10), the tier's plain-language
+ * gloss is on the tab immediately above, and the 96% line is immediately below.
  */
 function chipRail(): string {
   const info = variant();
@@ -464,13 +560,15 @@ function chipRail(): string {
     .filter((bet) => bet.tier === state.tier)
     .map((bet) => {
       const count = counts.get(bet.code) ?? 0;
-      return `<button class="chip" data-chip="${bet.code}" aria-label="${esc(
-        `${bet.name}, ${bet.picks}, pays ${bet.multiplierDecimal}`,
-      )}">
+      return `<button class="chip" data-chip="${bet.code}" data-tier="${esc(
+        bet.tier,
+      )}" aria-label="${esc(`${bet.name}, ${bet.picks}, pays ${bet.multiplierDecimal}`)}">
         ${count > 0 ? `<span class="chip__count">${count}</span>` : ''}
         <b${longestWord(bet.name) > 8 ? ' data-long="yes"' : ''}>${esc(bet.name)}</b>
         <em>${esc(bet.picks)}</em>
-        <u>${esc(bet.multiplierDecimal)}</u>
+        <u${bet.multiplierDecimal.length > 6 ? ' data-long="yes"' : ''}>${esc(
+          bet.multiplierDecimal,
+        )}</u>
       </button>`;
     })
     .join('')}</div>`;
@@ -549,6 +647,28 @@ function roundDeck(): string {
   return pinnedLines('live');
 }
 
+/**
+ * The settled order, as the objects that settled.
+ *
+ * A strip of the actual spheres, bottom-of-tube first, with the names in words
+ * underneath. The strip is the premium read and the words are the channel: §6.1
+ * proves seven colours clearing the contrast floor cannot be separated by
+ * luminance, so the glyph rides on every orb and the colour is *also* named in
+ * text — a build that shows only the dots has dropped the channel (§11).
+ */
+function settledStrip(round: RoundView): string {
+  const info = variant();
+  const permutation = round.transcript?.permutation;
+  if (!permutation) return '';
+  const orbs = permutation
+    .map((element) => {
+      const sphere = info.elements[element];
+      return sphere ? orbSvg(sphere, 16) : '';
+    })
+    .join('');
+  return `<span class="perm">${orbs}</span>`;
+}
+
 function resultDeck(): string {
   const round = state.round as RoundView;
   const presentation = round.presentation;
@@ -557,11 +677,11 @@ function resultDeck(): string {
   return `
     <div class="result-head" data-outcome="${esc(presentation?.outcome ?? '')}">
       <b>${esc(presentation?.headline ?? '')}</b>
-      <span>${esc(
+      <span class="result-head__order">${settledStrip(round)}${esc(
         round.transcript
-          ? `settled order: ${round.transcript.permutation
+          ? round.transcript.permutation
               .map((element) => elementName(variant(), element).toLowerCase())
-              .join(', ')}`
+              .join(' · ')
           : '',
       )}</span>
     </div>
@@ -582,7 +702,7 @@ function cadenceMarkup(): string {
   return `<div class="cadence">
     <span>next draw</span>
     <span class="cadence__bar"><i style="width:${Math.round((remaining / total) * 100)}%"></i></span>
-    <span>${(remaining / 1000).toFixed(1)}s</span>
+    <span class="cadence__time">${(remaining / 1000).toFixed(1)}s</span>
   </div>`;
 }
 
@@ -591,9 +711,7 @@ function presenceMarkup(): string {
   const info = variant();
   if (!presence) return '';
   return `<div class="ticker">
-    <span style="width:100%;color:var(--ink)">IN THIS DRAW · ${presence.tickets} ticket${
-      presence.tickets === 1 ? '' : 's'
-    }</span>
+    <b>IN THIS DRAW · ${presence.tickets} ticket${presence.tickets === 1 ? '' : 's'}</b>
     ${presence.claims
       .map((claim) => {
         const bet = info.bets.find((candidate) => candidate.code === claim.code);
@@ -728,6 +846,9 @@ function startFloorTicker(): void {
 async function commit(): Promise<void> {
   const session = state.session as SessionState;
   state.notice = null;
+  // A confirmation, not an outcome cue: the one tap in the product that spends
+  // money answers immediately, in sound as well as in the button's own press.
+  sound.tick();
   try {
     if (state.place === 'lobby') {
       const roundId = state.lobby?.roundId;
@@ -844,15 +965,54 @@ async function rebet(): Promise<void> {
 
 /* --------------------------------------------------------- choreography -- */
 
+/**
+ * The tier the celebration is voiced at: the highest tier among the lines that
+ * won.
+ *
+ * §9 frames LOCK-OUT as "the top of a ladder rather than … the whole show" and
+ * §8 scales a win by **voicing, not loudness** — "a FLOW win and an ORDER win
+ * differ in *voicing*, not loudness — so a small win is not made to feel like a
+ * failure". This is that scale, read off the settled lines the server sent. It
+ * is not a second gate: whether to celebrate at all is `presentation.celebrate`
+ * and nothing here can change it.
+ */
+function winVoicing(round: RoundView): WinVoicing {
+  let voicing: WinVoicing = 'FLOW';
+  for (const line of round.lines) {
+    if (line.won !== true) continue;
+    if (line.tier === 'ORDER') return 'ORDER';
+    if (line.tier === 'FORM') voicing = 'FORM';
+  }
+  return voicing;
+}
+
 async function playRound(round: RoundView): Promise<void> {
   const info = variant();
   const beats = (state.catalogue as Catalogue).choreography;
   const track = round.resolution;
   const permutation = round.transcript?.permutation ?? [];
   const celebrate = round.presentation?.celebrate === true;
+  const voicing = celebrate ? winVoicing(round) : 'FLOW';
   const reduced = reducedMotion();
   const stagger = info.staggerMs;
   const fall = reduced ? 120 : beats.fallMs;
+  const balanceBefore = BigInt((state.session as SessionState).balanceChips);
+
+  /*
+   * The agitation track, built once, from the transcript.
+   *
+   * §7's principle is that the whole round is a precomputed choreography track
+   * because the transcript is known the instant the round commits. The seed is
+   * the round's own commitment, so every round tumbles differently and the same
+   * round tumbles identically on replay — and the turbulence is *seeded* by the
+   * commitment rather than *arranged* by the permutation, so nothing about the
+   * order can be read out of the shake before the tube shows it (§3).
+   */
+  const turbulenceTrack = turbulence(
+    round.transcript?.commitment ?? round.seedCommitment,
+    info.n,
+    [32, 23],
+  );
 
   state.mode = 'round';
   state.skipRequested = (state.session as SessionState).skip;
@@ -919,8 +1079,11 @@ async function playRound(round: RoundView): Promise<void> {
   };
 
   chamber.setBeat('charge');
+  sound.charge(beats.chargeMs * scale);
   await at(beats.chargeMs);
   chamber.setBeat('agitate');
+  chamber.agitate(turbulenceTrack);
+  sound.agitate(beats.agitateMs * scale, turbulenceTrack.seed);
   await at(beats.chargeMs + beats.agitateMs);
   chamber.setBeat('settle');
 
@@ -930,6 +1093,10 @@ async function playRound(round: RoundView): Promise<void> {
     chamber.seat(lock, permutation[lock - 1] as number, fall * scale);
     await at(settleStart + (lock - 1) * stagger + fall);
     chamber.lock(lock);
+    // §8: a struck-glass tone per slot, ascending by slot index, identical in
+    // every round whatever the outcome. There is deliberately no per-line cue.
+    sound.lock(lock, info.n);
+    haptics.lock();
     resolveLinesAt(lock);
     // The hairline reaches full width at lock n-1: there is no information left.
     setProgress(lock / (info.n - 1));
@@ -938,11 +1105,26 @@ async function playRound(round: RoundView): Promise<void> {
   const closeStart = settleStart + (info.n - 2) * stagger + beats.fallMs + beats.reboundMs;
   await at(closeStart);
   chamber.setBeat('close');
-  if (celebrate) chamber.igniteRim(true);
+  /*
+   * §9's close, and the one comparison that chooses between its two forms.
+   *
+   * `celebrate` is `roundPresentation`'s answer to `creditedChips >
+   * totalStakeChips`, fully determined at lock n−1 and shipped by the server.
+   * Above it: the audio ducks to the sub, the liquid desaturates, the fall slows
+   * to 0.35×, the tube rim ignites from the bottom up. Below it: one fall at full
+   * speed, no colour change, no audio event — and identically so whether the
+   * ticket missed by one sphere or by five (§9's no-near-miss rule).
+   */
+  if (celebrate) {
+    chamber.igniteRim(true);
+    chamber.desaturate(true);
+    sound.duck(400);
+  }
   const closeFall = celebrate ? beats.fallMs / 0.35 : beats.fallMs;
   chamber.seat(info.n, permutation[info.n - 1] as number, (reduced ? 120 : closeFall) * scale);
   await at(closeStart + closeFall);
   chamber.lock(info.n);
+  sound.lock(info.n, info.n);
   resolveLinesAt(info.n);
 
   // §9 step 5: the multiplier stamps over the tube. The figure is the round's
@@ -950,6 +1132,17 @@ async function playRound(round: RoundView): Promise<void> {
   // arithmetic on money and this client does none.
   if (round.presentation?.multiplierStamp && round.presentation.stampMultipleDecimal)
     chamber.setStamp(round.presentation.stampMultipleDecimal, true);
+  if (celebrate) {
+    // The desaturation lifts as the burst blooms — the picture's version of §8's
+    // "full-frequency return" on the closing lock. Leaving it down would make the
+    // record screen, which is the round's receipt, read as switched off.
+    chamber.desaturate(false);
+    chamber.celebrate(voicing);
+    sound.win(voicing);
+    haptics.win();
+  } else {
+    sound.rest();
+  }
   await at(closeStart + closeFall + beats.stampMs);
   chamber.setBeat('done');
   skipCurrentRound = null;
@@ -964,6 +1157,16 @@ async function playRound(round: RoundView): Promise<void> {
   render();
   await openRound();
   render();
+  // §10 again, and this is the last channel the gate governs: the balance counts
+  // up only above it. Below the gate the rail has simply been re-rendered with
+  // the new figure and nothing animates, because a rising balance is a
+  // celebration whatever the copy says.
+  //
+  // It runs *after* the final render on purpose. The rail is re-rendered as
+  // markup, so a count-up started before it would have its node replaced
+  // mid-flight and stop halfway up.
+  if (round.presentation?.balanceCountsUp)
+    countBalanceUp(balanceBefore, BigInt((state.session as SessionState).balanceChips));
 }
 
 /* ----------------------------------------------------------------- menus -- */
@@ -982,6 +1185,25 @@ function openMenu(): void {
         <button class="btn btn--wide" data-go="place">${
           state.place === 'solo' ? 'ENTER SHARED CHAMBER' : 'BACK TO SOLO PLAY'
         }</button>
+        <!--
+          §5 gives the top rail exactly two controls, the menu and the fairness
+          chip, so the presentation preferences live here rather than adding a
+          third. §3's own table lists MUTE and haptics among the controls that
+          change nothing about the outcome, the settlement or the transcript, and
+          the sheet says so.
+        -->
+        <div class="card">
+          <h3>Presentation</h3>
+          <div class="row">
+            <button class="btn" data-sound aria-pressed="${!sound.muted}">SOUND ${
+              sound.muted ? 'OFF' : 'ON'
+            }</button>
+            <button class="btn" data-haptics aria-pressed="${haptics.enabled}">HAPTICS ${
+              haptics.enabled ? 'ON' : 'OFF'
+            }</button>
+          </div>
+          <p class="note">Everything is playable muted — the sound is atmosphere and confirmation, and never carries anything the screen does not. Neither control is an input to the draw.</p>
+        </div>
         <p class="note">${esc(info.displayName)} · adapter ${esc(
           (state.catalogue as Catalogue).adapterVersion,
         )} · ${esc(info.adapterFingerprint.slice(0, 12))}… · session ${Math.floor(
@@ -996,6 +1218,18 @@ function openMenu(): void {
           if (target === 'history') void openHistorySheet();
           if (target === 'seed') openSeedSheet();
           if (target === 'place') void togglePlace();
+        });
+        on(root, '[data-sound]', 'click', (_event, node) => {
+          const muted = sound.toggleMute();
+          node.textContent = `SOUND ${muted ? 'OFF' : 'ON'}`;
+          node.setAttribute('aria-pressed', String(!muted));
+          if (!muted) sound.tick();
+        });
+        on(root, '[data-haptics]', 'click', (_event, node) => {
+          haptics.enabled = !haptics.enabled;
+          node.textContent = `HAPTICS ${haptics.enabled ? 'ON' : 'OFF'}`;
+          node.setAttribute('aria-pressed', String(haptics.enabled));
+          haptics.lock();
         });
       },
     });
@@ -1043,7 +1277,7 @@ function openSeedSheet(): void {
       title: 'Client seed',
       body: `
         <p class="note">Your seed changes which order comes up. It cannot change your odds — every seed gives the same 96%.</p>
-        <input id="seed-input" class="btn btn--wide" style="padding:0 10px" maxlength="64" value="${esc(
+        <input id="seed-input" class="btn btn--wide input" maxlength="64" value="${esc(
           session.clientSeed,
         )}" placeholder="type anything, or leave it empty" />
         <p class="note">Up to 64 characters of ordinary keyboard text; anything else is dropped, because the transcript has to re-derive byte for byte on a verifier that shares no keyboard with you.</p>
