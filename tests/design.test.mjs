@@ -130,6 +130,98 @@ describe('docs/DESIGN.md palette and contrast', () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * 1b. The stylesheet's palette IS the document's palette.              *
+ *                                                                      *
+ * The gate above recomputes every ratio the document quotes and every   *
+ * sphere hex the model publishes — and it could not see a colour the    *
+ * build had invented, because a token absent from the tables is a token *
+ * nothing checks. That is exactly how round 1's art pass shipped three  *
+ * new accent colours driving the tier tabs, the chip numerals and the   *
+ * ticket rails while §6.1 still read "the whole world is neutral": the  *
+ * shipped art direction contradicted its own closed spec and every test *
+ * passed. This block closes it in both directions.                      *
+ * ------------------------------------------------------------------ */
+
+describe('src/client/styles.css declares exactly the palette DESIGN.md publishes', () => {
+  const CSS = read('src/client/styles.css');
+  /** The `:root` block, which is where every palette token is declared. */
+  const ROOT_BLOCK = CSS.slice(CSS.indexOf(':root {'), CSS.indexOf('\n}', CSS.indexOf(':root {')));
+
+  /**
+   * A *palette* token: one whose value is a colour. Everything else in `:root`
+   * — the type scale, the tap floor, the font stacks, the one gradient — is
+   * geometry or typography and is gated elsewhere (`tests/client.test.mjs`).
+   */
+  const cssPalette = () => {
+    const found = new Map();
+    for (const match of ROOT_BLOCK.matchAll(/(--[a-z-]+):\s*(#[0-9a-fA-F]{6}|rgba?\([^)]*\))\s*;/gu)) {
+      found.set(match[1], match[2].replace(/\s+/gu, '').toLowerCase());
+    }
+    return found;
+  };
+
+  /** Every `--token | value` row in any palette table in the document. */
+  const docPalette = () => {
+    const found = new Map();
+    for (const match of DESIGN.matchAll(
+      /\|\s*`(--[a-z-]+)`\s*\|\s*`(#[0-9A-Fa-f]{6}|rgba?\([^)]*\))`\s*\|/gu,
+    )) {
+      found.set(match[1], match[2].replace(/\s+/gu, '').toLowerCase());
+    }
+    return found;
+  };
+
+  it('publishes every colour the stylesheet declares, with the same value', () => {
+    const css = cssPalette();
+    const doc = docPalette();
+    expect(css.size).toBeGreaterThanOrEqual(20);
+    for (const [token, value] of css) {
+      expect(
+        doc.has(token),
+        `${token} is declared in styles.css and published in no DESIGN.md palette table`,
+      ).toBe(true);
+      expect(doc.get(token), `${token} differs between the stylesheet and §6.1`).toBe(value);
+    }
+  });
+
+  it('ships every colour it publishes, so the tables cannot describe a dead build', () => {
+    const css = cssPalette();
+    for (const token of docPalette().keys()) {
+      expect(css.has(token), `${token} is published in §6.1 and declared nowhere in styles.css`).toBe(
+        true,
+      );
+    }
+  });
+
+  it('holds the UI accents to §11’s foreground floor', () => {
+    const doc = docPalette();
+    const VOID_HEX = doc.get('--void');
+    for (const token of ['--tier-flow', '--tier-form', '--tier-order', '--pending', '--alert']) {
+      expect(contrast(doc.get(token), VOID_HEX), token).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('borrows the tier accents from the spheres rather than inventing colour', () => {
+    // §6.1 constraint 1: "Every tier hex is a hex this table already publishes
+    // for a sphere". If a future pass picks a fourth hue, this fails.
+    const doc = docPalette();
+    const spheres = new Set(ELEMENTS.map((element) => element.hex.toLowerCase()));
+    for (const token of ['--tier-flow', '--tier-form', '--tier-order']) {
+      expect(spheres.has(doc.get(token)), `${token} is not a published sphere colour`).toBe(true);
+    }
+  });
+
+  it('keeps the tier accents out of the chamber', () => {
+    // §6.1 constraint 3. The instrument is `--void` through `--specular` plus
+    // the spheres, and the accents belong to the chrome layer only.
+    const CHAMBER = read('src/client/chamber.ts');
+    for (const token of ['--tier-flow', '--tier-form', '--tier-order', '--alert', '--pending']) {
+      expect(CHAMBER.includes(token), `${token} appears inside chamber.ts`).toBe(false);
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * 2. The player-protection rules are code, and the docs quote the code. *
  * ------------------------------------------------------------------ */
 
