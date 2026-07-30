@@ -121,6 +121,18 @@ export interface OperatorKey {
 }
 
 /**
+ * Fault injection used by the server regression suite.
+ *
+ * `createApp` never supplies this object, and no HTTP route can reach it. The
+ * hooks run after the in-memory patch has been applied so the tests can prove
+ * that the rollback path restores every touched field.
+ */
+export interface SessionStoreTestFaults {
+  readonly afterStagePatch?: () => void;
+  readonly afterFinishPatch?: () => void;
+}
+
+/**
  * The operator key is generated at process start.
  *
  * docs/ENGINE.md §11 is explicit that key custody, publication and rotation are
@@ -157,12 +169,21 @@ export class SessionStore {
   readonly #sessions = new Map<string, Session>();
   readonly #now: Clock;
   readonly #operatorKey: OperatorKey;
+  readonly #testFaults: SessionStoreTestFaults | undefined;
   /** Test seam only: forces the next server seed. Never used in production. */
   #forcedSeed: string | null = null;
 
-  constructor(options: { now?: Clock; operatorKey?: OperatorKey } = {}) {
+  constructor(
+    options: {
+      now?: Clock;
+      operatorKey?: OperatorKey;
+      /** Test-only fault injection; deliberately not threaded through `createApp`. */
+      testFaults?: SessionStoreTestFaults;
+    } = {},
+  ) {
     this.#now = options.now ?? Date.now;
     this.#operatorKey = options.operatorKey ?? makeOperatorKey();
+    this.#testFaults = options.testFaults;
   }
 
   get operatorKey(): OperatorKey {
@@ -484,16 +505,37 @@ export class SessionStore {
         '$.totalStake',
       );
 
-    // Debit before deriving. The permutation was fixed by the published
-    // commitment; the debit is what makes the ticket a bet.
-    session.balanceChips -= ticket.totalStake;
-    session.stakedChips += ticket.totalStake;
-
     const now = this.#now();
-    round.ticket = ticket;
-    session.commitsByIdempotencyKey.set(ticket.idempotencyKey, round);
-    session.lastCommitAt = now;
-    session.commitTimestamps.push(now);
+    const before = {
+      balanceChips: session.balanceChips,
+      stakedChips: session.stakedChips,
+      ticket: round.ticket,
+      lastCommitAt: session.lastCommitAt,
+      commitTimestampLength: session.commitTimestamps.length,
+      priorCommit: session.commitsByIdempotencyKey.get(ticket.idempotencyKey),
+    };
+    try {
+      // Debit and record the matching staged bet as one exception-safe patch.
+      // The permutation was fixed by the published commitment; the debit is
+      // what makes the ticket a bet.
+      session.balanceChips = before.balanceChips - ticket.totalStake;
+      session.stakedChips = before.stakedChips + ticket.totalStake;
+      round.ticket = ticket;
+      session.commitsByIdempotencyKey.set(ticket.idempotencyKey, round);
+      session.lastCommitAt = now;
+      session.commitTimestamps.push(now);
+      this.#testFaults?.afterStagePatch?.();
+    } catch (error) {
+      session.balanceChips = before.balanceChips;
+      session.stakedChips = before.stakedChips;
+      round.ticket = before.ticket;
+      session.lastCommitAt = before.lastCommitAt;
+      session.commitTimestamps.length = before.commitTimestampLength;
+      if (before.priorCommit)
+        session.commitsByIdempotencyKey.set(ticket.idempotencyKey, before.priorCommit);
+      else session.commitsByIdempotencyKey.delete(ticket.idempotencyKey);
+      throw error;
+    }
     return { ticket, replayed: null };
   }
 
@@ -520,21 +562,58 @@ export class SessionStore {
       makeReceipt({ transcript, ticket, settlement, signerId: this.#operatorKey.signerId }),
       this.#operatorKey.privateKey,
     );
-
-    session.balanceChips += settlement.credited;
-    session.creditedChips += settlement.credited;
-
-    round.phase = 'SETTLED';
-    round.clientSeed = transcript.clientSeed;
-    round.transcript = transcript;
-    round.settlement = settlement;
-    round.receipt = receipt;
-    round.resolution = resolutionTrack(game, ticket.lines, transcript.permutation);
-    round.presentation = presentSettlement(settlement);
-    round.committedAt = session.lastCommitAt ?? this.#now();
-    round.balanceAfterChips = session.balanceChips;
-    session.rounds.unshift(round);
-    if (session.openRound === round) session.openRound = null;
+    // Finish every downstream operation that can reject or throw before the
+    // wallet or round changes. Only fully computed values enter the patch.
+    const resolution = resolutionTrack(game, ticket.lines, transcript.permutation);
+    const presentation = presentSettlement(settlement);
+    const committedAt = session.lastCommitAt ?? this.#now();
+    const balanceAfterChips = session.balanceChips + settlement.credited;
+    const before = {
+      balanceChips: session.balanceChips,
+      creditedChips: session.creditedChips,
+      phase: round.phase,
+      clientSeed: round.clientSeed,
+      transcript: round.transcript,
+      settlement: round.settlement,
+      receipt: round.receipt,
+      resolution: round.resolution,
+      presentation: round.presentation,
+      committedAt: round.committedAt,
+      balanceAfterChips: round.balanceAfterChips,
+      roundsLength: session.rounds.length,
+      openRound: session.openRound,
+    };
+    try {
+      session.balanceChips = balanceAfterChips;
+      session.creditedChips = before.creditedChips + settlement.credited;
+      round.phase = 'SETTLED';
+      round.clientSeed = transcript.clientSeed;
+      round.transcript = transcript;
+      round.settlement = settlement;
+      round.receipt = receipt;
+      round.resolution = resolution;
+      round.presentation = presentation;
+      round.committedAt = committedAt;
+      round.balanceAfterChips = balanceAfterChips;
+      session.rounds.unshift(round);
+      if (session.openRound === round) session.openRound = null;
+      this.#testFaults?.afterFinishPatch?.();
+    } catch (error) {
+      session.balanceChips = before.balanceChips;
+      session.creditedChips = before.creditedChips;
+      round.phase = before.phase;
+      round.clientSeed = before.clientSeed;
+      round.transcript = before.transcript;
+      round.settlement = before.settlement;
+      round.receipt = before.receipt;
+      round.resolution = before.resolution;
+      round.presentation = before.presentation;
+      round.committedAt = before.committedAt;
+      round.balanceAfterChips = before.balanceAfterChips;
+      session.rounds.length = before.roundsLength;
+      session.openRound = before.openRound;
+      throw error;
+    }
     return round;
   }
 
