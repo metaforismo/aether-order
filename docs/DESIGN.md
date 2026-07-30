@@ -21,8 +21,10 @@ A new player opens the game and sees, in this order:
 3. **One line of copy:** *"They settle in a random order. Bet on the order."*
 4. **The FORM tier's chips, already open.** `4.80×`, `4.80×`, `4.80×`, `4.80×` —
    FIRST, LAST, SLOT, STACK, four different claims at one price.
-5. **One line under the rail:** *"Every bet pays 96%. The tiers are how wild the
-   ride is, not how good the deal is."*
+5. **One line under the rail:** *"Every legal bet has the same expected return:
+   exactly 24/25 (96%) of stake. The tiers are how wild the ride is, not how
+   good the deal is."* This is under `MATH.md` §2's uniform-draw assumptions;
+   integer-chip settlement adds no rounding shortfall.
 
 **The opening screen does not lead with the biggest number.** `115.20×` is real,
 it is the pitch, and it lives one tab away under `ORDER · rare, big`. It is not
@@ -231,13 +233,16 @@ the UI:**
 - *The shake.* The agitation is choreography. The tooltip on the chamber reads:
   *"The order was fixed when you committed. The shake is how we show it."*
 - *The client seed.* The fairness sheet reads: *"Your seed changes which order
-  comes up. It cannot change your odds — every seed gives the same 96%."*
+  comes up. It cannot change your odds — every seed leaves the exact expected
+  return at 24/25 (96%)."*
 
 ---
 
 ## 4. Bet menu
 
-Eleven bet types in three tiers. Every one pays a theoretical 96.000%. The tier
+Eleven bet types in three tiers. Every legal line has expected credit exactly
+`24/25 = 96%` of stake under the uniform-draw assumptions in `MATH.md` §2;
+integer-chip settlement introduces no rounding shortfall. The tier
 is **volatility**, never value — the client is required to say so on the tier
 tab.
 
@@ -723,14 +728,15 @@ a player would spend part of every hour locked out of a room they are watching �
 a worse experience than a slower room, and a worse one to be *nudged* by. The
 open question in §15 is 6, 8 or 10, all of which are safely cadence-bound.
 
-**Networking, and its budget.** One WebSocket per session, four message kinds,
-all of them small:
+**Networking, and its budget.** While the lobby screen is open, one EventSource
+stream carries three server events and HTTPS POST carries the commit. All are
+small:
 
 | Message | Direction | Size | Cadence |
 | --- | --- | --- | --- |
 | `round.open` — round id, nonce, variant, `seedCommitment`, `settleAtEpochMs` | server → client | ~210 B | once per draw |
 | `presence` — ticket count, up to 8 anonymised claim labels | server → client | ~180 B | 2 Hz while betting is open |
-| `ticket.commit` — the ticket, idempotency key | client → server | ~120–400 B | once per player per draw, accepted until `settleAtEpochMs − commitLeadMs + commitGraceMs` on the **server's** clock, then `BETTING_CLOSED` |
+| `ticket.commit` — the ticket (the service derives its idempotency key) | client → server, HTTPS POST | ~120–400 B | once per player per draw, accepted until `settleAtEpochMs − commitLeadMs + commitGraceMs` on the **server's** clock, then `BETTING_CLOSED` |
 | `round.reveal` — server seed, settlement, receipt | server → client | ~420 B | once per draw |
 
 At `T = 6 s` that is under 1.5 kB/s down and a few hundred bytes up per player.
@@ -741,11 +747,11 @@ existing transport, not a second stack.
 by `settleAtEpochMs`, a server-published wall-clock instant, not by message
 arrival. A client whose clock or connection is behind starts the choreography
 late and *time-shifts* it — it never skips a lock, never fast-forwards past the
-resolution of a line, and never truncates the close. If the socket drops after
-COMMIT, the round settles server-side and the completed result is restored from
-the round snapshot on reconnect (`docs/ENGINE.md` §7.9). If the socket drops
-*before* COMMIT, nothing was staked. There is no state in which a network
-condition changes what a player is paid.
+resolution of a line, and never truncates the close. If the EventSource drops
+after COMMIT, the round still settles server-side and remains in the bounded
+session history; this prototype does not automatically replay a reveal event
+missed while disconnected. If the stream drops *before* COMMIT, nothing was
+staked. No network condition changes the server-side settlement.
 
 ---
 
@@ -1708,8 +1714,8 @@ and its own review. It is not a paragraph.
   position, nothing that implies a pattern.
 - No jackpot, no loyalty or level multiplier, no mission with a wagering
   requirement, no randomised reward priced off stake. Every one of them would
-  make "96% on every bet, for everybody" untrue; §13.6 gives the reasoning for
-  each and it is not a close call.
+  make "expected credit is exactly 24/25 of stake for every legal line" untrue;
+  §13.6 gives the reasoning for each and it is not a close call.
 
 **No misleading skill framing.**
 - Banned in all copy, store listings and marketing: *predict, read, strategy,
@@ -1717,9 +1723,11 @@ and its own review. It is not a paragraph.
 - Approved verbs: *choose, place, pick, watch, verify.*
 - Every tier tab states volatility in plain language and never implies value.
 - The paytable shows the exact probability beside every multiplier.
-- The fairness sheet states, in one sentence, that all bets pay 96% and that no
-  bet, seed, or pattern of play changes it. `MATH.md` §9 is the proof, linked
-  from that sentence.
+- The fairness sheet states, in one sentence, that every legal line's expected
+  credit is exactly `24/25 = 96%` of stake under the stated uniform-draw
+  assumptions, with no integer-chip rounding shortfall, and that no bet, seed,
+  or pattern of play changes that expectation. `MATH.md` §9 is the proof,
+  linked from that sentence.
 
 **No latency-sensitive money decisions.**
 - Every money decision happens before COMMIT, with no countdown that can expire
@@ -1862,7 +1870,9 @@ exist.
 
 ## 12. SEVEN — the high-volatility variant
 
-Same chamber, two more spheres (INDIGO, ROSE), same bet catalogue, same 96.000%.
+Same chamber, two more spheres (INDIGO, ROSE), same bet catalogue, same exact
+`24/25 = 96%` expected return under the uniform-draw assumptions, with no
+integer-chip rounding shortfall.
 What changes is the shape of the ride. **Every multiplier except BEFORE
 re-prices**, because every probability except BEFORE's `1/2` depends on `n`:
 
@@ -1883,7 +1893,8 @@ Production notes:
   which is exactly the escalation the variant wants.
 - SEVEN is a **toggle in the top rail, not a separate product**, and switching
   is free and instant. It is presented as *"more spheres, bigger prizes, same
-  96%"* — because that is precisely true.
+  exact 24/25 (96%) expected return"* — under `MATH.md` §2's uniform-draw
+  assumptions, with no payout-rounding shortfall.
 - Onboarding never starts a player in SEVEN. It is opt-in, always.
 
 ---
@@ -1918,7 +1929,7 @@ of what the category reaches for first, and each is honestly rated:
 
 | Layer | Status | Carries how much |
 | --- | --- | --- |
-| 13.1 round shape varies with the ticket | specified, costs nothing, provably RTP-neutral | most of it |
+| 13.1 round shape varies with the ticket | specified, costs nothing, exactly RTP-neutral under the uniform-draw model (`MATH.md` §9.5) | most of it |
 | 13.2 SHARED CHAMBER | specified: screen S10, protocol, cadence arithmetic, 9 KB | second most |
 | 13.3 THE LEDGER | specified; a retention bet with no evidence behind it, and labelled as one | unknown |
 | 13.4 THE ALMANAC | default **no** | none unless research says otherwise |
@@ -2054,7 +2065,7 @@ losing streak, a balance drop, or a period of inactivity, per §10.
 | Mechanic | Why not |
 | --- | --- |
 | Progressive jackpot | It has to be funded from the edge, which makes the published RTP a *range* that depends on the jackpot's state and makes one bet type structurally different from the others. That is precisely the asymmetry the whole product is built against. |
-| Loyalty or level multipliers | Same defect: two players would face different RTPs, and "96% on every bet" would stop being true. |
+| Loyalty or level multipliers | Same defect: two players would face different expected returns, and "exactly 24/25 of stake in expectation for every legal line" would stop being true. |
 | Missions with wagering requirements | A mission that requires turnover is a loss-chasing mechanic with a checklist. |
 | Loot boxes, XP tied to stake, spin-the-wheel bonuses | Randomised rewards priced off stake are a second, unpriced game hiding inside the first, and this repository could not enumerate it. |
 | Daily login streaks | Time-triggered rewards are permitted by §10; *streaks* are not, because breaking one is engineered as a loss. |
