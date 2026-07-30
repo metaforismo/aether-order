@@ -296,7 +296,7 @@ describe('pacing and the wallet', () => {
   it('declines a ticket the balance does not cover, and stakes nothing', async () => {
     const sessionId = await newSession();
     const session = app.store.get(sessionId);
-    session.balanceChips = 100n;
+    app.store.setBalanceForTest(session, 100n);
     const opened = await call('POST', `/api/session/${sessionId}/round/open`);
     const declined = await call('POST', `/api/session/${sessionId}/round/commit`, {
       roundId: opened.json.round.roundId,

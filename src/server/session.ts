@@ -108,6 +108,29 @@ export interface Session {
   elapsedSkewMs: number;
 }
 
+/**
+ * Explicit ceilings for every long-lived, caller-amplifiable service store.
+ *
+ * The settled-round window retains at least 5m20s of retry history even at the
+ * 2.5s physical cycle floor (and about 8m32s at the 900/hour policy ceiling).
+ * See docs/adr/0003-bounded-in-memory-service-state.md.
+ */
+export interface ServerLimits {
+  readonly maxConcurrentSessions: number;
+  readonly maxRetainedRoundsPerSession: number;
+  readonly maxIdempotencyKeysPerSession: number;
+  readonly maxCommitTimestampsPerSession: number;
+  readonly maxLobbyListeners: number;
+}
+
+export const SERVER_LIMITS: Readonly<ServerLimits> = Object.freeze({
+  maxConcurrentSessions: 1_024,
+  maxRetainedRoundsPerSession: 128,
+  maxIdempotencyKeysPerSession: 128,
+  maxCommitTimestampsPerSession: 900,
+  maxLobbyListeners: 256,
+});
+
 /** Free-play opening balance. Not a spec figure: a free-play wallet float. */
 export const OPENING_BALANCE_CHIPS = 50_000n;
 
@@ -119,6 +142,8 @@ export interface OperatorKey {
   readonly publicKey: KeyObject;
   readonly publicKeyHex: string;
 }
+
+export type OperatorPublicKey = Readonly<Omit<OperatorKey, 'privateKey'>>;
 
 /**
  * Fault injection used by the server regression suite.
@@ -167,7 +192,10 @@ export interface RealityCheck {
 
 export class SessionStore {
   readonly #sessions = new Map<string, Session>();
+  readonly #sessionStates = new WeakMap<Session, Session>();
+  readonly #roundStates = new WeakMap<RoundRecord, RoundRecord>();
   readonly #now: Clock;
+  readonly #limits: Readonly<ServerLimits>;
   readonly #operatorKey: OperatorKey;
   readonly #testFaults: SessionStoreTestFaults | undefined;
   /** Test seam only: forces the next server seed. Never used in production. */
@@ -179,22 +207,40 @@ export class SessionStore {
       operatorKey?: OperatorKey;
       /** Test-only fault injection; deliberately not threaded through `createApp`. */
       testFaults?: SessionStoreTestFaults;
+      /** Test-only lower ceilings; production callers cannot raise `SERVER_LIMITS`. */
+      testLimits?: Partial<ServerLimits>;
     } = {},
   ) {
     this.#now = options.now ?? Date.now;
+    this.#limits = loweredLimits(options.testLimits);
     this.#operatorKey = options.operatorKey ?? makeOperatorKey();
     this.#testFaults = options.testFaults;
   }
 
-  get operatorKey(): OperatorKey {
-    return this.#operatorKey;
+  get operatorKey(): OperatorPublicKey {
+    return Object.freeze({
+      signerId: this.#operatorKey.signerId,
+      publicKey: this.#operatorKey.publicKey,
+      publicKeyHex: this.#operatorKey.publicKeyHex,
+    });
   }
 
   now(): number {
     return this.#now();
   }
 
+  get limits(): Readonly<ServerLimits> {
+    return this.#limits;
+  }
+
   create(): Session {
+    if (this.#sessions.size >= this.#limits.maxConcurrentSessions)
+      throw new ServiceError(
+        'SERVER_CAPACITY',
+        'The free-play server has reached its concurrent session limit',
+        '$.session',
+        { limit: this.#limits.maxConcurrentSessions },
+      );
     const id = randomUUID();
     const session: Session = {
       id,
@@ -219,19 +265,97 @@ export class SessionStore {
       acknowledgedRealityCheckMinute: 0,
       elapsedSkewMs: 0,
     };
+    this.#sessionStates.set(session, session);
     this.#sessions.set(id, session);
-    return session;
+    return this.#sessionView(session);
   }
 
   get(id: unknown): Session {
     if (typeof id !== 'string' || !this.#sessions.has(id))
       throw new ServiceError('SESSION_NOT_FOUND', 'No such session', '$.sessionId');
-    return this.#sessions.get(id) as Session;
+    return this.#sessionView(this.#sessions.get(id) as Session);
+  }
+
+  getRound(session: Session, roundId: string): RoundRecord {
+    const state = this.#sessionState(session);
+    const round = state.roundsById.get(roundId);
+    if (!round) throw new ServiceError('ROUND_NOT_FOUND', 'No such round', '$.roundId');
+    return this.#roundView(round);
+  }
+
+  #sessionState(session: Session): Session {
+    const state = this.#sessionStates.get(session);
+    if (!state || this.#sessions.get(state.id) !== state)
+      throw new ServiceError('SESSION_NOT_FOUND', 'No such session', '$.sessionId');
+    return state;
+  }
+
+  #roundState(round: RoundRecord): RoundRecord {
+    const state = this.#roundStates.get(round);
+    if (!state) throw new ServiceError('ROUND_NOT_FOUND', 'No such round', '$.roundId');
+    return state;
+  }
+
+  #roundView(round: RoundRecord): RoundRecord {
+    const view = deepFreeze(structuredClone(round));
+    this.#roundStates.set(view, round);
+    return view;
+  }
+
+  #sessionView(session: Session): Session {
+    const roundView = (round: RoundRecord): RoundRecord => this.#roundView(round);
+    const rounds = Object.freeze(session.rounds.map(roundView)) as RoundRecord[];
+    const roundsById = new Map(
+      [...session.roundsById].map(([roundId, round]) => [roundId, roundView(round)]),
+    );
+    const commitsByIdempotencyKey = new Map(
+      [...session.commitsByIdempotencyKey].map(([key, round]) => [key, roundView(round)]),
+    );
+    const view: Session = {
+      ...session,
+      openRound: session.openRound ? roundView(session.openRound) : null,
+      rounds,
+      roundsById,
+      commitsByIdempotencyKey,
+      commitTimestamps: Object.freeze([...session.commitTimestamps]) as number[],
+      limits: Object.freeze({ ...session.limits }),
+    };
+    Object.freeze(view);
+    this.#sessionStates.set(view, session);
+    return view;
   }
 
   setVariant(session: Session, variantId: VariantId): void {
+    session = this.#sessionState(session);
     this.#discardOpenRound(session);
     session.variantId = variantId;
+  }
+
+  updateSettings(
+    session: Session,
+    patch: {
+      skip?: boolean;
+      sessionMinutes?: number | null;
+      lossChips?: bigint | null;
+      playerRealityCheckMinutes?: number | null;
+    },
+  ): void {
+    session = this.#sessionState(session);
+    if (patch.skip !== undefined) session.skip = patch.skip;
+    if (patch.sessionMinutes !== undefined) session.limits.sessionMinutes = patch.sessionMinutes;
+    if (patch.lossChips !== undefined) session.limits.lossChips = patch.lossChips;
+    if (patch.playerRealityCheckMinutes !== undefined)
+      session.playerRealityCheckMinutes = patch.playerRealityCheckMinutes;
+  }
+
+  /** Test/dev seam; neither method is exposed unless its caller explicitly is. */
+  setElapsedSkewForTest(session: Session, elapsedSkewMs: number): void {
+    this.#sessionState(session).elapsedSkewMs = elapsedSkewMs;
+  }
+
+  /** Test-only wallet setup used by the HTTP wallet-decline regression. */
+  setBalanceForTest(session: Session, balanceChips: bigint): void {
+    this.#sessionState(session).balanceChips = balanceChips;
   }
 
   /**
@@ -253,25 +377,42 @@ export class SessionStore {
   /* ---------------------------------------------------------------- pacing */
 
   roundsInRollingHour(session: Session): number {
+    session = this.#sessionState(session);
     const cutoff = this.#now() - 3_600_000;
     return session.commitTimestamps.filter((stamp) => stamp > cutoff).length;
   }
 
   /** `null` when a commit may proceed now, otherwise the epoch ms it may. */
   commitAvailableAt(session: Session): number | null {
+    session = this.#sessionState(session);
     const policy = GAMES[session.variantId].play;
     const now = this.#now();
     if (session.lastCommitAt !== null) {
       const floorAt = session.lastCommitAt + policy.minRoundCycleMs;
       if (floorAt > now) return floorAt;
     }
+    const rollingCeiling = Math.min(
+      policy.maxRoundsPerRollingHour,
+      this.#limits.maxCommitTimestampsPerSession,
+    );
     const cutoff = now - 3_600_000;
     const recent = session.commitTimestamps.filter((stamp) => stamp > cutoff);
-    if (recent.length >= policy.maxRoundsPerRollingHour) {
+    if (recent.length >= rollingCeiling) {
       const oldest = recent[0] as number;
       return oldest + 3_600_000;
     }
     return null;
+  }
+
+  #pruneCommitTimestamps(session: Session): void {
+    const cutoff = this.#now() - 3_600_000;
+    let retainedFrom = 0;
+    while (
+      retainedFrom < session.commitTimestamps.length &&
+      (session.commitTimestamps[retainedFrom] as number) <= cutoff
+    )
+      retainedFrom += 1;
+    if (retainedFrom > 0) session.commitTimestamps.splice(0, retainedFrom);
   }
 
   #assertPacing(session: Session): void {
@@ -293,10 +434,12 @@ export class SessionStore {
   /* ------------------------------------------------------ player-set limits */
 
   elapsedMs(session: Session): number {
+    session = this.#sessionState(session);
     return this.#now() - session.startedAt + session.elapsedSkewMs;
   }
 
   netChips(session: Session): bigint {
+    session = this.#sessionState(session);
     return session.balanceChips - session.openingBalanceChips;
   }
 
@@ -328,6 +471,7 @@ export class SessionStore {
   /* --------------------------------------------------------- reality checks */
 
   realityCheck(session: Session): RealityCheck {
+    session = this.#sessionState(session);
     const policy = GAMES[session.variantId].play;
     const elapsedMinutes = Math.floor(this.elapsedMs(session) / 60_000);
     const marks = new Set<number>();
@@ -359,6 +503,7 @@ export class SessionStore {
   }
 
   acknowledgeRealityCheck(session: Session): void {
+    session = this.#sessionState(session);
     const check = this.realityCheck(session);
     if (check.due) session.acknowledgedRealityCheckMinute = check.minute;
   }
@@ -377,9 +522,10 @@ export class SessionStore {
    * commitment for a round the player may already have on screen.
    */
   openRound(session: Session, source: 'solo' | 'lobby' = 'solo'): RoundRecord {
+    session = this.#sessionState(session);
     const existing = session.openRound;
     if (existing && existing.phase === 'COMMITTED' && existing.variantId === session.variantId)
-      return existing;
+      return this.#roundView(existing);
     this.#discardOpenRound(session);
     const variantId = session.variantId;
     const nonce = session.roundSequence;
@@ -409,14 +555,16 @@ export class SessionStore {
       balanceAfterChips: null,
       source,
     };
+    this.#roundStates.set(round, round);
     session.openRound = round;
     session.roundsById.set(roundId, round);
-    return round;
+    return this.#roundView(round);
   }
 
   quote(session: Session, lines: readonly RawLine[]): TicketQuote {
+    session = this.#sessionState(session);
     const game = gameFor(session.variantId);
-    return quoteTicket(game, openForQuote(game, lines));
+    return quoteTicket(game, openForQuote(game, snapshotRawLines(lines)));
   }
 
   /**
@@ -435,19 +583,27 @@ export class SessionStore {
       openedAt: number;
     },
   ): RoundRecord {
-    const existing = session.roundsById.get(draw.roundId);
-    if (existing) return existing;
+    session = this.#sessionState(session);
+    const roundId = draw.roundId;
+    const nonce = draw.nonce;
+    const variantId = draw.variantId;
+    const serverSeed = draw.serverSeed;
+    const seedCommitment = draw.seedCommitment;
+    const previousCommitment = draw.previousCommitment;
+    const openedAt = draw.openedAt;
+    const existing = session.roundsById.get(roundId);
+    if (existing) return this.#roundView(existing);
     const round: RoundRecord = {
-      roundId: draw.roundId,
-      nonce: draw.nonce,
-      variantId: draw.variantId,
-      seedCommitment: draw.seedCommitment,
-      openedAt: draw.openedAt,
+      roundId,
+      nonce,
+      variantId,
+      seedCommitment,
+      openedAt,
       phase: 'COMMITTED',
-      serverSeed: draw.serverSeed,
+      serverSeed,
       seedRevealed: false,
       clientSeed: '',
-      previousCommitment: draw.previousCommitment,
+      previousCommitment,
       transcript: null,
       ticket: null,
       settlement: null,
@@ -458,8 +614,25 @@ export class SessionStore {
       balanceAfterChips: null,
       source: 'lobby',
     };
+    this.#roundStates.set(round, round);
     session.roundsById.set(round.roundId, round);
-    return round;
+    return this.#roundView(round);
+  }
+
+  /**
+   * Forget a shared-draw shell when ticket validation/debit rejects.
+   *
+   * Lobby rounds are attached before staging so a successful debit can be
+   * exception-atomic. A rejected attempt has no money or retry identity at
+   * stake, so retaining that shell would only let repeated rejected attempts
+   * grow `roundsById`.
+   */
+  discardUnstagedRound(session: Session, round: RoundRecord): void {
+    session = this.#sessionState(session);
+    round = this.#roundState(round);
+    if (round.phase !== 'COMMITTED' || round.ticket !== null) return;
+    session.roundsById.delete(round.roundId);
+    if (session.openRound === round) session.openRound = null;
   }
 
   /**
@@ -478,15 +651,18 @@ export class SessionStore {
     round: RoundRecord,
     lines: readonly RawLine[],
   ): { ticket: Ticket; replayed: RoundRecord | null } {
+    session = this.#sessionState(session);
+    round = this.#roundState(round);
+    const lineSnapshot = snapshotRawLines(lines);
     const game = gameFor(round.variantId);
     const ticket = openTicket(
       game,
       { variantId: round.variantId, roundId: round.roundId, nonce: round.nonce },
-      { lines },
+      { lines: lineSnapshot },
     );
 
     const replayed = session.commitsByIdempotencyKey.get(ticket.idempotencyKey);
-    if (replayed) return { ticket, replayed };
+    if (replayed) return { ticket, replayed: this.#roundView(replayed) };
 
     if (round.phase !== 'COMMITTED' || round.ticket !== null)
       throw new ServiceError(
@@ -536,6 +712,8 @@ export class SessionStore {
       else session.commitsByIdempotencyKey.delete(ticket.idempotencyKey);
       throw error;
     }
+    this.#pruneCommitTimestamps(session);
+    this.#pruneIdempotencyKeys(session);
     return { ticket, replayed: null };
   }
 
@@ -549,15 +727,18 @@ export class SessionStore {
     roundId: string,
     lines: readonly RawLine[],
   ): RoundRecord | null {
+    session = this.#sessionState(session);
+    const lineSnapshot = snapshotRawLines(lines);
     const round = session.roundsById.get(roundId);
     if (!round) return null;
     const game = gameFor(round.variantId);
     const ticket = openTicket(
       game,
       { variantId: round.variantId, roundId: round.roundId, nonce: round.nonce },
-      { lines },
+      { lines: lineSnapshot },
     );
-    return session.commitsByIdempotencyKey.get(ticket.idempotencyKey) ?? null;
+    const replayed = session.commitsByIdempotencyKey.get(ticket.idempotencyKey);
+    return replayed ? this.#roundView(replayed) : null;
   }
 
   /**
@@ -569,6 +750,8 @@ export class SessionStore {
    * handed is one retry away from paying a round out again.
    */
   finishRound(session: Session, round: RoundRecord, transcript: PermutationTranscript): RoundRecord {
+    session = this.#sessionState(session);
+    round = this.#roundState(round);
     if (round.phase === 'SETTLED')
       throw new ServiceError(
         'ROUND_ALREADY_SETTLED',
@@ -635,7 +818,8 @@ export class SessionStore {
       session.openRound = before.openRound;
       throw error;
     }
-    return round;
+    this.#pruneRetainedRounds(session);
+    return this.#roundView(round);
   }
 
   /** Steps 2-4 of the solo lifecycle, atomically from the caller's view. */
@@ -643,16 +827,20 @@ export class SessionStore {
     session: Session,
     input: { roundId: string; clientSeed: string; lines: readonly RawLine[] },
   ): CommitResult {
-    const round = session.roundsById.get(input.roundId);
+    session = this.#sessionState(session);
+    const roundId = input.roundId;
+    const clientSeedInput = input.clientSeed;
+    const lines = snapshotRawLines(input.lines);
+    const round = session.roundsById.get(roundId);
     if (!round) throw new ServiceError('ROUND_NOT_FOUND', 'No such round', '$.roundId');
     const game = gameFor(round.variantId);
     // Validate the one field the player supplies AFTER the commitment, before
     // any money moves. `makePermutationTranscript` would reject a malformed
     // client seed too — but it runs after the debit, and a validation that
     // happens after the wallet has been touched is a refund path, not a check.
-    const clientSeed = assertClientSeed(typeof input.clientSeed === 'string' ? input.clientSeed : '');
+    const clientSeed = assertClientSeed(typeof clientSeedInput === 'string' ? clientSeedInput : '');
 
-    const staged = this.stageTicket(session, round, input.lines);
+    const staged = this.stageTicket(session, round, lines);
     if (staged.replayed) return { round: staged.replayed, replayed: true };
 
     // The chain binds the previous SETTLED round's commitment as of now, not as
@@ -675,7 +863,7 @@ export class SessionStore {
     this.finishRound(session, round, transcript);
     session.previousCommitment = transcript.commitment;
     session.clientSeed = clientSeed;
-    return { round, replayed: false };
+    return { round: this.#roundView(round), replayed: false };
   }
 
   /**
@@ -691,6 +879,7 @@ export class SessionStore {
     transcript: VerificationResult;
     receipt: ReceiptVerificationResult;
   } {
+    round = this.#roundState(round);
     if (round.phase !== 'SETTLED' || !round.transcript || !round.ticket || !round.settlement)
       throw new ServiceError('ROUND_NOT_FOUND', 'That round has not settled', '$.roundId');
     const game = gameFor(round.variantId);
@@ -706,6 +895,7 @@ export class SessionStore {
   }
 
   snapshotOf(round: RoundRecord): RoundSnapshot {
+    round = this.#roundState(round);
     const game = gameFor(round.variantId);
     return makeRoundSnapshot({
       game,
@@ -725,11 +915,66 @@ export class SessionStore {
   }
 
   serializedTranscript(round: RoundRecord): string | null {
+    round = this.#roundState(round);
     return round.transcript ? serializeTranscript(round.transcript) : null;
   }
 
   settlementDigestOf(round: RoundRecord): string | null {
+    round = this.#roundState(round);
     if (!round.settlement) return null;
     return settlementDigest(gameFor(round.variantId), round.settlement);
   }
+
+  markLobbySeedRevealed(round: RoundRecord): void {
+    this.#roundState(round).seedRevealed = true;
+  }
+
+  #pruneRetainedRounds(session: Session): void {
+    while (session.rounds.length > this.#limits.maxRetainedRoundsPerSession) {
+      const evicted = session.rounds.pop();
+      if (!evicted) break;
+      session.roundsById.delete(evicted.roundId);
+      if (evicted.ticket)
+        session.commitsByIdempotencyKey.delete(evicted.ticket.idempotencyKey);
+    }
+  }
+
+  #pruneIdempotencyKeys(session: Session): void {
+    while (session.commitsByIdempotencyKey.size > this.#limits.maxIdempotencyKeysPerSession) {
+      const oldest = session.commitsByIdempotencyKey.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      session.commitsByIdempotencyKey.delete(oldest);
+    }
+  }
+
+}
+
+export function snapshotRawLines(lines: readonly RawLine[]): RawLine[] {
+  const length = lines.length;
+  const snapshot: RawLine[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const raw = lines[index] as RawLine;
+    const code = raw.code;
+    const params = raw.params;
+    const stake = raw.stake;
+    snapshot.push({ code, params: { ...(params as Record<string, unknown>) }, stake });
+  }
+  return snapshot;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+  return Object.freeze(value);
+}
+
+function loweredLimits(overrides: Partial<ServerLimits> | undefined): Readonly<ServerLimits> {
+  if (!overrides) return SERVER_LIMITS;
+  const limits: ServerLimits = { ...SERVER_LIMITS, ...overrides };
+  for (const name of Object.keys(SERVER_LIMITS) as (keyof ServerLimits)[]) {
+    const value = limits[name];
+    if (!Number.isSafeInteger(value) || value < 1 || value > SERVER_LIMITS[name])
+      throw new RangeError(`Test limit ${name} must be an integer from 1 to ${SERVER_LIMITS[name]}`);
+  }
+  return Object.freeze(limits);
 }

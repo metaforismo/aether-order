@@ -1079,6 +1079,27 @@ export const PERMUTATION_LIMITS = Object.freeze({
 });
 ```
 
+The in-memory free-play service has a separate bounded state surface. These are
+implementation ceilings, not game mathematics:
+
+```ts
+export const SERVER_LIMITS = Object.freeze({
+  maxConcurrentSessions: 1024,
+  maxRetainedRoundsPerSession: 128,
+  maxIdempotencyKeysPerSession: 128,
+  maxCommitTimestampsPerSession: 900,
+  maxLobbyListeners: 256,
+});
+```
+
+Creating a session or lobby stream beyond its ceiling fails with the typed
+service code `SERVER_CAPACITY` (HTTP 503). After settlement, oldest history and
+matching idempotency records are evicted beyond their ceilings; the newest 128
+rounds remain available for history, reveal and verification. Lobby entries are
+one `Map` entry per session per draw and become unreachable when the next draw
+replaces that draw. HTTP event-stream subscriptions unsubscribe on request
+close, response close and response error.
+
 ---
 
 ## 10. Reference implementation map
@@ -1136,9 +1157,12 @@ digest differs, the port is wrong.
 
 This is a specification and a reference implementation. It is not an RNG
 certificate, a security audit, a regulatory approval or a production
-integration. Server-seed generation and custody, wallet atomicity, persistence,
-authenticated storage and idempotency-under-transaction remain the operator's
+integration. Server-seed generation and custody, durable persistence,
+authenticated storage and cross-process idempotency remain the operator's
 responsibility, exactly as stated in the engine's own certification boundary.
+The free-play service does provide exception-atomic in-process wallet patches
+and bounded in-process idempotent retries; it deliberately does not claim crash
+durability.
 
 **Two different guarantees, and they should never be conflated.**
 

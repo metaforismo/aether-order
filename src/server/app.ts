@@ -120,17 +120,20 @@ function parseLines(value: unknown): RawLine[] {
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
       throw new ServiceError('INVALID_TICKET', 'Line must be an object', path);
     const line = raw as Record<string, unknown>;
-    if (typeof line.code !== 'string')
+    const code = line.code;
+    const params = line.params;
+    const stakeInput = line.stake;
+    if (typeof code !== 'string')
       throw new ServiceError('INVALID_TICKET', 'Line code must be a string', `${path}.code`);
-    if (typeof line.params !== 'object' || line.params === null || Array.isArray(line.params))
+    if (typeof params !== 'object' || params === null || Array.isArray(params))
       throw new ServiceError('INVALID_TICKET', 'Line params must be an object', `${path}.params`);
     let stake: bigint;
     try {
-      stake = parseChips(line.stake, `${path}.stake`);
+      stake = parseChips(stakeInput, `${path}.stake`);
     } catch (error) {
       throw new ServiceError('INVALID_TICKET', (error as Error).message, `${path}.stake`);
     }
-    return { code: line.code, params: { ...(line.params as Record<string, unknown>) }, stake };
+    return { code, params: { ...(params as Record<string, unknown>) }, stake };
   });
 }
 
@@ -191,26 +194,24 @@ export function createApp(options: AppOptions = {}): App {
 
     if (path === '/api/lobby/stream' && method === 'GET') {
       if (!chamber) return sendJson(response, 200, { running: false });
-      response.writeHead(200, {
-        'content-type': 'text/event-stream',
-        'cache-control': 'no-store',
-        connection: 'keep-alive',
-      });
       const sessionId = url.searchParams.get('session');
       const write = (name: string, payload: unknown): void => {
         response.write(`event: ${name}\ndata: ${jsonBody(payload)}\n\n`);
       };
-      write('state', lobbyState());
       const unsubscribe = chamber.subscribe((event) => {
         if (event.type === 'round.reveal') {
           const entry = sessionId ? event.draw.entries.get(sessionId) : undefined;
+          const currentSession = entry ? store.get(entry.session.id) : null;
+          const currentRound = currentSession
+            ? store.getRound(currentSession, event.draw.roundId)
+            : null;
           write('reveal', {
             roundId: event.draw.roundId,
             transcript: event.draw.transcript,
             serverSeed: event.draw.serverSeed,
             tickets: event.draw.entries.size,
-            round: entry ? describeRound(store, entry.round) : null,
-            session: entry ? describeSession(store, entry.session) : null,
+            round: currentRound ? describeRound(store, currentRound) : null,
+            session: currentSession ? describeSession(store, currentSession) : null,
           });
           return;
         }
@@ -219,10 +220,24 @@ export function createApp(options: AppOptions = {}): App {
         // data — run the client's state handler and throw out of it on connect.
         write(event.type === 'round.open' ? 'draw' : 'presence', lobbyState());
       });
-      request.on('close', () => {
+      let cleaned = false;
+      const cleanup = (): void => {
+        if (cleaned) return;
+        cleaned = true;
         unsubscribe();
-        response.end();
+      };
+      request.once('close', () => {
+        cleanup();
+        if (!response.writableEnded) response.end();
       });
+      response.once('close', cleanup);
+      response.once('error', cleanup);
+      response.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-store',
+        connection: 'keep-alive',
+      });
+      write('state', lobbyState());
       return;
     }
 
@@ -230,12 +245,14 @@ export function createApp(options: AppOptions = {}): App {
       if (!options.dev)
         throw new ServiceError('BAD_REQUEST', 'Dev hooks are disabled', '$');
       const body = await readJson(request);
-      const session = store.get(body.sessionId);
-      const minutes = Number(body.minutes);
+      const sessionId = body.sessionId;
+      const minutesInput = body.minutes;
+      const session = store.get(sessionId);
+      const minutes = Number(minutesInput);
       if (!Number.isFinite(minutes))
         throw new ServiceError('BAD_REQUEST', 'minutes must be a number', '$.minutes');
-      session.elapsedSkewMs += minutes * 60_000;
-      return sendJson(response, 200, { session: describeSession(store, session) });
+      store.setElapsedSkewForTest(session, session.elapsedSkewMs + minutes * 60_000);
+      return sendJson(response, 200, { session: describeSession(store, store.get(session.id)) });
     }
 
     const sessionMatch = /^\/api\/session\/([A-Za-z0-9-]+)(\/.*)?$/u.exec(path);
@@ -254,26 +271,37 @@ export function createApp(options: AppOptions = {}): App {
 
       if (tail === '/settings' && method === 'POST') {
         const body = await readJson(request);
-        if ('skip' in body) session.skip = body.skip === true;
-        if ('variantId' in body) {
-          if (!isVariantId(body.variantId))
+        const hasSkip = 'skip' in body;
+        const skip = hasSkip ? body.skip : undefined;
+        const hasVariantId = 'variantId' in body;
+        const variantId = hasVariantId ? body.variantId : undefined;
+        const hasSessionMinutes = 'sessionMinutes' in body;
+        const sessionMinutes = hasSessionMinutes ? body.sessionMinutes : undefined;
+        const hasLossChips = 'lossChips' in body;
+        const lossChips = hasLossChips ? body.lossChips : undefined;
+        const hasRealityCheck = 'playerRealityCheckMinutes' in body;
+        const playerRealityCheckMinutes = hasRealityCheck
+          ? body.playerRealityCheckMinutes
+          : undefined;
+        if (hasVariantId) {
+          if (!isVariantId(variantId))
             throw new ServiceError('BAD_REQUEST', 'Unknown variant', '$.variantId');
-          store.setVariant(session, body.variantId);
+          store.setVariant(session, variantId);
         }
-        if ('sessionMinutes' in body) {
-          const value = body.sessionMinutes;
-          session.limits.sessionMinutes =
-            value === null ? null : Math.max(1, Math.floor(Number(value)));
-        }
-        if ('lossChips' in body) {
-          const value = body.lossChips;
-          session.limits.lossChips = value === null ? null : parseChips(value, '$.lossChips');
-        }
-        if ('playerRealityCheckMinutes' in body) {
-          const value = body.playerRealityCheckMinutes;
-          if (value === null) session.playerRealityCheckMinutes = null;
+        const patch: Parameters<SessionStore['updateSettings']>[1] = {};
+        if (hasSkip) patch.skip = skip === true;
+        if (hasSessionMinutes)
+          patch.sessionMinutes =
+            sessionMinutes === null
+              ? null
+              : Math.max(1, Math.floor(Number(sessionMinutes)));
+        if (hasLossChips)
+          patch.lossChips =
+            lossChips === null ? null : parseChips(lossChips, '$.lossChips');
+        if (hasRealityCheck) {
+          if (playerRealityCheckMinutes === null) patch.playerRealityCheckMinutes = null;
           else {
-            const minutes = Number(value);
+            const minutes = Number(playerRealityCheckMinutes);
             const allowed = (catalogue.playPolicy as { playerRealityCheckIntervalOptions: number[] })
               .playerRealityCheckIntervalOptions;
             if (!allowed.includes(minutes))
@@ -282,10 +310,13 @@ export function createApp(options: AppOptions = {}): App {
                 'Reality-check intervals may only tighten, and only to a published option',
                 '$.playerRealityCheckMinutes',
               );
-            session.playerRealityCheckMinutes = minutes;
+            patch.playerRealityCheckMinutes = minutes;
           }
         }
-        return sendJson(response, 200, { session: describeSession(store, session) });
+        store.updateSettings(session, patch);
+        return sendJson(response, 200, {
+          session: describeSession(store, store.get(session.id)),
+        });
       }
 
       if (tail === '/reality-check/ack' && method === 'POST') {
@@ -303,22 +334,26 @@ export function createApp(options: AppOptions = {}): App {
 
       if (tail === '/ticket/quote' && method === 'POST') {
         const body = await readJson(request);
-        const lines = parseLines(body.lines);
+        const linesInput = body.lines;
+        const lines = parseLines(linesInput);
         return sendJson(response, 200, { quote: store.quote(session, lines) });
       }
 
       if (tail === '/round/commit' && method === 'POST') {
         const body = await readJson(request);
-        if (typeof body.roundId !== 'string')
+        const roundId = body.roundId;
+        const clientSeed = body.clientSeed;
+        const linesInput = body.lines;
+        if (typeof roundId !== 'string')
           throw new ServiceError('BAD_REQUEST', 'roundId is required', '$.roundId');
         const result = store.commit(session, {
-          roundId: body.roundId,
-          clientSeed: typeof body.clientSeed === 'string' ? body.clientSeed : '',
-          lines: parseLines(body.lines),
+          roundId,
+          clientSeed: typeof clientSeed === 'string' ? clientSeed : '',
+          lines: parseLines(linesInput),
         });
         return sendJson(response, 200, {
           round: describeRound(store, result.round),
-          session: describeSession(store, session),
+          session: describeSession(store, store.get(session.id)),
           replayed: result.replayed,
         });
       }
@@ -326,15 +361,17 @@ export function createApp(options: AppOptions = {}): App {
       if (tail === '/lobby/commit' && method === 'POST') {
         if (!chamber) throw new ServiceError('BAD_REQUEST', 'The shared chamber is not running', '$');
         const body = await readJson(request);
-        if (typeof body.roundId !== 'string')
+        const roundId = body.roundId;
+        const linesInput = body.lines;
+        if (typeof roundId !== 'string')
           throw new ServiceError('BAD_REQUEST', 'roundId is required', '$.roundId');
         const result = chamber.commit(session, {
-          roundId: body.roundId,
-          lines: parseLines(body.lines),
+          roundId,
+          lines: parseLines(linesInput),
         });
         return sendJson(response, 200, {
           round: describeRound(store, result.round),
-          session: describeSession(store, session),
+          session: describeSession(store, store.get(session.id)),
           lobby: lobbyState(),
           replayed: result.replayed,
         });
@@ -342,22 +379,21 @@ export function createApp(options: AppOptions = {}): App {
 
       const revealMatch = /^\/round\/([A-Za-z0-9_-]+)\/reveal$/u.exec(tail);
       if (revealMatch && method === 'POST') {
-        const round = session.roundsById.get(revealMatch[1] as string);
-        if (!round) throw new ServiceError('ROUND_NOT_FOUND', 'No such round', '$.roundId');
+        const round = store.getRound(session, revealMatch[1] as string);
         const revealed = store.reveal(round);
+        const currentRound = store.getRound(session, round.roundId);
         return sendJson(response, 200, {
           serverSeed: revealed.serverSeed,
           verification: revealed.transcript,
           receiptVerification: revealed.receipt,
-          round: describeRound(store, round),
-          snapshot: store.serializedSnapshot(round),
+          round: describeRound(store, currentRound),
+          snapshot: store.serializedSnapshot(currentRound),
         });
       }
 
       const roundMatch = /^\/round\/([A-Za-z0-9_-]+)$/u.exec(tail);
       if (roundMatch && method === 'GET') {
-        const round = session.roundsById.get(roundMatch[1] as string);
-        if (!round) throw new ServiceError('ROUND_NOT_FOUND', 'No such round', '$.roundId');
+        const round = store.getRound(session, roundMatch[1] as string);
         return sendJson(response, 200, { round: describeRound(store, round) });
       }
     }

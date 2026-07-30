@@ -30,7 +30,13 @@ import {
 } from '@axiom-games/reveal-engine/modules/permutation/aether';
 import { PAYTABLE, gameFor, type VariantId } from './engine.js';
 import { ServiceError } from './errors.js';
-import type { RawLine, RoundRecord, Session, SessionStore } from './session.js';
+import {
+  type RawLine,
+  type RoundRecord,
+  type Session,
+  type SessionStore,
+  snapshotRawLines,
+} from './session.js';
 
 export interface LobbyDraw {
   readonly seq: number;
@@ -64,6 +70,7 @@ const SHARED = PAYTABLE.sharedChamber as {
 export class SharedChamber {
   readonly #store: SessionStore;
   readonly #listeners = new Set<Listener>();
+  readonly #drawStates = new WeakMap<LobbyDraw, LobbyDraw>();
   readonly cadenceMs: number;
   readonly variantId: VariantId = 'classic';
   #draw: LobbyDraw | null = null;
@@ -82,7 +89,11 @@ export class SharedChamber {
   }
 
   get draw(): LobbyDraw | null {
-    return this.#draw;
+    return this.#draw ? this.#drawView(this.#draw) : null;
+  }
+
+  get listenerCount(): number {
+    return this.#listeners.size;
   }
 
   start(): void {
@@ -102,12 +113,56 @@ export class SharedChamber {
   }
 
   subscribe(listener: Listener): () => void {
+    if (this.#listeners.size >= this.#store.limits.maxLobbyListeners)
+      throw new ServiceError(
+        'SERVER_CAPACITY',
+        'The shared-chamber stream limit has been reached',
+        '$.lobby.stream',
+        { limit: this.#store.limits.maxLobbyListeners },
+      );
     this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      this.#listeners.delete(listener);
+    };
   }
 
   #emit(event: LobbyEvent): void {
-    for (const listener of this.#listeners) listener(event);
+    // Each listener gets its own detached view. A listener may retain or even
+    // mutate its Map copy without changing settlement state or another stream.
+    for (const listener of this.#listeners) {
+      try {
+        listener({ type: event.type, draw: this.#drawView(event.draw) } as LobbyEvent);
+      } catch {
+        // A broken stream cannot strand settlement or the next draw.
+        this.#listeners.delete(listener);
+      }
+    }
+  }
+
+  #drawState(draw: LobbyDraw): LobbyDraw {
+    const state = this.#drawStates.get(draw);
+    if (!state) throw new ServiceError('ROUND_NOT_FOUND', 'No such lobby draw', '$.roundId');
+    return state;
+  }
+
+  #drawView(draw: LobbyDraw): LobbyDraw {
+    const entries = new Map(
+      [...draw.entries].map(([sessionId, entry]) => [
+        sessionId,
+        Object.freeze({
+          session: this.#store.get(entry.session.id),
+          round: this.#store.getRound(entry.session, entry.round.roundId),
+          label: entry.label,
+        }),
+      ]),
+    );
+    const transcript = draw.transcript ? deepFreeze(structuredClone(draw.transcript)) : null;
+    const view = Object.freeze({ ...draw, entries, transcript }) as LobbyDraw;
+    this.#drawStates.set(view, draw);
+    return view;
   }
 
   #open(): void {
@@ -146,6 +201,7 @@ export class SharedChamber {
         configurable: false,
       },
     });
+    this.#drawStates.set(draw, draw);
     // There is no in-process discard-and-redraw path: `start()` is a no-op
     // whenever `#draw` is non-null, failures leave that same draw referenced,
     // and the only other call to `#open` is the final step of `#settle`, after
@@ -179,11 +235,11 @@ export class SharedChamber {
         // Reversing the two would publish the seed for a ticket that is still
         // debited and unsettled, which is the one ordering §5 forbids.
         this.#store.finishRound(entry.session, entry.round, transcript);
-        entry.round.seedRevealed = true;
+        this.#store.markLobbySeedRevealed(entry.round);
       } catch {
         // One player's settlement must not strand the rest of the room, and
-        // must not stop the next draw from opening.
-        entry.round.seedRevealed = false;
+        // must not stop the next draw from opening. `finishRound` rolled the
+        // player's internal round back, so its seed remains unrevealed.
       }
     }
     this.#emit({ type: 'round.reveal', draw });
@@ -199,6 +255,7 @@ export class SharedChamber {
     clientClosesAt: number;
     settleAtEpochMs: number;
   } {
+    draw = this.#drawState(draw);
     const closesAt = draw.settleAtEpochMs - SHARED.commitLeadMs;
     return {
       closesAt,
@@ -215,7 +272,7 @@ export class SharedChamber {
     // Snapshot caller-owned request fields once. In particular, the same
     // `lines` object must determine both replay identity and a new staged bet.
     const roundId = input.roundId;
-    const lines = input.lines;
+    const lines = snapshotRawLines(input.lines);
     const replayed = this.#store.replayedTicket(session, roundId, lines);
     if (replayed) return { round: replayed, replayed: true };
 
@@ -233,7 +290,7 @@ export class SharedChamber {
         'That draw closed — your ticket is still here.',
         '$.roundId',
       );
-    if (session.variantId !== draw.variantId)
+    if (this.#store.get(session.id).variantId !== draw.variantId)
       throw new ServiceError(
         'ADAPTER_MISMATCH',
         'The shared chamber runs CLASSIC; switch variant to join it.',
@@ -241,7 +298,13 @@ export class SharedChamber {
       );
 
     const round = this.#store.attachRound(session, draw);
-    const staged = this.#store.stageTicket(session, round, lines);
+    let staged: ReturnType<SessionStore['stageTicket']>;
+    try {
+      staged = this.#store.stageTicket(session, round, lines);
+    } catch (error) {
+      this.#store.discardUnstagedRound(session, round);
+      throw error;
+    }
     if (staged.replayed) return { round: staged.replayed, replayed: true };
     const first = staged.ticket.lines[0];
     draw.entries.set(session.id, {
@@ -262,6 +325,7 @@ export class SharedChamber {
     tickets: number;
     claims: readonly { code: string; params: Record<string, unknown> }[];
   } {
+    draw = this.#drawState(draw);
     const claims: { code: string; params: Record<string, unknown> }[] = [];
     for (const entry of draw.entries.values()) {
       if (claims.length >= 8) break;
@@ -273,4 +337,10 @@ export class SharedChamber {
     }
     return { tickets: draw.entries.size, claims };
   }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+  return Object.freeze(value);
 }

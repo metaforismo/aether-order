@@ -100,6 +100,7 @@ export function describeRound(
 }
 
 export function describeSession(store: SessionStore, session: Session): Record<string, unknown> {
+  session = store.get(session.id);
   const check = store.realityCheck(session);
   const now = store.now();
   const availableAt = store.commitAvailableAt(session);
@@ -157,6 +158,7 @@ export function describeHistory(
   session: Session,
   limit = 40,
 ): readonly Record<string, unknown>[] {
+  session = store.get(session.id);
   return session.rounds.slice(0, limit).map((round) => ({
     roundId: round.roundId,
     variantId: round.variantId,

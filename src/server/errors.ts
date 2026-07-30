@@ -25,6 +25,7 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = Object.freeze({
   IDEMPOTENCY_CONFLICT: 409,
   CYCLE_FLOOR: 429,
   LIMIT_REACHED: 429,
+  SERVER_CAPACITY: 503,
   BETTING_CLOSED: 409,
   WALLET_DECLINED: 402,
 });
