@@ -1,12 +1,33 @@
 /*
- * AETHER ORDER — graybox styling.
+ * AETHER ORDER — the shipped presentation.
  *
- * The palette, the type direction and the geometry are docs/DESIGN.md §5, §6.1,
- * §6.5 and §6.9 verbatim. What is placeholder is the *rendering*: the chamber is
- * DOM and SVG rather than the WebGL lane §7 specifies, there is no bloom, no
- * caustic and no sprite master, and every hard-edged element that §6.2 promises
- * at native DPR is simply drawn at native DPR because there is no canvas to
- * cap. Layout, hierarchy, reach and the state treatments are not placeholder.
+ * The palette (§6.1), the type scale (§6.5), the geometry (§5, §6.9) and the
+ * motion language (§6.4) are docs/DESIGN.md verbatim. What used to be
+ * placeholder here — flat fills where the spec asks for layered glass, a
+ * three-stop gradient standing in for a caustic, a circle standing in for cast
+ * resin with an emissive core — is not any more: the chamber is now the
+ * jewel instrument §6 describes, drawn in SVG and CSS with no downloaded asset
+ * of any kind. What remains a substitution is the *renderer*, not the look: §7
+ * specifies a WebGL2 lane with a fluid shader and a bloom chain, and the
+ * trade-offs this lane makes instead are enumerated at the top of chamber.ts.
+ *
+ * Three rules run through the whole file:
+ *
+ *  1. **Only `transform`, `opacity` and `color` animate.** §7.1.1: anything that
+ *     invalidates raster — stroke geometry, `stroke-dashoffset`, filters,
+ *     `box-shadow`, width/height — is re-rasterised and re-uploaded every frame
+ *     on the compositor thread, and during SETTLE that is the difference between
+ *     a 60 fps chamber and a stuttering one. There is not one `filter` and not
+ *     one animated `box-shadow` below.
+ *  2. **Every `font-size` is one of §6.5's seven published steps**, held in `rem`
+ *     so the player's own text scaling is the root (§11's 200% requirement is a
+ *     property this build has, not a promise it makes). `tests/client.test.mjs`
+ *     parses the steps out of the document and fails the build on a drift.
+ *  3. **Won and lost read with identical weight.** §2.1: during SETTLE the only
+ *     difference between a line that won and one that died is colour and
+ *     opacity — same 120 ms, same easing, no scale, no sound. Every celebration
+ *     in this file is gated on the round, never on a line, and every one of them
+ *     is behind `celebrate`.
  */
 
 :root {
@@ -49,6 +70,28 @@
   --rail-h: 56px;
   --deck-gap: 7px;
   --tap: 44px;
+
+  /*
+   * Volatility, as colour — §4's tiers are "how wild the ride is, not how good
+   * the deal is", and the bet menu now says so in one glance instead of only in
+   * a caption. Every one of these three is a hex §6.1 already publishes for a
+   * sphere, so no new colour enters the world: the tiers borrow the objects'
+   * own light, cool to hot. They appear as a hairline, a numeral and a tab
+   * underline and never as a fill, so a tinted chip can never be misread as
+   * being *about* the sphere of that colour, and the tier's plain-language
+   * gloss is always beside it (§10).
+   */
+  --tier-flow: #2fe0c8;
+  --tier-form: #f2f4f8;
+  --tier-order: #ff5a5f;
+
+  /* State colours that were inline hexes. Named, so they can be checked. */
+  --alert: #ff6b6b;
+  --pending: #d9a441;
+
+  --edge: rgba(65, 75, 88, 0.55);
+  --edge-soft: rgba(65, 75, 88, 0.32);
+  --lift: linear-gradient(180deg, rgba(195, 206, 218, 0.09), rgba(10, 18, 32, 0.34));
 }
 
 * {
@@ -117,12 +160,29 @@ button {
   cursor: pointer;
   padding: 0;
   text-align: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--glass-edge);
   outline-offset: 2px;
+}
+
+/*
+ * Instant feedback on every tap, in one declaration.
+ *
+ * A four-second game is judged on whether the first touch answers. 60 ms is
+ * under the threshold where a press reads as a delay and the scale is small
+ * enough that nothing shifts around it — it is `transform` on the pressed
+ * element and nothing else, so it cannot cost a layout however fast the player
+ * taps.
+ */
+button:active:not(:disabled) {
+  transform: scale(0.975);
+}
+button {
+  transition: transform 60ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .sr-only {
@@ -138,6 +198,12 @@ button:focus-visible,
 
 /* ------------------------------------------------------------------ splash */
 
+/*
+ * §6.10: 900 ms maximum, a load screen rather than a title card — the `--void`
+ * field, the monogram, and a 1 px `--ink-dim` hairline that fills to the
+ * monogram's width as the payload arrives. No animation on the mark itself, no
+ * sound, no tagline.
+ */
 .splash {
   position: fixed;
   inset: 0;
@@ -145,7 +211,7 @@ button:focus-visible,
   display: grid;
   place-content: center;
   gap: 28px;
-  background: var(--void);
+  background: radial-gradient(90% 60% at 50% 42%, var(--abyss), var(--void) 70%);
   transition: opacity 200ms ease;
 }
 .splash[hidden] {
@@ -174,6 +240,12 @@ button:focus-visible,
   }
 }
 
+/*
+ * §6.7's wordmark, as a typesetting instruction: `AETHER ORDER`, one weight, all
+ * caps, tracking +0.14em, the two words separated by one em space plus a 2 x 8 px
+ * `--gold` lozenge — the only mark in the identity, carrying the same semantic
+ * gold carries everywhere else. No outline, no gradient, no bevel, no shadow.
+ */
 .wordmark {
   display: flex;
   align-items: center;
@@ -201,13 +273,22 @@ button:focus-visible,
 
 /* --------------------------------------------------------------- app shell */
 
+/*
+ * The dark laboratory: a near-black indigo field with a faint volumetric lift
+ * from above, so the chamber is the only bright object on the screen. Both stops
+ * are §6.1 tokens — `--abyss` is the indigo the page lifts to and `--void` is
+ * the field — and the cool haze is `--glass-edge`'s own channels at 10%.
+ */
 .app {
   display: flex;
   flex-direction: column;
   width: 100%;
   max-width: 430px;
   min-height: 100dvh;
-  background: var(--void);
+  background:
+    radial-gradient(94% 42% at 50% 2%, rgba(127, 166, 196, 0.17), rgba(127, 166, 196, 0) 68%),
+    linear-gradient(180deg, var(--abyss) 0%, var(--void) 46%);
+  color: var(--ink);
   position: relative;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
@@ -258,12 +339,23 @@ button:focus-visible,
 .rail__balance b {
   font-size: var(--t-md);
   font-weight: 600;
+  letter-spacing: 0.01em;
 }
 .rail__balance span {
   font-size: var(--t-xxs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   color: var(--ink-dim);
   text-transform: uppercase;
+}
+/*
+ * §10: above the celebration gate the balance counts up; below it the balance
+ * writes to its new value without animating, because a rising balance is a
+ * celebration whatever the copy says. The colour lift is therefore also gated —
+ * it is only ever applied while `presentation.balanceCountsUp` is true.
+ */
+.rail__balance b[data-counting='yes'] {
+  color: var(--gold-hot);
+  transition: color 400ms linear;
 }
 .icon-btn {
   width: var(--tap);
@@ -282,7 +374,7 @@ button:focus-visible,
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-dim);
-  border: 1px solid var(--chrome-dark);
+  border: 1px solid var(--edge);
   border-radius: 3px;
   padding: 3px 6px;
   white-space: nowrap;
@@ -298,19 +390,19 @@ button:focus-visible,
   gap: 6px;
   min-height: var(--tap);
   padding: 6px 10px;
-  background-clip: content-box;
   border: 1px solid var(--chrome-dark);
   border-radius: 3px;
   font-size: var(--t-xxs);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink);
+  background-image: var(--lift);
 }
 .fairness-chip {
   color: var(--ink-dim);
 }
 .fairness-chip[data-state='committed'] {
-  color: #d9a441;
+  color: var(--pending);
 }
 .fairness-chip[data-state='verified'] {
   color: var(--gold);
@@ -322,7 +414,26 @@ button:focus-visible,
   position: relative;
   flex: 1 1 auto;
   min-height: 96px;
+  /*
+   * The chamber is a crop, and the crop is enforced here.
+   *
+   * The caustic gradients and the burst's spokes are deliberately larger than the
+   * chamber rect — that is how a soft field has no visible edge (see `#caustics`
+   * and `#burstMarkup`) — and they are clipped for painting by `glass-clip`. They
+   * still counted toward the document's scroll width, which at 200% text put a
+   * 21 px horizontal scrollbar on a portrait-only game. Clipping the stage is the
+   * honest fix: nothing in it is ever meant to be reachable by scrolling.
+   */
+  overflow: hidden;
 }
+/*
+ * The volumetric light lives on `.app`'s own background, not on a pseudo-element
+ * over the stage. A wash bounded by the stage's box has an *edge* at the stage's
+ * box: the first build drew a visible hairline across the screen exactly where
+ * the chamber's container began, which is the one artefact a "faint light from
+ * above" cannot have. On the app it spans from the top of the screen and fades
+ * out inside it, so there is nothing for the eye to find.
+ */
 /*
  * Absolute, so the holder's height is exactly the space the layout leaves and
  * the chamber can be redrawn to fill it. The chamber's viewBox is chosen from
@@ -349,12 +460,12 @@ button:focus-visible,
   right: 0;
   bottom: 0;
   margin: 0;
-  padding: 20px 16px 8px;
+  padding: 22px 16px 8px;
   text-align: center;
   font-size: var(--t-sm);
   line-height: 1.25;
   color: var(--ink);
-  background: linear-gradient(to top, rgba(5, 7, 12, 0.92) 40%, rgba(5, 7, 12, 0));
+  background: linear-gradient(to top, rgba(5, 7, 12, 0.94) 38%, rgba(5, 7, 12, 0));
   pointer-events: none;
 }
 .app[data-mode='round'] .stage__note,
@@ -417,57 +528,231 @@ button:focus-visible,
   display: block;
   height: 100%;
   width: 0;
-  background: var(--chrome-mid);
+  background: linear-gradient(90deg, var(--chrome-dark), var(--chrome-mid));
   transition: width 120ms linear;
 }
 
-.sphere-body {
-  animation: drift 9s ease-in-out infinite alternate;
+/* ------------------------------------------------------- chamber internals */
+
+/*
+ * The liquid. §9 step 2 desaturates it toward monochrome over 400 ms during a
+ * celebrated close and leaves the settled spheres their colour — done by fading
+ * the coloured liquid toward the neutral `--abyss` back plate behind it, because
+ * a `filter: saturate()` over the chamber rect would re-raster every frame the
+ * last sphere moved (§7.1.1).
+ */
+.liquid,
+.caustic,
+.floor-caustic-at,
+.shaft {
+  transition: opacity 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.chamber--mono .liquid {
+  /*
+   * Desaturated, not switched off. At 0.34 the chamber read as "the lights went
+   * out" rather than as §9 step 2's "the liquid desaturates toward monochrome";
+   * the glass and the collar need enough tone left to still be glass and steel.
+   */
+  opacity: 0.48;
+}
+.chamber--mono .caustic,
+.chamber--mono .shaft {
+  opacity: 0.18;
+}
+
+/* CHARGE deepens the liquid tint 8% (§6.4) — opacity, nothing else. */
+.tint {
+  opacity: 0;
+  transition: opacity 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.chamber[data-beat='charge'] .tint,
+.chamber[data-beat='agitate'] .tint,
+.chamber[data-beat='settle'] .tint {
+  opacity: 0.08;
+}
+
+/*
+ * The scrolling caustic (§6.2), as two counter-drifting layers of soft
+ * gradients. Both are pure `transform`, and the base-plate caustic breathes on
+ * the same period so the two never desync (§6.3).
+ */
+.caustic {
   transform-box: fill-box;
   transform-origin: center;
+  will-change: transform;
 }
-@keyframes drift {
+.caustic--a {
+  animation: caustic-a 19s ease-in-out infinite alternate;
+}
+.caustic--b {
+  animation: caustic-b 19s ease-in-out infinite alternate;
+}
+@keyframes caustic-a {
   from {
-    transform: translate(0, 0);
+    transform: translate(-14px, 6px) scale(1);
   }
   to {
-    transform: translate(6px, -8px);
+    transform: translate(16px, -10px) scale(1.09);
   }
 }
-.chamber[data-beat='agitate'] .sphere-body {
-  animation: agitate 460ms cubic-bezier(0.36, 0, 0.66, -0.56) infinite alternate;
-}
-@keyframes agitate {
+@keyframes caustic-b {
   from {
-    transform: translate(-10px, 6px);
+    transform: translate(18px, -4px) scale(1.06);
   }
   to {
-    transform: translate(10px, -6px);
+    transform: translate(-12px, 12px) scale(0.97);
   }
 }
-.sphere-slot {
-  transition: transform var(--fall, 340ms) cubic-bezier(0.16, 1, 0.3, 1);
+.floor-caustic {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: floor-breathe 19s ease-in-out infinite alternate;
 }
-.sphere--seated .sphere-body {
-  animation: none;
-  transform: none;
+@keyframes floor-breathe {
+  from {
+    transform: scale(0.92);
+    opacity: 0.75;
+  }
+  to {
+    transform: scale(1.06);
+    opacity: 1;
+  }
 }
+
+/* §7 technique 4's bubbles: alive only through CHARGE and AGITATE. */
+.bubbles circle {
+  opacity: 0;
+}
+.chamber[data-beat='charge'] .bubbles circle,
+.chamber[data-beat='agitate'] .bubbles circle {
+  animation-name: bubble-rise;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  animation-iteration-count: infinite;
+}
+@keyframes bubble-rise {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  14% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(var(--rise, -200px));
+    opacity: 0;
+  }
+}
+
+/*
+ * The impellers. §6.9: the only thing on screen that rotates, spinning up over
+ * the 260 ms CHARGE, holding through AGITATE, decelerating to a stop across the
+ * first two locks — driven from the shared ticker in chamber.ts so the spin-up
+ * and spin-down are one continuous integration with no keyframe to fight.
+ */
 .impeller {
   transform-box: fill-box;
   transform-origin: center;
-  animation: spin 1.6s linear infinite;
-  animation-play-state: paused;
-  opacity: 0.3;
+  opacity: 0.26;
+  transition: opacity 260ms ease;
 }
 .chamber[data-beat='charge'] .impeller,
-.chamber[data-beat='agitate'] .impeller,
-.chamber[data-beat='settle'] .impeller {
-  animation-play-state: running;
+.chamber[data-beat='agitate'] .impeller {
+  opacity: 0.42;
 }
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+
+/* --------------------------------------------------------------- the orbs */
+
+/*
+ * Three nested transforms, three different jobs (see `#spheres` in chamber.ts):
+ * `.orb` carries x on a fast ease, `.orb__y` carries y on §6.4's published
+ * 340 ms expo-out, `.orb__m` carries motion — the idle drift as a keyframe, the
+ * agitation as a per-frame write. Splitting x from y is what buys the arc:
+ * across, then down, inside the beat's published duration.
+ */
+.orb {
+  transition:
+    transform var(--fall-x, 200ms) cubic-bezier(0.35, 0, 0.2, 1),
+    opacity 120ms linear;
+  will-change: transform;
+}
+.orb__y {
+  transition: transform var(--fall, 340ms) cubic-bezier(0.16, 1, 0.3, 1);
+}
+.orb__m {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.chamber[data-beat='idle'] .orb__m,
+.chamber[data-beat='charge'] .orb__m {
+  animation: orb-drift 11s ease-in-out infinite alternate;
+}
+@keyframes orb-drift {
+  from {
+    transform: translate(-3px, 3px);
   }
+  to {
+    transform: translate(3px, -4px);
+  }
+}
+/* §7 technique 3: apparent rotation from scrolling the interior caustic. */
+.orb__core {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: orb-core 7s ease-in-out infinite alternate;
+}
+@keyframes orb-core {
+  from {
+    transform: translate(-9%, 7%) scale(0.94);
+  }
+  to {
+    transform: translate(8%, -8%) scale(1.06);
+  }
+}
+/* A seated sphere is still. Nothing shimmers in a locked slot. */
+.orb--seated .orb__m {
+  animation: none;
+}
+.orb--seated .orb__core {
+  animation: none;
+}
+/*
+ * §6.4's reduced-motion variant: the falls become 120 ms fades rather than fast
+ * travel, because fast travel is the thing the preference exists to avoid. The
+ * total duration is unchanged, so the audio phrase still lands.
+ */
+.orb--dissolve {
+  transition: opacity 110ms linear;
+}
+
+/* --------------------------------------------------------------- the tube */
+
+/* §6.4: the chamber flexes 2 px on the lock rebound — a translate, never a path. */
+.tube {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.tube--flex {
+  animation: tube-flex 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes tube-flex {
+  0% {
+    transform: translateY(0);
+  }
+  38% {
+    transform: translateY(2px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+.slot-no {
+  font-size: var(--t-xxs);
+  font-family: var(--mono);
+  opacity: 0.58;
+  transition: opacity 160ms linear;
+}
+.slot-no--lit {
+  opacity: 1;
 }
 /*
  * The lock ring, in two stacked strokes.
@@ -492,7 +777,7 @@ button:focus-visible,
   transform: scale(1.04);
 }
 .lock-ring--on .lock-ring__seat {
-  opacity: 0.5;
+  opacity: 0.42;
   transition: opacity 120ms linear;
 }
 .lock-ring--on .lock-ring__gold {
@@ -502,13 +787,147 @@ button:focus-visible,
   opacity: 0;
   transition: opacity 520ms cubic-bezier(0.4, 0, 0.2, 1) 180ms;
 }
-.tube-rim {
+/*
+ * The ring of light. §7 technique 5's displacement pulse, in the DOM lane: a
+ * `scale` and an `opacity` on a pre-rasterised stroke, 380 ms against a
+ * 360–420 ms stagger so at most one is ever in flight (§6.4).
+ */
+.pulse {
+  transform-box: fill-box;
+  transform-origin: center;
   opacity: 0;
-  transition: opacity 400ms ease;
+}
+.pulse--on {
+  animation: pulse-out 380ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes pulse-out {
+  0% {
+    transform: scale(0.55);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+/*
+ * §9 step 4: "the tube's full-height gold rim ignites from the bottom up".
+ * A `scaleY` from the bottom edge grows the rim upward, which is that wipe
+ * expressed as a transform — the alternative, a `stroke-dashoffset` sweep, is
+ * the exact property §7.1.1 names as the way a build breaks the frame budget
+ * while decorating it.
+ */
+.tube-rim {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  transform: scaleY(0.02);
+  opacity: 0;
 }
 .tube-rim--lit {
+  transform: scaleY(1);
   opacity: 1;
+  transition:
+    transform 560ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 200ms linear;
 }
+
+/* --------------------------------------------------- the celebrated close */
+
+/*
+ * The prismatic burst. Behind `celebrate` — `roundPresentation`'s single
+ * comparison — and voiced by tier rather than scaled by amount, exactly as §8
+ * voices the chord: an ORDER win throws the full sixteen spokes, a FLOW win at
+ * 1.92× gets a quiet flare, and both are celebrations because both won.
+ */
+.burst {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  pointer-events: none;
+}
+.burst--on {
+  animation: burst-open 1100ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.burst--on[data-voicing='FLOW'] {
+  animation-duration: 760ms;
+}
+.burst--calm {
+  animation: burst-calm 700ms ease-out;
+}
+@keyframes burst-open {
+  0% {
+    transform: scale(0.22);
+    opacity: 0;
+  }
+  16% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+@keyframes burst-calm {
+  0% {
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.burst[data-voicing='FLOW'] .burst__spokes {
+  opacity: 0.4;
+}
+.burst[data-voicing='FORM'] .burst__spokes {
+  opacity: 0.7;
+}
+
+/*
+ * The slow golden fall — §6.1 use 6's celebrated close, not a seventh use of
+ * gold: the motes exist only inside the window the tube's gold rim is lit and
+ * are cleared with it. One composited node each, `transform` and `opacity` only.
+ */
+.motes {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.motes i {
+  position: absolute;
+  top: -4%;
+  width: var(--size, 3px);
+  height: var(--size, 3px);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--gold-hot), rgba(201, 162, 74, 0));
+  opacity: 0;
+  animation-name: mote-fall;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.7, 1);
+  animation-fill-mode: forwards;
+}
+@keyframes mote-fall {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.95;
+  }
+  78% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate(var(--drift, 0), 108vh);
+    opacity: 0;
+  }
+}
+
 /*
  * `.stamp` and `.impeller` are INNER groups. A CSS transform on an SVG element
  * replaces its `transform` presentation attribute rather than composing with
@@ -517,6 +936,17 @@ button:focus-visible,
  * viewport, half off-screen, on every celebrated round. Position lives on
  * `.stamp-at` / `.impeller-at`; only these two ever animate.
  */
+/*
+ * A chamber being restored after a redraw is showing END states, so nothing may
+ * animate into them for one frame. See `#restore` in chamber.ts: without this the
+ * gold rim re-ran its 560 ms bottom-up ignition, the lock rings re-flashed, and
+ * every seated sphere transitioned in from wherever the previous markup had it.
+ */
+.chamber--restoring * {
+  transition: none !important;
+  animation: none !important;
+}
+
 .stamp {
   opacity: 0;
   transform-box: fill-box;
@@ -525,10 +955,16 @@ button:focus-visible,
   transition:
     opacity 220ms cubic-bezier(0, 0.7, 0.2, 1),
     transform 220ms cubic-bezier(0, 0.7, 0.2, 1);
+  pointer-events: none;
 }
 .stamp--on {
   opacity: 1;
   transform: scale(1);
+}
+.stamp__value {
+  font-size: var(--t-xl);
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 /* -------------------------------------------------------------------- deck */
@@ -544,17 +980,24 @@ button:focus-visible,
   container-name: deck;
 }
 
+/*
+ * The tier tabs. §5 S1: labelled with what they mean — `FLOW · lands often`,
+ * `FORM · the core game`, `ORDER · rare, big` — never "low/medium/high risk"
+ * without the plain-language gloss. The underline is the tier's volatility
+ * colour, cool to hot; the label is always there beside it.
+ */
 .tabs {
   display: flex;
   gap: 4px;
   min-height: var(--tap);
   flex: none;
+  border-bottom: 1px solid var(--edge-soft);
 }
 .tab {
+  position: relative;
   flex: 1;
-  padding: 4px 2px;
-  border-radius: 3px;
-  border: 1px solid transparent;
+  padding: 4px 2px 6px;
+  border-radius: 3px 3px 0 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -565,24 +1008,52 @@ button:focus-visible,
 }
 .tab b {
   font-size: var(--t-xs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   font-weight: 600;
 }
 .tab span {
   font-size: var(--t-xxs);
   letter-spacing: 0.02em;
 }
+.tab::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: -1px;
+  height: 2px;
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0.4);
+  transition:
+    opacity 140ms linear,
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tab[data-tier='FLOW'][aria-selected='true'] {
+  color: var(--tier-flow);
+}
+.tab[data-tier='FORM'][aria-selected='true'] {
+  color: var(--tier-form);
+}
+.tab[data-tier='ORDER'][aria-selected='true'] {
+  color: var(--tier-order);
+}
 .tab[aria-selected='true'] {
-  color: var(--ink);
-  border-color: var(--chrome-dark);
-  background: rgba(65, 75, 88, 0.18);
+  background: linear-gradient(180deg, rgba(195, 206, 218, 0.02), rgba(195, 206, 218, 0.11));
+}
+.tab[aria-selected='true']::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+.tab[aria-selected='true'] span {
+  color: var(--ink-dim);
 }
 
 /* §1 item 5 is "one line under the rail", so it is set tight to the rail. */
 .rail-block {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   flex: none;
 }
 .rail-scroll {
@@ -596,6 +1067,22 @@ button:focus-visible,
 }
 .rail-scroll::-webkit-scrollbar {
   display: none;
+}
+/*
+ * The rail scrolls horizontally, and a card sliced mid-glyph by the edge of the
+ * screen reads as a broken layout rather than as "there is more". The fade makes
+ * the cut deliberate. It is a `mask-image` on a container that never animates,
+ * so it costs one raster at layout and nothing per frame.
+ */
+.rail-block {
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 88%, rgba(0, 0, 0, 0.15) 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 88%, rgba(0, 0, 0, 0.15) 100%);
+}
+@container deck (max-width: 21em) {
+  .rail-block {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
 }
 /*
  * §11: "Text scaling to 200% without clipping; the chip rail reflows to two
@@ -614,24 +1101,71 @@ button:focus-visible,
     width: calc(50% - 4px);
   }
 }
+/*
+ * The chip: a tiered card. The tier hairline across the top is the volatility
+ * channel, the multiplier is set at §6.5's 22 px step so the price is the loudest
+ * thing on the card, and nothing on it is gold — §6.1 allows gold on a chip in
+ * exactly one place, the count badge that says this claim is already on the
+ * ticket, and never on anything merely available.
+ */
 .chip {
   position: relative;
   flex: none;
   width: 96px;
-  min-height: 88px;
+  min-height: 92px;
   border: 1px solid var(--chrome-dark);
-  border-radius: 4px;
-  background: linear-gradient(180deg, rgba(23, 64, 92, 0.22), rgba(10, 18, 32, 0.5));
+  border-radius: 5px;
+  background:
+    linear-gradient(180deg, rgba(23, 64, 92, 0.5), rgba(23, 64, 92, 0.14) 62%),
+    var(--abyss);
   /*
    * 6 px on the inline axis, not 8: at 8 the longest label in the catalogue was
    * 2 px wider than the box it had to sit in even at the smallest published step.
    * The trim is invisible and it buys the chip its own longest name.
    */
-  padding: 8px 6px;
+  padding: 9px 6px 7px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  gap: 2px;
   scroll-snap-align: start;
+  overflow: hidden;
+  transition:
+    transform 60ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 140ms linear;
+}
+.chip::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--chip-accent, var(--chrome-mid));
+  opacity: 0.85;
+}
+/* An inner top highlight: the one thing that makes a dark card read as glass. */
+.chip::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(180deg, rgba(234, 243, 250, 0.07), rgba(234, 243, 250, 0));
+  pointer-events: none;
+}
+.chip[data-tier='FLOW'] {
+  --chip-accent: var(--tier-flow);
+}
+.chip[data-tier='FORM'] {
+  --chip-accent: var(--tier-form);
+}
+.chip[data-tier='ORDER'] {
+  --chip-accent: var(--tier-order);
+}
+.chip:active:not(:disabled) {
+  border-color: var(--chrome-mid);
 }
 /*
  * §6.5 sets bet names uppercase at +0.06em, and at the 13 px step `NEIGHBOURS`
@@ -646,6 +1180,7 @@ button:focus-visible,
   letter-spacing: 0.06em;
   font-weight: 600;
   overflow-wrap: anywhere;
+  position: relative;
 }
 .chip b[data-long='yes'] {
   font-size: var(--t-xxs);
@@ -655,11 +1190,25 @@ button:focus-visible,
   font-size: var(--t-xxs);
   color: var(--ink-dim);
   line-height: 1.2;
+  position: relative;
 }
+/*
+ * Oversized odds. The price is the whole product's argument — four
+ * different-looking bets at one number — so it is set two steps above the label
+ * and tinted with the tier, and a long multiple (SEVEN's `4838.40×`) drops one
+ * published step rather than overflowing the card.
+ */
 .chip u {
   text-decoration: none;
-  font-size: var(--t-md);
+  font-size: var(--t-lg);
   font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--chip-accent, var(--ink));
+  position: relative;
+}
+.chip u[data-long='yes'] {
+  font-size: var(--t-md);
 }
 .chip__count {
   position: absolute;
@@ -675,6 +1224,7 @@ button:focus-visible,
   display: grid;
   place-items: center;
   padding: 0 5px;
+  z-index: 1;
 }
 
 /*
@@ -691,11 +1241,12 @@ button:focus-visible,
   min-height: var(--tap);
   font-size: var(--t-xs);
   color: var(--ink-dim);
-  border-top: 1px solid rgba(65, 75, 88, 0.5);
-  border-bottom: 1px solid rgba(65, 75, 88, 0.5);
+  border-top: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge);
   padding: 6px 0;
   width: 100%;
   flex-wrap: wrap;
+  letter-spacing: 0.02em;
 }
 .strip b {
   color: var(--ink);
@@ -703,30 +1254,63 @@ button:focus-visible,
 }
 .strip__best {
   margin-left: auto;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: var(--t-xxs);
+}
+.strip__best b {
+  font-size: var(--t-xs);
+  letter-spacing: 0;
 }
 
+/*
+ * The CTA: brushed steel, one thin highlight, and instant press feedback. Never
+ * gold — §6.1 is explicit that gold never appears on a call to action, because
+ * everything gold in this product means *settled and true* and a bet that has
+ * not been placed is neither.
+ */
 .cta {
   position: relative;
   min-height: 56px;
-  border-radius: 4px;
+  border-radius: 5px;
   border: 1px solid var(--chrome-mid);
-  background: linear-gradient(180deg, rgba(195, 206, 218, 0.16), rgba(65, 75, 88, 0.18));
+  background:
+    linear-gradient(180deg, rgba(234, 243, 250, 0.16), rgba(122, 134, 149, 0.16) 52%, rgba(65, 75, 88, 0.2)),
+    var(--abyss);
   color: var(--ink);
   font-size: var(--t-md);
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 1px;
   overflow: hidden;
   flex: none;
+}
+.cta::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 6%;
+  right: 6%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(234, 243, 250, 0),
+    rgba(234, 243, 250, 0.6),
+    rgba(234, 243, 250, 0)
+  );
 }
 .cta:disabled {
   color: var(--ink-dim);
   border-color: var(--chrome-dark);
   background: rgba(65, 75, 88, 0.12);
   cursor: not-allowed;
+}
+.cta:disabled::before {
+  opacity: 0.25;
 }
 .cta__hairline {
   position: absolute;
@@ -738,15 +1322,16 @@ button:focus-visible,
 }
 .cta__sub {
   font-size: var(--t-xxs);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--ink-dim);
   font-weight: 400;
+  text-transform: uppercase;
 }
 
 .footnote {
   margin: 0;
   font-size: var(--t-xxs);
-  line-height: 1.3;
+  line-height: 1.35;
   color: var(--ink-dim);
   text-align: center;
 }
@@ -758,13 +1343,36 @@ button:focus-visible,
   flex-direction: column;
   width: 100%;
 }
+/*
+ * One 390 x 28 row per line, which is the geometry §7.1.1 budgets. §2.1: every
+ * state change during SETTLE is rendered with identical weight — same 120 ms
+ * transition, same easing, no sound of its own, no scale, no camera — whether
+ * the line resolved won or lost. The only difference is colour and opacity,
+ * which is the information itself. The gold rail on the left is a `color`
+ * change on a static element for exactly that reason.
+ */
 .line {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 28px;
+  /*
+   * A floor, not a height. 28 px is the row geometry §7.1.1 budgets and at 100%
+   * text that is exactly what it is; at 200% a fixed 28 px box holds 26 px type
+   * and the rows overlap, which is the clipping §11 forbids.
+   */
+  min-height: 28px;
+  /*
+   * And it wraps, for the same reason. `NEIGHBOURS` plus `1.00 × 2.40×` at the
+   * 26 px step is 21 px wider than a 390 px screen, and neither cell may be
+   * truncated: the chip's name is the line's identity and the figures are the
+   * money. At 100% nothing wraps, so the budgeted single-row geometry is intact
+   * on the reference device.
+   */
+  flex-wrap: wrap;
+  padding-left: 8px;
   font-size: var(--t-xs);
   color: var(--ink-dim);
+  border-left: 2px solid currentColor;
   transition:
     opacity 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
     color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -779,11 +1387,16 @@ button:focus-visible,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Without this the cell refuses to shrink below its min-content width and the
+     row overflows the screen by a pixel or two at large text scales. */
+  min-width: 0;
+  opacity: 0.8;
 }
 .line u {
   text-decoration: none;
   margin-left: auto;
   flex: none;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 .line[data-state='pending'] {
   color: var(--ink);
@@ -799,45 +1412,77 @@ button:focus-visible,
 .result-head {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 .result-head b {
   font-size: var(--t-xl);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  line-height: 1.05;
 }
 .result-head[data-outcome='win'] b {
-  color: var(--gold);
+  color: var(--gold-hot);
 }
 .result-head span {
   font-size: var(--t-xs);
   color: var(--ink-dim);
+  letter-spacing: 0.02em;
+}
+/* The settled order, as the objects that settled, with the names beside them. */
+.result-head__order {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.perm {
+  display: flex;
+  gap: 3px;
+  flex: none;
+  align-items: center;
 }
 
+/*
+ * The button row wraps. Four `15 min / 30 min / 60 min / CLEAR` buttons at the
+ * 26 px step are 42 px wider than a 390 px card, and a control that overhangs its
+ * card is the clipping §11 forbids — S9 is the responsible-gaming screen, so it is
+ * the last place a control may be hard to hit.
+ */
 .row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .row > * {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .btn {
-  height: var(--tap);
+  min-height: var(--tap);
   border: 1px solid var(--chrome-dark);
-  border-radius: 3px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  padding: 0 10px;
   font-size: var(--t-sm);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--ink);
+  background-image: var(--lift);
+  transition:
+    transform 60ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 140ms linear;
+}
+.btn:active:not(:disabled) {
+  border-color: var(--chrome-mid);
 }
 .btn:disabled {
   color: var(--ink-dim);
   opacity: 0.5;
   cursor: not-allowed;
+  background-image: none;
 }
 .btn--wide {
   width: 100%;
@@ -845,6 +1490,11 @@ button:focus-visible,
 .btn--quiet {
   border-color: transparent;
   color: var(--ink-dim);
+  background-image: none;
+}
+.btn[aria-pressed='true'] {
+  border-color: var(--ink);
+  color: var(--ink);
 }
 
 /* ------------------------------------------------------------------ sheets */
@@ -861,17 +1511,25 @@ button:focus-visible,
   display: flex;
   justify-content: center;
   align-items: flex-end;
+  animation: scrim-in 180ms ease;
+}
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
 }
 .sheet {
   width: 100%;
   max-width: 430px;
   max-height: 92dvh;
-  background: var(--abyss);
+  background:
+    radial-gradient(120% 40% at 50% 0%, rgba(23, 64, 92, 0.3), rgba(23, 64, 92, 0) 70%),
+    var(--abyss);
   border-top: 1px solid var(--chrome-dark);
-  border-radius: 10px 10px 0 0;
+  border-radius: 12px 12px 0 0;
   display: flex;
   flex-direction: column;
-  animation: sheet-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: sheet-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
   padding-bottom: env(safe-area-inset-bottom);
 }
 .sheet--full {
@@ -890,20 +1548,21 @@ button:focus-visible,
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(65, 75, 88, 0.5);
+  border-bottom: 1px solid var(--edge);
   flex: none;
 }
 .sheet__head h2 {
   margin: 0;
   font-size: var(--t-md);
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 .sheet__head p {
   margin: 0;
   font-size: var(--t-xxs);
   color: var(--ink-dim);
+  letter-spacing: 0.04em;
 }
 .sheet__body {
   overflow-y: auto;
@@ -914,7 +1573,7 @@ button:focus-visible,
   flex: 1;
 }
 .sheet__foot {
-  border-top: 1px solid rgba(65, 75, 88, 0.5);
+  border-top: 1px solid var(--edge);
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
@@ -923,46 +1582,74 @@ button:focus-visible,
   background: var(--abyss);
 }
 
+/* The live sentence is the confirmation in every picker, not the icons (§5 S2). */
 .sentence {
   font-size: var(--t-md);
-  min-height: 24px;
+  min-height: 26px;
   color: var(--ink);
+  letter-spacing: 0.01em;
 }
 .sentence em {
   font-style: normal;
   color: var(--ink-dim);
 }
 
+/*
+ * The colour row. Every token is the *same sphere* the chamber renders, from the
+ * same gradient master (`sphere.ts`) — a player who taps AMBER here is looking at
+ * the object that will land in the tube. The glyph rides on it because §6.1
+ * proves seven colours clearing the contrast floor cannot be separated by
+ * luminance, so the glyph is the channel and not a backup for it, and the name
+ * is written underneath in words.
+ */
 .colour-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 .colour {
-  min-width: 56px;
-  min-height: 56px;
+  /*
+   * `em`, not `px`: the token has to be at least as wide as the colour's name,
+   * and the name scales with the player's text setting. At 100% five tokens fit
+   * one row; from about 150% they reflow, which is §5 S2's own instruction.
+   */
+  min-width: 4.4em;
+  min-height: 4.6em;
+  flex: 1 1 auto;
   border: 1px solid var(--chrome-dark);
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 4px 2px;
+  gap: 3px;
+  padding: 6px 2px;
+  background: var(--lift);
+  transition:
+    transform 60ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 140ms linear,
+    background-color 140ms linear;
 }
 /* 11 px is the smallest step §6.5 publishes; nothing ships below it. */
 .colour span {
   font-size: var(--t-xxs);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   color: var(--ink-dim);
 }
 .colour[aria-pressed='true'] {
   border-color: var(--ink);
-  background: rgba(195, 206, 218, 0.12);
+  background-color: rgba(195, 206, 218, 0.12);
+}
+.colour[aria-pressed='true'] span {
+  color: var(--ink);
 }
 .colour:disabled {
-  opacity: 0.32;
+  opacity: 0.3;
   cursor: not-allowed;
+}
+.orb-svg {
+  display: block;
+  flex: none;
 }
 
 .wells {
@@ -971,9 +1658,9 @@ button:focus-visible,
 }
 .well {
   flex: 1;
-  min-height: 72px;
+  min-height: 84px;
   border: 1px dashed var(--chrome-dark);
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -981,40 +1668,86 @@ button:focus-visible,
   gap: 4px;
   color: var(--ink-dim);
   font-size: var(--t-xxs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  padding: 6px;
 }
 .well[data-filled='true'] {
   border-style: solid;
   border-color: var(--chrome-mid);
   color: var(--ink);
+  background: var(--lift);
+}
+.well b {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.well__hint {
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
 }
 
+/*
+ * §5 S2 B: "the player picks the slot **on a picture of the tube**, not from a
+ * number list. This is the single most important affordance in the game and
+ * every other picker inherits from it." So the strip is drawn as a tube — the
+ * same well gradient, the same engraved divisions, the same numerals — and it
+ * fills bottom-up, like the real one.
+ */
 .slot-strip {
   display: flex;
   flex-direction: column-reverse;
-  gap: 4px;
-  align-items: center;
+  gap: 0;
+  /*
+   * `stretch` plus `fit-content`: the strip is exactly as wide as its widest
+   * cell and every cell fills it, so the tube stays a tube at any text scale.
+   * A fixed cell width — even one written in `em` — was 15 px too narrow for
+   * `1st` plus a sphere plus `VIOLET` and the labels overhung the glass.
+   */
+  align-items: stretch;
+  width: fit-content;
+  min-width: 9em;
+  align-self: center;
+  border: 1px solid var(--chrome-dark);
+  border-radius: 10px;
+  padding: 6px 5px;
+  background:
+    linear-gradient(90deg, rgba(5, 7, 12, 0.72), rgba(5, 7, 12, 0.28) 42%, rgba(5, 7, 12, 0.66)),
+    var(--abyss);
+  box-shadow: inset 0 0 0 1px rgba(127, 166, 196, 0.14);
 }
 .slot-cell {
-  width: 96px;
-  height: 46px;
-  border: 1px solid var(--chrome-dark);
-  border-radius: 3px;
+  position: relative;
+  min-height: var(--tap);
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
+  padding: 0 8px;
   color: var(--ink-dim);
   font-size: var(--t-xs);
-  background: linear-gradient(180deg, rgba(12, 30, 48, 0.7), rgba(10, 18, 32, 0.7));
+  border-top: 1px solid rgba(127, 166, 196, 0.16);
+  transition:
+    background-color 140ms linear,
+    color 140ms linear;
 }
-.slot-cell[aria-pressed='true'] {
-  border-color: var(--ink);
-  color: var(--ink);
+.slot-cell:first-child {
+  border-top: 0;
 }
+.slot-cell small {
+  font-family: var(--mono);
+  opacity: 0.55;
+  flex: none;
+  width: 2.6em;
+}
+.slot-cell[aria-pressed='true'],
 .slot-cell[data-filled='true'] {
-  border-color: var(--chrome-mid);
+  color: var(--ink);
+  background-color: rgba(127, 166, 196, 0.1);
+}
+.slot-cell b {
+  font-weight: 600;
+  letter-spacing: 0.06em;
 }
 
 .stepper {
@@ -1026,10 +1759,11 @@ button:focus-visible,
   width: var(--tap);
   height: var(--tap);
   border: 1px solid var(--chrome-dark);
-  border-radius: 3px;
+  border-radius: 4px;
   display: grid;
   place-items: center;
   font-size: var(--t-lg);
+  background-image: var(--lift);
 }
 .stepper b {
   flex: 1;
@@ -1040,46 +1774,91 @@ button:focus-visible,
 .stepper small {
   color: var(--ink-dim);
   font-size: var(--t-xxs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .note {
   font-size: var(--t-xs);
   color: var(--ink-dim);
+  line-height: 1.45;
 }
 .note--warn {
-  color: #d9a441;
+  color: var(--pending);
+}
+/*
+ * Four utilities, so the sheets carry no inline styles.
+ *
+ * Inline `style="color:var(--ink-dim)"` in a template string is invisible to the
+ * stylesheet's own gate: `tests/client.test.mjs` asserts that every `font-size`
+ * in this file comes from a published token, and a size written into markup slips
+ * past it. Nothing sets type inline any more.
+ */
+.lit {
+  color: var(--ink);
+}
+.dim {
+  color: var(--ink-dim);
+}
+.mono {
+  font-family: var(--mono);
+}
+.figure {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.expander {
+  cursor: pointer;
+  color: var(--ink-dim);
+  font-size: var(--t-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.steps {
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.input {
+  padding: 0 10px;
+  background: rgba(5, 7, 12, 0.5);
 }
 
 .card {
-  border: 1px solid rgba(65, 75, 88, 0.6);
-  border-radius: 4px;
-  padding: 10px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  padding: 11px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: var(--lift);
 }
 .card h3 {
   margin: 0;
   font-size: var(--t-xs);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-dim);
   font-weight: 600;
 }
 .kv {
   display: grid;
-  grid-template-columns: 116px 1fr;
-  gap: 4px 10px;
+  /* `minmax(0, …)` on both tracks: a 116 px fixed label column is 130 px of text
+     at 200% scaling, and a grid item that cannot shrink runs straight into its
+     value — `REMAINING900`, found in the 200% pass. */
+  grid-template-columns: minmax(0, 116px) minmax(0, 1fr);
+  gap: 5px 10px;
   font-size: var(--t-xs);
 }
 .kv dt {
   color: var(--ink-dim);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   font-size: var(--t-xxs);
   padding-top: 2px;
+  overflow-wrap: anywhere;
 }
 .kv dd {
   margin: 0;
@@ -1093,11 +1872,11 @@ button:focus-visible,
   align-items: center;
   gap: 6px;
   font-size: var(--t-xs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   border: 1px solid currentColor;
   border-radius: 3px;
-  padding: 4px 8px;
+  padding: 5px 9px;
   align-self: flex-start;
 }
 .state--ok {
@@ -1110,7 +1889,7 @@ button:focus-visible,
   color: var(--ink-dim);
 }
 .state--error {
-  color: #ff6b6b;
+  color: var(--alert);
 }
 
 table.paytable {
@@ -1121,40 +1900,39 @@ table.paytable {
 table.paytable th,
 table.paytable td {
   text-align: left;
-  padding: 6px 4px;
-  border-bottom: 1px solid rgba(65, 75, 88, 0.4);
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--edge-soft);
   white-space: nowrap;
 }
 table.paytable th {
   color: var(--ink-dim);
   font-size: var(--t-xxs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   font-weight: 600;
 }
 table.paytable td.num {
   font-family: var(--mono);
 }
+table.paytable tr[data-tier='FLOW'] td:first-child {
+  box-shadow: inset 2px 0 0 var(--tier-flow);
+}
+table.paytable tr[data-tier='FORM'] td:first-child {
+  box-shadow: inset 2px 0 0 var(--tier-form);
+}
+table.paytable tr[data-tier='ORDER'] td:first-child {
+  box-shadow: inset 2px 0 0 var(--tier-order);
+}
 
 .history-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(65, 75, 88, 0.4);
+  padding: 9px 0;
+  border-bottom: 1px solid var(--edge-soft);
   width: 100%;
   font-size: var(--t-xs);
-}
-.history-row .perm {
-  display: flex;
-  gap: 3px;
-  flex: none;
-}
-.history-row .perm i {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  display: block;
+  text-align: left;
 }
 .history-row .net {
   margin-left: auto;
@@ -1164,6 +1942,69 @@ table.paytable td.num {
   color: var(--gold);
 }
 
+/* S3 — one row per line: the chip, the claim in words, stake × multiplier. */
+.ticket-row__claim {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ticket-row__claim b {
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ticket-row__claim span {
+  color: var(--ink-dim);
+  overflow-wrap: anywhere;
+}
+.ticket-row__money {
+  text-align: right;
+  white-space: nowrap;
+}
+.ticket-row__hit {
+  color: var(--ink-dim);
+}
+.ticket-row__remove {
+  flex: none;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+}
+/* The tier travels with the line into S3, on the same cool-to-hot scale. */
+.history-row[data-tier='FLOW'],
+.history-row[data-tier='FORM'],
+.history-row[data-tier='ORDER'] {
+  border-left: 2px solid var(--chrome-dark);
+  padding-left: 9px;
+}
+.history-row[data-tier='FLOW'] {
+  border-left-color: var(--tier-flow);
+}
+.history-row[data-tier='FORM'] {
+  border-left-color: var(--tier-form);
+}
+.history-row[data-tier='ORDER'] {
+  border-left-color: var(--tier-order);
+}
+
+.card--pick {
+  text-align: left;
+  border-color: var(--edge);
+}
+.card--pick[aria-pressed='true'] {
+  border-color: var(--ink);
+}
+.chip-name {
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+table.paytable td.pays {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .toast {
   position: fixed;
   left: 50%;
@@ -1171,8 +2012,8 @@ table.paytable td.num {
   transform: translateX(-50%);
   background: var(--abyss);
   border: 1px solid var(--chrome-dark);
-  border-radius: 3px;
-  padding: 8px 12px;
+  border-radius: 4px;
+  padding: 9px 13px;
   font-size: var(--t-xs);
   z-index: 60;
   max-width: 360px;
@@ -1192,13 +2033,16 @@ table.paytable td.num {
 .modal__panel {
   width: 100%;
   max-width: 360px;
-  background: var(--abyss);
+  background:
+    radial-gradient(120% 40% at 50% 0%, rgba(23, 64, 92, 0.3), rgba(23, 64, 92, 0) 70%),
+    var(--abyss);
   border: 1px solid var(--chrome-dark);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  animation: sheet-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .modal__panel h2 {
   margin: 0;
@@ -1206,6 +2050,12 @@ table.paytable td.num {
   font-weight: 600;
 }
 
+/*
+ * §6.10's state treatments, all four sharing one shape: a 1.5 px
+ * `--chrome-dark` rule, the message in `--ink` at 17 px, the detail in
+ * `--ink-dim` at 15 px, one full-width action. None of them uses `--win`, gold,
+ * or a face.
+ */
 .state-panel {
   border-top: 1.5px solid var(--chrome-dark);
   padding-top: 10px;
@@ -1228,20 +2078,27 @@ table.paytable td.num {
   gap: 8px;
   height: 32px;
   font-size: var(--t-xxs);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-dim);
   padding: 0 12px;
+}
+/* The countdown is a figure, not a label: `5.4s` must not become `5.4S`. */
+.cadence__time {
+  text-transform: none;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 .cadence__bar {
   flex: 1;
   height: 4px;
   background: rgba(65, 75, 88, 0.4);
+  border-radius: 2px;
+  overflow: hidden;
 }
 .cadence__bar i {
   display: block;
   height: 4px;
-  background: var(--chrome-mid);
+  background: linear-gradient(90deg, var(--chrome-dark), var(--chrome-mid));
 }
 .ticker {
   display: flex;
@@ -1250,15 +2107,53 @@ table.paytable td.num {
   font-size: var(--t-xxs);
   color: var(--ink-dim);
   min-height: 32px;
+  letter-spacing: 0.04em;
+}
+.ticker b {
+  color: var(--ink);
+  font-weight: 600;
+  width: 100%;
+  letter-spacing: 0.1em;
 }
 
+/*
+ * §6.4 and §11: `prefers-reduced-motion` replaces agitate with a cross-dissolve
+ * and the falls with fades, **keeping the same total duration so the audio
+ * phrase still lands**. Everything ambient stops outright; nothing that carries
+ * information is removed, because none of it was carried by motion.
+ */
 @media (prefers-reduced-motion: reduce) {
-  .sphere-body,
-  .impeller {
+  .orb__m,
+  .orb__core,
+  .impeller,
+  .caustic,
+  .floor-caustic,
+  .bubbles circle,
+  .chamber[data-beat='charge'] .bubbles circle,
+  .chamber[data-beat='agitate'] .bubbles circle {
     animation: none !important;
   }
-  .sheet {
+  .sheet,
+  .modal__panel,
+  .scrim,
+  .toast {
     animation: none;
+  }
+  .motes {
+    display: none;
+  }
+  .tube--flex,
+  .pulse--on {
+    animation: none;
+  }
+  .tube-rim {
+    transform: scaleY(1);
+  }
+  .tube-rim--lit {
+    transition: opacity 260ms linear;
+  }
+  button:active:not(:disabled) {
+    transform: none;
   }
 }
 
@@ -1271,6 +2166,6 @@ table.paytable td.num {
    * able to grow, and a fixed height here would clip what the rule above wraps.
    */
   .chip {
-    min-height: 78px;
+    min-height: 80px;
   }
 }

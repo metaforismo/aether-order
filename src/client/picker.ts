@@ -10,9 +10,10 @@
  * all — and the live sentence, not the icon row, is the confirmation.
  */
 
-import { claimSentence, elementHex, paramsFor, type Params } from './claims.js';
-import { glyphSvg } from './glyphs.js';
+import { sound } from './audio.js';
+import { claimSentence, paramsFor, type Params } from './claims.js';
 import { credits } from './money.js';
+import { orbSvg } from './sphere.js';
 import type { BetInfo, VariantInfo } from './types.js';
 import { esc, html, on, openSheet } from './ui.js';
 
@@ -39,13 +40,23 @@ export function openPicker(options: PickerOptions): void {
   let stake = options.stakeChips;
   let note = '';
 
+  /*
+   * The colour token is the sphere itself.
+   *
+   * Not a glyph in a coloured box: the same orb the chamber renders, from the
+   * same gradient master (`sphere.ts`), so a player who taps AMBER here has
+   * already met the object that will land in the tube. The etched glyph rides on
+   * it because §6.1 proves seven colours clearing the 4.5:1 floor cannot be
+   * separated by luminance, and the name is written underneath because colour is
+   * never the only channel (§11).
+   */
   const colourToken = (index: number, disabled: boolean, pressed: boolean): string => {
     const element = variant.elements[index];
     if (!element) return '';
     return `<button class="colour" data-colour="${index}" ${
       disabled ? 'disabled' : ''
     } aria-pressed="${pressed}" aria-label="${esc(element.name)}">
-      ${glyphSvg(element.glyph, 22, element.hex)}
+      ${orbSvg(element, 30)}
       <span>${esc(element.name)}</span>
     </button>`;
   };
@@ -61,8 +72,8 @@ export function openPicker(options: PickerOptions): void {
       const filled = picks[index];
       const element = filled === undefined ? null : variant.elements[filled];
       cells.push(`<button class="slot-cell" data-cell="${index}" data-filled="${element ? 'true' : 'false'}">
-        <small style="color:var(--ink-dim)">${esc(labels ? (labels[index] ?? '') : index + 1)}</small>
-        ${element ? `${glyphSvg(element.glyph, 18, element.hex)}<span style="color:var(--ink)">${esc(element.name)}</span>` : '<span>—</span>'}
+        <small>${esc(labels ? (labels[index] ?? '') : index + 1)}</small>
+        ${element ? `${orbSvg(element, 26)}<b>${esc(element.name)}</b>` : '<span>—</span>'}
       </button>`);
     }
     return `<div class="slot-strip">${cells.join('')}</div>`;
@@ -70,17 +81,16 @@ export function openPicker(options: PickerOptions): void {
 
   const slotStrip = (): string => {
     const cells: string[] = [];
-    for (let index = 0; index < n; index += 1)
-      cells.push(`<button class="slot-cell" data-slot="${index}" aria-pressed="${
-        slot === index
-      }" aria-label="Slot ${index + 1}">
-        <small>SLOT ${index + 1}</small>
-        ${
-          slot === index && picks[0] !== undefined
-            ? `${glyphSvg(variant.elements[picks[0]]?.glyph ?? 'disc', 18, elementHex(variant, picks[0]))}`
-            : ''
-        }
+    for (let index = 0; index < n; index += 1) {
+      const chosen = slot === index && picks[0] !== undefined;
+      const element = chosen ? variant.elements[picks[0] as number] : null;
+      cells.push(`<button class="slot-cell" data-slot="${index}" data-filled="${
+        chosen ? 'true' : 'false'
+      }" aria-pressed="${slot === index}" aria-label="Slot ${index + 1}">
+        <small>${index + 1}</small>
+        ${element ? `${orbSvg(element, 26)}<b>${esc(element.name)}</b>` : '<span>—</span>'}
       </button>`);
+    }
     return `<div class="slot-strip">${cells.join('')}</div>`;
   };
 
@@ -112,7 +122,11 @@ export function openPicker(options: PickerOptions): void {
           const element = picks[index] === undefined ? null : variant.elements[picks[index] as number];
           return `<button class="well" data-cell="${index}" data-filled="${element ? 'true' : 'false'}">
             <span>${esc(labels[index] ?? '')}</span>
-            ${element ? `${glyphSvg(element.glyph, 24, element.hex)}<b style="font-weight:600">${esc(element.name)}</b>` : '<b style="font-weight:400">tap a colour</b>'}
+            ${
+              element
+                ? `${orbSvg(element, 30)}<b>${esc(element.name)}</b>`
+                : '<b class="well__hint">tap a colour</b>'
+            }
           </button>`;
         })
         .join('')}</div>${colourRow(picks)}`;
@@ -121,7 +135,7 @@ export function openPicker(options: PickerOptions): void {
     else picker = `${tubeCells(n, null)}${colourRow(picks)}`;
 
     return `
-      <p class="note">${esc(bet.rule)} <b style="color:var(--ink)">${esc(bet.multiplierDecimal)}</b> · ${esc(
+      <p class="note">${esc(bet.rule)} <b class="lit">${esc(bet.multiplierDecimal)}</b> · ${esc(
         bet.probability ?? '',
       )} · pays the same 96% as every other chip.</p>
       <p class="note">${esc(hint)}</p>
@@ -229,6 +243,8 @@ export function openPicker(options: PickerOptions): void {
         on(footNode, '[data-add]', 'click', () => {
           const params = currentParams();
           if (!params) return;
+          // Confirmation of a claim being added, never a cue about its quality.
+          sound.tick();
           options.onAdd(params, stake);
           close();
         });

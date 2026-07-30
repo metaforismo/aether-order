@@ -14,9 +14,9 @@
  */
 
 import { api } from './api.js';
-import { claimSummary, elementHex, type Params } from './claims.js';
-import { glyphSvg } from './glyphs.js';
+import { claimSummary, type Params } from './claims.js';
 import { credits, signedCredits } from './money.js';
+import { orbSvg } from './sphere.js';
 import type { Catalogue, HistoryRow, RoundView, SessionState, VariantInfo } from './types.js';
 import { esc, html, on, openModal, openSheet, toast } from './ui.js';
 import {
@@ -61,16 +61,16 @@ export function openTicketReview(options: {
       const returnIfHit =
         (line.stakeChips * BigInt((bet?.multiplier ?? '0/1').split('/')[0] ?? '0')) /
         BigInt((bet?.multiplier ?? '0/1').split('/')[1] ?? '1');
-      return `<div class="history-row">
-        <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
-          <b style="letter-spacing:.06em">${esc(bet?.name ?? line.code)}</b>
-          <span style="color:var(--ink-dim)">${esc(claimSummary(variant, line.code, line.params))}</span>
+      return `<div class="history-row" data-tier="${esc(bet?.tier ?? '')}">
+        <div class="ticket-row__claim">
+          <b>${esc(bet?.name ?? line.code)}</b>
+          <span>${esc(claimSummary(variant, line.code, line.params))}</span>
         </div>
-        <div class="net" style="text-align:right">
+        <div class="net ticket-row__money">
           <div>${esc(credits(line.stakeChips))} × ${esc(multiplier)}</div>
-          <div style="color:var(--ink-dim)">returns ${esc(credits(returnIfHit))}</div>
+          <div class="ticket-row__hit">returns ${esc(credits(returnIfHit))}</div>
         </div>
-        <button class="btn btn--quiet" data-remove="${index}" style="flex:none;width:44px;height:44px">×</button>
+        <button class="btn btn--quiet ticket-row__remove" data-remove="${index}" aria-label="Remove this line">×</button>
       </div>`;
     })
     .join('');
@@ -81,7 +81,7 @@ export function openTicketReview(options: {
     body: `${rows || '<p class="note">No lines yet.</p>'}
       <div class="card">
         <h3>Best possible outcome</h3>
-        <b style="font-size:var(--t-lg)">${esc(credits(options.bestOutcomeChips))}</b>
+        <b class="figure">${esc(credits(options.bestOutcomeChips))}</b>
         <p class="note">The most this exact ticket can return on any settled order — a maximum over the ${
           variant.permutationCount
         } orders, not the sum of every line's return-if-hit.${
@@ -128,9 +128,9 @@ function wireLines(round: RoundView): string {
   const rows = round.lines
     .map(
       (line) =>
-        `<tr><td>${esc(line.name)}</td><td style="color:var(--ink-dim)">${esc(
+        `<tr><td>${esc(line.name)}</td><td class="dim">${esc(
           line.code,
-        )}</td><td class="num" style="font-family:var(--mono)">${esc(
+        )}</td><td class="num">${esc(
           Object.entries(line.params as Record<string, unknown>)
             .map(([key, value]) => `${key}=${String(value)}`)
             .join(' '),
@@ -138,9 +138,9 @@ function wireLines(round: RoundView): string {
     )
     .join('');
   return `<details>
-    <summary style="cursor:pointer;color:var(--ink-dim);font-size:var(--t-xs);letter-spacing:.08em;text-transform:uppercase">What the signature covers</summary>
+    <summary class="expander">What the signature covers</summary>
     <table class="paytable"><thead><tr><th>Chip</th><th>Code</th><th>Parameters</th></tr></thead><tbody>${rows}</tbody></table>
-    <p class="note">These are the exact codes and parameters that entered the ticket digest, so a dispute can be checked line by line. Slots and colours are indexed from zero here: the chip labelled <em>slot 3</em> is recorded as <span style="font-family:var(--mono)">k=2</span>, and FIRST is the same claim as <span style="font-family:var(--mono)">slot k=0</span>.</p>
+    <p class="note">These are the exact codes and parameters that entered the ticket digest, so a dispute can be checked line by line. Slots and colours are indexed from zero here: the chip labelled <em>slot 3</em> is recorded as <span class="mono">k=2</span>, and FIRST is the same claim as <span class="mono">slot k=0</span>.</p>
   </details>`;
 }
 
@@ -246,8 +246,8 @@ export async function openFairness(options: {
       </div>
 
       <details class="card">
-        <summary style="cursor:pointer;color:var(--ink-dim);font-size:var(--t-xs);letter-spacing:.08em;text-transform:uppercase">How this works</summary>
-        <ol class="note" style="padding-left:18px;display:flex;flex-direction:column;gap:6px">
+        <summary class="expander">How this works</summary>
+        <ol class="note steps">
           <li>Before you bet, the server drew a secret seed and published a hash of it together with the variant, the round id and the nonce. None of it can change afterwards.</li>
           <li>You added your own seed. It changes <em>which</em> order comes up and never your odds — every seed gives the same uniform draw.</li>
           <li>At commit the permutation was fixed. Nothing after that point was a decision.</li>
@@ -280,16 +280,18 @@ export function openHistory(options: {
   const rows = options.rounds
     .map((row) => {
       const variant = options.catalogue.variants[row.variantId];
+      // The permutation strip is the spheres themselves, at 12 px, from the same
+      // master the chamber draws — so a row in the history reads as the round.
       const dots = (row.permutation ?? [])
-        .map(
-          (element) =>
-            `<i style="background:${esc(variant.elements[element]?.hex ?? '#fff')}"></i>`,
-        )
+        .map((element) => {
+          const info = variant.elements[element];
+          return info ? orbSvg(info, 12) : '';
+        })
         .join('');
       const net = row.netChips === null ? 0n : BigInt(row.netChips);
       return `<button class="history-row" data-round="${esc(row.roundId)}">
         <span class="perm">${dots}</span>
-        <span style="color:var(--ink-dim)">${row.lineCount} line${row.lineCount === 1 ? '' : 's'} · ${esc(
+        <span class="dim">${row.lineCount} line${row.lineCount === 1 ? '' : 's'} · ${esc(
           row.source === 'lobby' ? 'shared' : 'solo',
         )}</span>
         <span class="net ${net > 0n ? 'net--up' : ''}">${esc(signedCredits(net))}</span>
@@ -328,12 +330,12 @@ export function openHistory(options: {
 export function openPaytable(variant: VariantInfo): void {
   const rows = variant.bets
     .map(
-      (bet) => `<tr>
-        <td><b style="letter-spacing:.06em">${esc(bet.name)}</b></td>
-        <td style="color:var(--ink-dim)">${esc(bet.tier)}</td>
+      (bet) => `<tr data-tier="${esc(bet.tier)}">
+        <td><b class="chip-name">${esc(bet.name)}</b></td>
+        <td class="dim">${esc(bet.tier)}</td>
         <td class="num">${esc(bet.probability ?? '')}</td>
-        <td class="num">${esc(bet.multiplierDecimal)}</td>
-        <td class="num" style="color:var(--ink-dim)">${esc(bet.rtp ?? '')}</td>
+        <td class="num pays">${esc(bet.multiplierDecimal)}</td>
+        <td class="num dim">${esc(bet.rtp ?? '')}</td>
       </tr>`,
     )
     .join('');
@@ -360,19 +362,19 @@ export function openPaytable(variant: VariantInfo): void {
     subtitle: `${variant.displayName} · ${variant.permutationCount} possible orders`,
     full: true,
     body: `
-      <p class="note">Every bet pays a theoretical <b style="color:var(--ink)">96.000%</b>. The tiers are how wild the ride is, not how good the deal is.</p>
+      <p class="note">Every bet pays a theoretical <b class="lit">96.000%</b>. The tiers are how wild the ride is, not how good the deal is.</p>
       <table class="paytable">
         <thead><tr><th>Chip</th><th>Tier</th><th>Probability</th><th>Pays</th><th>RTP</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="card">
         <h3>These two chips are the same bet</h3>
-        <p class="note" style="font-family:var(--mono)">${aliases}</p>
+        <p class="note mono">${aliases}</p>
         <p class="note">${variant.claimAliases.length} pairs in ${esc(variant.displayName)}. Tapping the second one raises the first line's stake instead of adding a row — using the convenience control never costs anything.</p>
       </div>
       <div class="card">
         <h3>The most a ticket can return</h3>
-        <b style="font-size:var(--t-lg)">${esc(String(variant.roundCredit.maxTicketReturnMultipleDecimal))}</b>
+        <b class="figure">${esc(String(variant.roundCredit.maxTicketReturnMultipleDecimal))}</b>
         <p class="note">The largest credit any legal ticket can produce: ${esc(
           credits(BigInt(String(variant.roundCredit.maxTicketReturnCreditChips))),
         )} on a ${esc(credits(BigInt(String(variant.roundCredit.maxTicketReturnStakeChips))))} ticket of ${esc(
@@ -420,7 +422,7 @@ export function openLimits(options: {
 
       <div class="card">
         <h3>Reality checks</h3>
-        <p class="note">Operator schedule: <b style="color:var(--ink)">${policy.realityCheckMinutes.join(
+        <p class="note">Operator schedule: <b class="lit">${policy.realityCheckMinutes.join(
           ' and ',
         )} minutes, then every ${policy.realityCheckRecurrenceMinutes} minutes</b>, for as long as the session lasts.</p>
         <p class="note">Check in more often:</p>
@@ -530,11 +532,11 @@ export function openVariantSheet(options: {
   const card = (id: 'classic' | 'seven'): string => {
     const variant = options.catalogue.variants[id];
     const full = variant.bets.find((bet) => bet.code === 'full');
-    return `<button class="card" data-variant="${id}" style="text-align:left;border-color:${
-      options.current === id ? 'var(--ink)' : 'rgba(65,75,88,.6)'
+    return `<button class="card card--pick" data-variant="${id}" aria-pressed="${
+      options.current === id
     }">
       <h3>${esc(variant.displayName)}</h3>
-      <p class="note"><b style="color:var(--ink)">${variant.n} spheres</b> · ${
+      <p class="note"><b class="lit">${variant.n} spheres</b> · ${
         variant.permutationCount
       } possible orders · FULL ORDER pays ${esc(full?.multiplierDecimal ?? '')}</p>
       <p class="note">${
@@ -542,8 +544,8 @@ export function openVariantSheet(options: {
           ? 'More spheres, bigger prizes, same 96%.'
           : 'Five spheres. The default, and never the worse deal.'
       }</p>
-      <div style="display:flex;gap:6px">${variant.elements
-        .map((element) => glyphSvg(element.glyph, 18, element.hex))
+      <div class="perm">${variant.elements
+        .map((element) => orbSvg(element, 26))
         .join('')}</div>
     </button>`;
   };
@@ -571,4 +573,4 @@ export function statePanel(message: string, detail: string, action: string, data
   </div>`;
 }
 
-export { html, elementHex };
+export { html };
