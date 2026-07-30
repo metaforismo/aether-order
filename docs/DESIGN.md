@@ -21,9 +21,10 @@ A new player opens the game and sees, in this order:
 3. **One line of copy:** *"They settle in a random order. Bet on the order."*
 4. **The FORM tier's chips, already open.** `4.80×`, `4.80×`, `4.80×`, `4.80×` —
    FIRST, LAST, SLOT, STACK, four different claims at one price.
-5. **One line under the rail:** *"Every legal bet has the same expected return:
-   exactly 24/25 (96%) of stake. The tiers are how wild the ride is, not how
-   good the deal is."* This is under `MATH.md` §2's uniform-draw assumptions;
+5. **One line under the rail:** *"Every bet pays 96%. The tiers are how wild the
+   ride is, not how good the deal is."* Here *pays 96%* is compact UI language
+   for expected credit exactly `24/25` of stake under `MATH.md` §2's
+   uniform-draw assumptions; it is not a guaranteed realised return, and
    integer-chip settlement adds no rounding shortfall.
 
 **The opening screen does not lead with the biggest number.** `115.20×` is real,
@@ -233,8 +234,9 @@ the UI:**
 - *The shake.* The agitation is choreography. The tooltip on the chamber reads:
   *"The order was fixed when you committed. The shake is how we show it."*
 - *The client seed.* The fairness sheet reads: *"Your seed changes which order
-  comes up. It cannot change your odds — every seed leaves the exact expected
-  return at 24/25 (96%)."*
+  comes up. It cannot change your odds — every seed gives the same 96%."* Here
+  *same 96%* means the same exact `24/25` expected return under the uniform-draw
+  assumptions, not the same realised payout.
 
 ---
 
@@ -1723,11 +1725,12 @@ and its own review. It is not a paragraph.
 - Approved verbs: *choose, place, pick, watch, verify.*
 - Every tier tab states volatility in plain language and never implies value.
 - The paytable shows the exact probability beside every multiplier.
-- The fairness sheet states, in one sentence, that every legal line's expected
-  credit is exactly `24/25 = 96%` of stake under the stated uniform-draw
-  assumptions, with no integer-chip rounding shortfall, and that no bet, seed,
-  or pattern of play changes that expectation. `MATH.md` §9 is the proof,
-  linked from that sentence.
+- The fairness sheet uses the compact sentence that all bets pay 96% and that
+  no bet, seed, or pattern of play changes it. In the surrounding explanation,
+  *pay 96%* is defined as expected credit exactly `24/25` of stake under the
+  stated uniform-draw assumptions, with no integer-chip rounding shortfall; it
+  is not a guaranteed realised payout. `MATH.md` §9 is the proof, linked from
+  that sentence.
 
 **No latency-sensitive money decisions.**
 - Every money decision happens before COMMIT, with no countdown that can expire
@@ -1893,8 +1896,8 @@ Production notes:
   which is exactly the escalation the variant wants.
 - SEVEN is a **toggle in the top rail, not a separate product**, and switching
   is free and instant. It is presented as *"more spheres, bigger prizes, same
-  exact 24/25 (96%) expected return"* — under `MATH.md` §2's uniform-draw
-  assumptions, with no payout-rounding shortfall.
+  96%"*. Here *same 96%* means the same exact `24/25` expected return under
+  `MATH.md` §2's uniform-draw assumptions, with no payout-rounding shortfall.
 - Onboarding never starts a player in SEVEN. It is opt-in, always.
 
 ---
