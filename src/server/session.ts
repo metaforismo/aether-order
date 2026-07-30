@@ -353,6 +353,28 @@ export class SessionStore {
     return state;
   }
 
+  /**
+   * Resolve a round and assert it belongs to the session presented with it.
+   *
+   * `#roundState` answers "is this a live round?" and nothing more, so a handle
+   * for one session settled against another session's wallet: the attacker was
+   * credited, the round was consumed, and the player who actually staked got
+   * nothing. HTTP never reaches that shape — `app.ts` derives every round via
+   * `getRound(session, id)` and the lobby pairs each entry's own session with
+   * its own round — but `SessionStore` is an exported boundary and must not
+   * depend on its callers being careful.
+   *
+   * Used on every public mutation that accepts both a session and a round.
+   * Rollback leaves the round registered until `discardUnstagedRound` removes
+   * it, so the honest lobby refund path satisfies the same invariant.
+   */
+  #ownedRoundState(session: Session, round: RoundRecord): RoundRecord {
+    const state = this.#roundState(round);
+    if (this.#sessionState(session).roundsById.get(state.roundId) !== state)
+      throw new ServiceError('ROUND_NOT_FOUND', 'No such round', '$.roundId');
+    return state;
+  }
+
   #roundView(round: RoundRecord): RoundRecord {
     const view = deepFreeze(structuredClone(round));
     this.#roundStates.set(view, round);
@@ -690,7 +712,7 @@ export class SessionStore {
    */
   discardUnstagedRound(session: Session, round: RoundRecord): void {
     session = this.#sessionState(session);
-    round = this.#roundState(round);
+    round = this.#ownedRoundState(session, round);
     if (round.phase !== 'COMMITTED' || round.ticket !== null) return;
     session.roundsById.delete(round.roundId);
     if (session.openRound === round) session.openRound = null;
@@ -713,7 +735,7 @@ export class SessionStore {
     lines: readonly RawLine[],
   ): { ticket: Ticket; replayed: RoundRecord | null } {
     session = this.#sessionState(session);
-    round = this.#roundState(round);
+    round = this.#ownedRoundState(session, round);
     const lineSnapshot = snapshotRawLines(lines);
     const game = gameFor(round.variantId);
     const ticket = openTicket(
@@ -787,7 +809,7 @@ export class SessionStore {
    */
   rollbackStagedTicket(session: Session, round: RoundRecord): void {
     session = this.#sessionState(session);
-    round = this.#roundState(round);
+    round = this.#ownedRoundState(session, round);
     const before = this.#stagedTicketRollbacks.get(round);
     if (!before) return;
     this.#restoreStagedTicket(session, round, before);
@@ -879,7 +901,7 @@ export class SessionStore {
    */
   finishRound(session: Session, round: RoundRecord, transcript: PermutationTranscript): RoundRecord {
     session = this.#sessionState(session);
-    round = this.#roundState(round);
+    round = this.#ownedRoundState(session, round);
     if (round.phase === 'SETTLED')
       throw new ServiceError(
         'ROUND_ALREADY_SETTLED',
@@ -1012,6 +1034,13 @@ export class SessionStore {
   }
 
   /**
+   * The methods below intentionally accept a round capability, not a
+   * `(session, round)` pair. HTTP obtains that capability through
+   * `getRound(session, id)` first; lobby seed publication uses the round stored
+   * beside its owning session entry. Read-only snapshot/digest helpers have no
+   * session state to mutate. Their `#roundState` checks therefore establish
+   * liveness without creating a validation/execution ownership mismatch.
+   *
    * Step 4. Reveal the seed, and verify before revealing it.
    *
    * The server re-derives its own transcript and re-checks its own receipt on

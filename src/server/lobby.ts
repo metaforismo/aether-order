@@ -131,9 +131,14 @@ export class SharedChamber {
   }
 
   #emit(event: LobbyEvent): void {
-    // The view is listener-agnostic and its Map surface is immutable, so one
-    // materialisation can be shared safely across every stream for this emit.
-    const emitted = { type: event.type, draw: this.#drawView(event.draw) } as LobbyEvent;
+    // One materialisation shared across every stream — so it must be frozen,
+    // or a handler that assigns to `event.draw` rewrites what every other
+    // player's stream receives. `#drawView` freezes the draw; this freezes the
+    // wrapper around it.
+    const emitted = Object.freeze({
+      type: event.type,
+      draw: this.#drawView(event.draw),
+    }) as LobbyEvent;
     for (const listener of this.#listeners) {
       try {
         listener(emitted);
@@ -151,16 +156,28 @@ export class SharedChamber {
   }
 
   #drawView(draw: LobbyDraw): LobbyDraw {
-    const entries = new FrozenMap(
-      [...draw.entries].map(([sessionId, entry]) => [
+    // Belt and braces with `#settle`'s entry removal: an entry whose round no
+    // longer resolves is dropped from the view rather than thrown over. A
+    // presence view is not worth wedging the chamber for, and the throw used to
+    // escape all the way past `#open()`.
+    const resolved: [string, { session: Session; round: RoundRecord; label: string }][] = [];
+    for (const [sessionId, entry] of draw.entries) {
+      let round;
+      try {
+        round = this.#store.getRound(entry.session, entry.round.roundId);
+      } catch {
+        continue;
+      }
+      resolved.push([
         sessionId,
         Object.freeze({
           session: this.#store.get(entry.session.id),
-          round: this.#store.getRound(entry.session, entry.round.roundId),
+          round,
           label: entry.label,
         }),
-      ]),
-    );
+      ]);
+    }
+    const entries = new FrozenMap(resolved);
     const transcript = draw.transcript ? deepFreeze(structuredClone(draw.transcript)) : null;
     const view = Object.freeze({ ...draw, entries, transcript }) as LobbyDraw;
     this.#drawStates.set(view, draw);
@@ -255,6 +272,12 @@ export class SharedChamber {
         // discarded, while every other entry and the next draw continue.
         this.#store.rollbackStagedTicket(entry.session, entry.round);
         this.#store.discardUnstagedRound(entry.session, entry.round);
+        // And the entry leaves the draw with its round. `discardUnstagedRound`
+        // removes the round from the session, so an entry left behind here
+        // points at a round `#drawView` can no longer resolve — which threw out
+        // of `#emit`, out of `#settle`, and past the `#open()` below, wedging
+        // the chamber shut for every player rather than for this one entry.
+        draw.entries.delete(entry.session.id);
       }
     }
     this.#emit({ type: 'round.reveal', draw });
@@ -321,14 +344,18 @@ export class SharedChamber {
       throw error;
     }
     if (staged.replayed) return { round: staged.replayed, replayed: true };
+    // `attachRound` returned a pre-stage frozen view. Refresh it after the
+    // ticket patch so both the caller and the presence row see the bet that was
+    // actually debited.
+    const stagedRound = this.#store.getRound(session, round.roundId);
     const first = staged.ticket.lines[0];
     draw.entries.set(session.id, {
       session,
-      round,
+      round: stagedRound,
       label: first ? `${first.code} x${staged.ticket.lines.length}` : 'ticket',
     });
     this.#emit({ type: 'presence', draw });
-    return { round, replayed: false };
+    return { round: stagedRound, replayed: false };
   }
 
   /**
@@ -360,20 +387,71 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
-class FrozenMap<K, V> extends Map<K, V> {
+/**
+ * A genuinely read-only map surface.
+ *
+ * The previous version subclassed `Map` and overrode `set`/`delete`/`clear`.
+ * That is not isolation: `Object.freeze` does not protect a Map's internal
+ * `[[MapData]]`, and the overrides are own-properties that
+ * `Map.prototype.set.call(view, ...)` walks straight past — one stream handler
+ * could inject an entry every other handler then saw. This closes over a
+ * private Map instead, so there is no inherited mutator to reach, and the
+ * mutators throw the way everything else in this service does rather than
+ * silently doing nothing.
+ */
+class FrozenMap<K, V> {
+  readonly #data: Map<K, V>;
+
   constructor(entries: readonly (readonly [K, V])[]) {
-    super();
-    for (const [key, value] of entries) Map.prototype.set.call(this, key, value);
+    this.#data = new Map(entries);
     Object.freeze(this);
   }
 
-  override set(_key: K, _value: V): this {
-    return this;
+  get size(): number {
+    return this.#data.size;
   }
 
-  override delete(_key: K): boolean {
-    return false;
+  get(key: K): V | undefined {
+    return this.#data.get(key);
   }
 
-  override clear(): void {}
+  has(key: K): boolean {
+    return this.#data.has(key);
+  }
+
+  keys(): MapIterator<K> {
+    return this.#data.keys();
+  }
+
+  values(): MapIterator<V> {
+    return this.#data.values();
+  }
+
+  entries(): MapIterator<[K, V]> {
+    return this.#data.entries();
+  }
+
+  forEach(fn: (value: V, key: K, map: FrozenMap<K, V>) => void, thisArg?: unknown): void {
+    for (const [key, value] of this.#data) fn.call(thisArg, value, key, this);
+  }
+
+  [Symbol.iterator](): MapIterator<[K, V]> {
+    return this.#data[Symbol.iterator]();
+  }
+
+  get [Symbol.toStringTag](): string {
+    return 'Map';
+  }
+
+  set(_key: K, _value: V): never {
+    throw new ServiceError('INVALID_TICKET', 'The lobby entry view is read-only', '$.entries');
+  }
+
+  delete(_key: K): never {
+    throw new ServiceError('INVALID_TICKET', 'The lobby entry view is read-only', '$.entries');
+  }
+
+  clear(): never {
+    throw new ServiceError('INVALID_TICKET', 'The lobby entry view is read-only', '$.entries');
+  }
 }

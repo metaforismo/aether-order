@@ -161,8 +161,9 @@ generation and custody still sit with the operator — see the boundary below.)
   and those are different answers.
 - **Exact money.** Stakes and payouts are integer chips with exact BigInt
   rational arithmetic. The stake quantum is chosen so every payout is an exact
-  integer: rounding is provably a no-op, and realised RTP equals theoretical
-  RTP with zero drift.
+  integer, so payout rounding contributes exactly `0` chips of shortfall. Under
+  the uniform-draw assumptions in `docs/MATH.md` §2, expected credited/staked is
+  exactly `24/25 = 96%`; a finite sample's realised RTP can differ.
 
 ### Where the guarantee stops
 

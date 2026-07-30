@@ -321,6 +321,41 @@ describe('pacing and the wallet', () => {
     expect(refused.json.error.code).toBe('LIMIT_REACHED');
   });
 
+  it('rejects malformed session limits and round-trips a published option', async () => {
+    const sessionId = await newSession();
+    for (const malformed of ['abc', {}, '1e400', 0, -1, 15.5]) {
+      const rejected = await call('POST', `/api/session/${sessionId}/settings`, {
+        sessionMinutes: malformed,
+      });
+      expect(rejected.status).toBe(400);
+      expect(rejected.json.error).toMatchObject({
+        code: 'BAD_REQUEST',
+        path: '$.sessionMinutes',
+      });
+      expect(app.store.get(sessionId).limits.sessionMinutes).toBeNull();
+    }
+
+    const accepted = await call('POST', `/api/session/${sessionId}/settings`, {
+      sessionMinutes: 30,
+    });
+    expect(accepted.status).toBe(200);
+    expect(accepted.json.session.limits.sessionMinutes).toBe(30);
+    expect(app.store.get(sessionId).limits.sessionMinutes).toBe(30);
+  });
+
+  it('rejects non-positive loss limits without persisting them', async () => {
+    const sessionId = await newSession();
+    for (const lossChips of ['-2500', '0']) {
+      const rejected = await call('POST', `/api/session/${sessionId}/settings`, { lossChips });
+      expect(rejected.status).toBe(400);
+      expect(rejected.json.error).toMatchObject({
+        code: 'BAD_REQUEST',
+        path: '$.lossChips',
+      });
+      expect(app.store.get(sessionId).limits.lossChips).toBeNull();
+    }
+  });
+
   it('only lets a reality-check interval tighten, and only to a published option', async () => {
     const sessionId = await newSession();
     const ok = await call('POST', `/api/session/${sessionId}/settings`, {

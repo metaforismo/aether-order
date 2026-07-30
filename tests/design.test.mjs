@@ -39,6 +39,16 @@ const ENGINE = read('docs/ENGINE.md');
 const MATH = read('docs/MATH.md');
 const README = read('README.md');
 
+describe('RTP wording distinguishes expectation from realised samples', () => {
+  it('quantifies rounding shortfall and states the uniform-draw assumption', () => {
+    expect(README).toContain('payout rounding contributes exactly `0` chips of shortfall');
+    expect(README).toContain('expected credited/staked is');
+    expect(README).toContain('exactly `24/25 = 96%`');
+    expect(README).toContain("a finite sample's realised RTP can differ");
+    expect(README).not.toContain('realised RTP equals theoretical RTP with zero drift');
+  });
+});
+
 /* ------------------------------------------------------------------ *
  * 1. Contrast — recomputed, not quoted.                                *
  * ------------------------------------------------------------------ */

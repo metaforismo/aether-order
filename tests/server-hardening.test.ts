@@ -6,7 +6,7 @@ import {
 } from '@axiom-games/reveal-engine/modules/permutation/aether';
 import { createApp, parseLines } from '../src/server/app.js';
 import { GAMES } from '../src/server/engine.js';
-import { SharedChamber } from '../src/server/lobby.js';
+import { SharedChamber, type LobbyDraw } from '../src/server/lobby.js';
 import {
   SERVER_LIMITS,
   SessionStore,
@@ -571,7 +571,12 @@ describe('AO-04 bounded and encapsulated public service state', () => {
       chamber.commit(session, { roundId: draw.roundId, lines: [LINE] });
       const exposed = chamber.draw!;
       expect(exposed.entries.size).toBe(1);
-      exposed.entries.clear();
+      // Refused with a typed error rather than silently ignored, and the
+      // refusal survives prototype-level access.
+      expect(() => exposed.entries.clear()).toThrowError(
+        expect.objectContaining({ code: 'INVALID_TICKET' }),
+      );
+      expect(() => Map.prototype.clear.call(exposed.entries)).toThrowError();
       expect(() => {
         exposed.settled = true;
       }).toThrow();
@@ -698,6 +703,45 @@ describe('AO-05 adapter-bound ticket replay identity', () => {
 });
 
 describe('AO-03 shared-draw seed custody', () => {
+  it('makes the live internal draw seed fields non-writable', () => {
+    vi.useFakeTimers();
+    const store = new SessionStore({ now: () => 1_800_000_000_000 });
+    const chamber = new SharedChamber(store, 4_000);
+    const session = store.create();
+    const originalAttachRound = store.attachRound.bind(store);
+    let internalDraw: LobbyDraw | null = null;
+    const attachRound = vi.spyOn(store, 'attachRound').mockImplementation((owner, draw) => {
+      internalDraw = draw as LobbyDraw;
+      return originalAttachRound(owner, draw);
+    });
+    try {
+      chamber.start();
+      chamber.commit(session, { roundId: chamber.draw!.roundId, lines: [LINE] });
+      const captured = internalDraw as LobbyDraw | null;
+      expect(captured).not.toBeNull();
+      if (!captured) throw new Error('attachRound did not receive the internal draw');
+      const identity = {
+        serverSeed: captured.serverSeed,
+        seedCommitment: captured.seedCommitment,
+      };
+
+      expect(Object.getOwnPropertyDescriptor(captured, 'serverSeed')?.writable).toBe(false);
+      expect(Object.getOwnPropertyDescriptor(captured, 'seedCommitment')?.writable).toBe(
+        false,
+      );
+      expect(() => {
+        (captured as { serverSeed: string }).serverSeed = '00'.repeat(32);
+      }).toThrow();
+      expect(() => {
+        (captured as { seedCommitment: string }).seedCommitment = '11'.repeat(32);
+      }).toThrow();
+      expect(captured).toMatchObject(identity);
+    } finally {
+      attachRound.mockRestore();
+      chamber.stop();
+    }
+  });
+
   it('cannot replace a live draw and cannot rewrite its seed fields across settlement', () => {
     vi.useFakeTimers();
     let now = 1_800_000_000_000;

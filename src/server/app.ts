@@ -60,6 +60,8 @@ const MIME: Readonly<Record<string, string>> = Object.freeze({
   '.map': 'application/json; charset=utf-8',
 });
 
+const SESSION_LIMIT_MINUTES = Object.freeze([15, 30, 60] as const);
+
 function jsonBody(value: unknown): string {
   return JSON.stringify(value, (_key, item: unknown) =>
     typeof item === 'bigint' ? item.toString(10) : item,
@@ -296,14 +298,45 @@ export function createApp(options: AppOptions = {}): App {
         }
         const patch: Parameters<SessionStore['updateSettings']>[1] = {};
         if (hasSkip) patch.skip = skip === true;
-        if (hasSessionMinutes)
-          patch.sessionMinutes =
-            sessionMinutes === null
-              ? null
-              : Math.max(1, Math.floor(Number(sessionMinutes)));
-        if (hasLossChips)
-          patch.lossChips =
-            lossChips === null ? null : parseChips(lossChips, '$.lossChips');
+        if (hasSessionMinutes) {
+          if (sessionMinutes === null) patch.sessionMinutes = null;
+          else {
+            if (
+              typeof sessionMinutes !== 'number' ||
+              !SESSION_LIMIT_MINUTES.includes(
+                sessionMinutes as (typeof SESSION_LIMIT_MINUTES)[number],
+              )
+            )
+              throw new ServiceError(
+                'BAD_REQUEST',
+                'Session limits must be one of 15, 30, or 60 minutes',
+                '$.sessionMinutes',
+              );
+            patch.sessionMinutes = sessionMinutes;
+          }
+        }
+        if (hasLossChips) {
+          if (lossChips === null) patch.lossChips = null;
+          else {
+            let parsedLossChips: bigint;
+            try {
+              parsedLossChips = parseChips(lossChips, '$.lossChips');
+            } catch (error) {
+              throw new ServiceError(
+                'BAD_REQUEST',
+                (error as Error).message,
+                '$.lossChips',
+              );
+            }
+            if (parsedLossChips <= 0n)
+              throw new ServiceError(
+                'BAD_REQUEST',
+                'Loss limits must be a positive integer chip amount',
+                '$.lossChips',
+              );
+            patch.lossChips = parsedLossChips;
+          }
+        }
         if (hasRealityCheck) {
           if (playerRealityCheckMinutes === null) patch.playerRealityCheckMinutes = null;
           else {
