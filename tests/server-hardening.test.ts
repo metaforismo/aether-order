@@ -1,4 +1,5 @@
-import { createServer } from 'node:http';
+import { EventEmitter } from 'node:events';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -302,22 +303,42 @@ describe('AO-04 bounded and encapsulated public service state', () => {
 
   it('unsubscribes the HTTP lobby stream on connection close', async () => {
     const app = createApp({ lobby: true, lobbyCadenceMs: 4_000 });
-    const server = createServer(app.handler);
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const controller = new AbortController();
+    const request = Object.assign(new EventEmitter(), {
+      method: 'GET',
+      url: '/api/lobby/stream',
+    }) as unknown as IncomingMessage;
+    let headersSent = false;
+    let ended = false;
+    const response = Object.assign(new EventEmitter(), {
+      get headersSent(): boolean {
+        return headersSent;
+      },
+      get writableEnded(): boolean {
+        return ended;
+      },
+      writeHead(): ServerResponse {
+        headersSent = true;
+        return response;
+      },
+      write(): boolean {
+        return true;
+      },
+      end(): ServerResponse {
+        ended = true;
+        return response;
+      },
+    }) as unknown as ServerResponse;
     try {
-      const response = await fetch(`${base}/api/lobby/stream`, { signal: controller.signal });
-      expect(response.status).toBe(200);
+      app.handler(request, response);
+      await new Promise<void>((resolve) => setImmediate(resolve));
       expect(app.chamber?.listenerCount).toBe(1);
-      controller.abort();
+      request.emit('close');
       for (let attempt = 0; attempt < 20 && app.chamber?.listenerCount !== 0; attempt += 1)
         await new Promise<void>((resolve) => setImmediate(resolve));
       expect(app.chamber?.listenerCount).toBe(0);
+      expect(ended).toBe(true);
     } finally {
-      controller.abort();
       app.close();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 
