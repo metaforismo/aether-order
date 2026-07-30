@@ -107,6 +107,12 @@ describe('AO-01 wallet patches are exception-atomic', () => {
     const failedSession = store.create();
     const settledSession = store.create();
     const failedBefore = store.get(failedSession.id);
+    const originalAttachRound = store.attachRound.bind(store);
+    let internalDraw: LobbyDraw | null = null;
+    vi.spyOn(store, 'attachRound').mockImplementation((owner, draw) => {
+      internalDraw = draw as LobbyDraw;
+      return originalAttachRound(owner, draw);
+    });
     try {
       chamber.start();
       const draw = chamber.draw!;
@@ -122,12 +128,34 @@ describe('AO-01 wallet patches are exception-atomic', () => {
       expect(failedAfter.creditedChips).toBe(failedBefore.creditedChips);
       expect(failedAfter.commitsByIdempotencyKey.size).toBe(0);
       expect(failedAfter.roundsById.has(draw.roundId)).toBe(false);
+      expect(internalDraw).not.toBeNull();
+      expect((internalDraw as LobbyDraw | null)?.entries.has(failedSession.id)).toBe(false);
 
       const settledRound = store.getRound(settledSession, draw.roundId);
       expect(settledRound.phase).toBe('SETTLED');
       expect(settledRound.settlement).not.toBeNull();
       expect(store.get(settledSession.id).stakedChips).toBe(LINE.stake);
       expect(chamber.draw?.roundId).not.toBe(draw.roundId);
+    } finally {
+      chamber.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('omits an orphaned lobby entry from a draw view instead of throwing', () => {
+    vi.useFakeTimers();
+    const store = new SessionStore({ now: () => 1_800_000_000_000 });
+    const chamber = new SharedChamber(store, 4_000);
+    const session = store.create();
+    try {
+      chamber.start();
+      const draw = chamber.draw!;
+      const committed = chamber.commit(session, { roundId: draw.roundId, lines: [LINE] });
+      store.rollbackStagedTicket(session, committed.round);
+      store.discardUnstagedRound(session, committed.round);
+
+      expect(() => chamber.draw).not.toThrow();
+      expect(chamber.draw?.entries.size).toBe(0);
     } finally {
       chamber.stop();
       vi.useRealTimers();
