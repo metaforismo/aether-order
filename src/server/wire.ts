@@ -77,7 +77,7 @@ export function describeRound(
     ticket: round.ticket
       ? {
           ticketDigest: round.ticket.ticketDigest,
-          idempotencyKey: round.ticket.idempotencyKey,
+          idempotencyKey: round.ticketBinding?.idempotencyKey,
           totalStakeChips: chipString(round.ticket.totalStake),
         }
       : null,

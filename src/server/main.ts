@@ -3,8 +3,8 @@
  *
  * Free play only. The wallet is in memory, the operator key is generated at
  * process start, and nothing is persisted: restart the process and every
- * session, round and receipt is gone. docs/ENGINE.md §11 says seed custody,
- * wallet atomicity and persistence are the operator's; this process is not one.
+ * session, round and receipt is gone. docs/ENGINE.md §11 says seed custody and
+ * durable persistence are the operator's; this process is not either one.
  */
 
 import { createServer } from 'node:http';
@@ -12,7 +12,7 @@ import { CLIENT_OUT_DIR, buildClient } from './build-client.js';
 import { createApp } from './app.js';
 
 const port = Number(process.env.PORT ?? 5173);
-const dev = process.env.AETHER_DEV === '1';
+const dev = process.env.NODE_ENV !== 'production' && process.env.AETHER_DEV === '1';
 const watch = process.env.AETHER_WATCH !== '0';
 
 await buildClient(watch);

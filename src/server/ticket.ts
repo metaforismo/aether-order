@@ -12,6 +12,7 @@
  * the game cannot pay.
  */
 
+import { createHash, timingSafeEqual } from 'node:crypto';
 import {
   exactPayout,
   openTicket,
@@ -22,10 +23,12 @@ import { roundPresentation } from '../../tools/lib/presentation.mjs';
 import {
   familyFor,
   instanceFor,
+  permutationAdapterFingerprint,
   viewsFor,
   type PermutationGameDefinition,
   type VariantId,
 } from './engine.js';
+import { ServiceError } from './errors.js';
 import { chipString, credits } from './money.js';
 
 export interface QuoteLine {
@@ -58,6 +61,102 @@ export interface TicketQuote {
 }
 
 const QUOTE_CONTEXT = { roundId: 'quote', nonce: 0 };
+const ADAPTER_TICKET_DOMAIN = 'aether-order/server-ticket-adapter-v1';
+const ADAPTER_IDEMPOTENCY_DOMAIN = 'aether-order/server-idempotency-v1';
+
+export interface TicketAdapterIdentity {
+  readonly gameId: string;
+  readonly adapterVersion: string;
+  readonly adapterFingerprint: string;
+}
+
+export interface AdapterTicketBinding {
+  readonly adapterFingerprint: string;
+  /** The engine digest wrapped with the adapter version and fingerprint. */
+  readonly adapterTicketDigest: string;
+  /** The key the server stores and publishes; never the engine's unbound key. */
+  readonly idempotencyKey: string;
+}
+
+export function ticketAdapterIdentity(game: PermutationGameDefinition): TicketAdapterIdentity {
+  return Object.freeze({
+    gameId: game.id,
+    adapterVersion: game.adapterVersion,
+    adapterFingerprint: permutationAdapterFingerprint(game),
+  });
+}
+
+export function makeAdapterTicketBinding(
+  identity: TicketAdapterIdentity,
+  engineTicketDigest: string,
+): AdapterTicketBinding {
+  assertDigest(identity.adapterFingerprint, '$.adapterFingerprint');
+  assertDigest(engineTicketDigest, '$.ticketDigest');
+  const adapterTicketDigest = hashFields([
+    ADAPTER_TICKET_DOMAIN,
+    identity.gameId,
+    identity.adapterVersion,
+    identity.adapterFingerprint,
+    engineTicketDigest,
+  ]);
+  return Object.freeze({
+    adapterFingerprint: identity.adapterFingerprint,
+    adapterTicketDigest,
+    idempotencyKey: hashFields([
+      ADAPTER_IDEMPOTENCY_DOMAIN,
+      identity.gameId,
+      'open',
+      adapterTicketDigest,
+    ]),
+  });
+}
+
+export function assertAdapterTicketBinding(
+  identity: TicketAdapterIdentity,
+  engineTicketDigest: string,
+  binding: AdapterTicketBinding,
+): void {
+  if (!sameDigest(binding.adapterFingerprint, identity.adapterFingerprint))
+    throw new ServiceError(
+      'ADAPTER_MISMATCH',
+      'Ticket replay belongs to another adapter fingerprint',
+      '$.adapterFingerprint',
+    );
+  const expected = makeAdapterTicketBinding(identity, engineTicketDigest);
+  if (
+    !sameDigest(binding.adapterTicketDigest, expected.adapterTicketDigest) ||
+    !sameDigest(binding.idempotencyKey, expected.idempotencyKey)
+  )
+    throw new ServiceError(
+      'IDEMPOTENCY_CONFLICT',
+      'Ticket replay identity does not match its adapter-bound digest',
+      '$.idempotencyKey',
+    );
+}
+
+function assertDigest(value: string, path: string): void {
+  if (!/^[0-9a-f]{64}$/u.test(value))
+    throw new ServiceError('BAD_REQUEST', 'Digest must be 32-byte lowercase hex', path);
+}
+
+function sameDigest(left: string, right: string): boolean {
+  if (!/^[0-9a-f]{64}$/u.test(left) || !/^[0-9a-f]{64}$/u.test(right)) return false;
+  return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'));
+}
+
+function hashFields(fields: readonly string[]): string {
+  const encoded: Buffer[] = [];
+  const count = Buffer.allocUnsafe(4);
+  count.writeUInt32BE(fields.length);
+  encoded.push(count);
+  for (const field of fields) {
+    const bytes = Buffer.from(field, 'utf8');
+    const length = Buffer.allocUnsafe(4);
+    length.writeUInt32BE(bytes.length);
+    encoded.push(length, bytes);
+  }
+  return createHash('sha256').update(Buffer.concat(encoded)).digest('hex');
+}
 
 /**
  * Validate a raw ticket through the engine and return the opened, canonically

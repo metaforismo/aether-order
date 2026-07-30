@@ -110,7 +110,7 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 }
 
 /** Hostile-input gate for a raw ticket, before the engine ever sees it. */
-function parseLines(value: unknown): RawLine[] {
+export function parseLines(value: unknown): RawLine[] {
   if (!Array.isArray(value))
     throw new ServiceError('INVALID_TICKET', 'lines must be an array', '$.lines');
   if (value.length > 32)
@@ -146,6 +146,7 @@ export function createApp(options: AppOptions = {}): App {
   if (chamber && options.lobby) chamber.start();
   const catalogue = wireCatalogue();
   const clientDir = options.clientDir ?? null;
+  const devHooksEnabled = options.dev === true && process.env.NODE_ENV !== 'production';
 
   function lobbyState(): Record<string, unknown> {
     if (!chamber || !chamber.draw) return { running: false };
@@ -242,7 +243,7 @@ export function createApp(options: AppOptions = {}): App {
     }
 
     if (path === '/api/dev/skew' && method === 'POST') {
-      if (!options.dev)
+      if (!devHooksEnabled)
         throw new ServiceError('BAD_REQUEST', 'Dev hooks are disabled', '$');
       const body = await readJson(request);
       const sessionId = body.sessionId;

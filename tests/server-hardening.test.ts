@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   makePermutationTranscript,
 } from '@axiom-games/reveal-engine/modules/permutation/aether';
-import { createApp } from '../src/server/app.js';
+import { createApp, parseLines } from '../src/server/app.js';
 import { GAMES } from '../src/server/engine.js';
 import { SharedChamber } from '../src/server/lobby.js';
 import {
@@ -423,6 +423,68 @@ describe('AO-04 bounded and encapsulated public service state', () => {
     });
     expect(reads).toEqual({ code: 1, params: 1, stake: 1 });
   });
+
+  it('snapshots hostile HTTP line getters once instead of validating one value and using another', () => {
+    const reads = { code: 0, params: 0, stake: 0 };
+    const hostile = {
+      get code(): string {
+        reads.code += 1;
+        return reads.code === 1 ? 'first' : 'jackpot';
+      },
+      get params(): object {
+        reads.params += 1;
+        return reads.params === 1 ? { c: 0 } : { c: 99 };
+      },
+      get stake(): string {
+        reads.stake += 1;
+        return reads.stake === 1 ? '25' : '30';
+      },
+    };
+
+    expect(parseLines([hostile])).toEqual([{ code: 'first', params: { c: 0 }, stake: 25n }]);
+    expect(reads).toEqual({ code: 1, params: 1, stake: 1 });
+  });
+});
+
+describe('AO-05 adapter-bound ticket replay identity', () => {
+  it('rejects a ticket opened under one fingerprint when replayed under another', () => {
+    const fingerprintA = 'a'.repeat(64);
+    const fingerprintB = 'b'.repeat(64);
+    let activeFingerprint = fingerprintA;
+    const faults: SessionStoreTestFaults = {
+      ticketAdapterFingerprint: () => activeFingerprint,
+    };
+    const store = new SessionStore({
+      now: () => 1_800_000_000_000,
+      testFaults: faults,
+    });
+    const session = store.create();
+    const round = store.openRound(session);
+    const staged = store.stageTicket(session, round, [LINE]);
+    const opened = store.getRound(session, round.roundId);
+    const binding = opened.ticketBinding;
+    expect(binding).toMatchObject({ adapterFingerprint: fingerprintA });
+    expect(binding?.idempotencyKey).not.toBe(staged.ticket.idempotencyKey);
+    expect(store.get(session.id).commitsByIdempotencyKey.has(binding!.idempotencyKey)).toBe(
+      true,
+    );
+    const balanceAfterFirstStage = store.get(session.id).balanceChips;
+
+    activeFingerprint = fingerprintB;
+    let failure: unknown;
+    try {
+      store.stageTicket(session, round, [LINE]);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      name: 'ServiceError',
+      code: 'ADAPTER_MISMATCH',
+      path: '$.adapterFingerprint',
+    });
+    expect(store.get(session.id).balanceChips).toBe(balanceAfterFirstStage);
+    expect(store.get(session.id).commitsByIdempotencyKey).toHaveLength(1);
+  });
 });
 
 describe('AO-03 shared-draw seed custody', () => {
@@ -459,6 +521,31 @@ describe('AO-03 shared-draw seed custody', () => {
     } finally {
       chamber.stop();
       vi.useRealTimers();
+    }
+  });
+});
+
+describe('development-only seams', () => {
+  it('keeps the HTTP clock-skew hook disabled in production even when dev is requested', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const app = createApp({ lobby: false, dev: true });
+    const server = createServer(app.handler);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const response = await fetch(`${base}/api/dev/skew`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: 'none', minutes: 1 }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        error: { code: 'BAD_REQUEST', message: 'Dev hooks are disabled' },
+      });
+    } finally {
+      app.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      vi.unstubAllEnvs();
     }
   });
 });

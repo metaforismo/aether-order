@@ -515,8 +515,9 @@ export interface TicketLine {
 /**
  * The result of `openTicket`. `lines` are in CANONICAL order — sorted by
  * `(code, canonical params)` — so a retry that reorders the same lines produces
- * the same `ticketDigest` and therefore the same `idempotencyKey` and cannot
- * double-debit. The distinct-claim rule makes that order total.
+ * the same engine `ticketDigest`. The service wraps that digest with the adapter
+ * fingerprint before indexing the debit; see §7.7. The distinct-claim rule
+ * makes the canonical order total.
  */
 export interface Ticket {
   readonly schema: typeof PERMUTATION_TICKET_SCHEMA;
@@ -861,6 +862,13 @@ settlementDigest = SHA-256( encodeFields([
 ]) )
 ```
 
+The vendored engine's ticket digest intentionally has the exact field list
+above, which does **not** include `adapterFingerprint`. AETHER ORDER therefore
+does not use the engine ticket's native idempotency key as its replay index. The
+service adds the adapter-bound envelope in §7.7 and publishes that bound key on
+the wire. This corrects the previous documentation drift that implied the
+engine digest itself carried the fingerprint.
+
 ### 7.7 Idempotency key
 
 Derived, never caller-chosen. A caller-chosen key lets a buggy client reuse one
@@ -880,6 +888,28 @@ idempotencyKey(action, ticketDigest) = SHA-256( encodeFields([
 `action` separates the two writes so a settle can never be mistaken for a
 replayed open. Presenting the same key with a different payload is
 `IDEMPOTENCY_CONFLICT`.
+
+For server wallet posting, the engine digest is first bound to the exact adapter:
+
+```
+adapterTicketDigest = SHA-256( encodeFields([
+  'aether-order/server-ticket-adapter-v1',
+  gameId, adapterVersion, adapterFingerprint,
+  ticketDigest,
+]) )
+
+serverIdempotencyKey = SHA-256( encodeFields([
+  'aether-order/server-idempotency-v1',
+  gameId, 'open', adapterTicketDigest,
+]) )
+```
+
+`serverIdempotencyKey` is the key stored in
+`Session.commitsByIdempotencyKey` and returned by the HTTP round view. The
+engine's native key remains inside its frozen `Ticket` solely because the
+vendored engine revalidates that object during settlement and receipt creation.
+A replay whose stored adapter fingerprint differs from the running adapter is
+rejected as `ADAPTER_MISMATCH` before any wallet mutation.
 
 ### 7.8 Receipt
 
@@ -1186,3 +1216,12 @@ Key custody, publication and rotation are entirely the operator's. The Ed25519
 key in `tests/fixtures/transcripts.json` is derived from a fixed public seed so
 that signed receipts are reproducible fixtures. It is not a secret and must
 never become one.
+
+**Development seams.** `SessionStore.forceNextSeed`, constructor fault/limit
+overrides, and the wallet setup helper are programmatic test seams; `createApp`
+does not route them from HTTP. The only HTTP development seam is
+`POST /api/dev/skew`: it requires the explicit `dev` option and is disabled
+unconditionally when `NODE_ENV=production`. The standalone server likewise
+ignores `AETHER_DEV=1` in production. These seams remain in-process because the
+deterministic server regressions need them; they are not game or wire protocol
+surfaces.

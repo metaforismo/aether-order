@@ -43,10 +43,21 @@ import {
   type Ticket,
   type VerificationResult,
 } from '@axiom-games/reveal-engine/modules/permutation/aether';
-import { GAMES, gameFor, type VariantId } from './engine.js';
+import { GAMES, gameFor, type PermutationGameDefinition, type VariantId } from './engine.js';
 import { ServiceError } from './errors.js';
 import { resolutionTrack, type ResolutionTrack } from './resolution.js';
-import { openForQuote, presentSettlement, quoteTicket, type TicketQuote, type WirePresentation } from './ticket.js';
+import {
+  assertAdapterTicketBinding,
+  makeAdapterTicketBinding,
+  openForQuote,
+  presentSettlement,
+  quoteTicket,
+  ticketAdapterIdentity,
+  type AdapterTicketBinding,
+  type TicketAdapterIdentity,
+  type TicketQuote,
+  type WirePresentation,
+} from './ticket.js';
 
 export type Clock = () => number;
 
@@ -69,6 +80,7 @@ export interface RoundRecord {
   previousCommitment: string;
   transcript: PermutationTranscript | null;
   ticket: Ticket | null;
+  ticketBinding: AdapterTicketBinding | null;
   settlement: Settlement | null;
   receipt: PermutationReceipt | null;
   resolution: ResolutionTrack | null;
@@ -155,6 +167,8 @@ export type OperatorPublicKey = Readonly<Omit<OperatorKey, 'privateKey'>>;
 export interface SessionStoreTestFaults {
   readonly afterStagePatch?: () => void;
   readonly afterFinishPatch?: () => void;
+  /** Simulates a build change without mutating the frozen vendored adapter. */
+  readonly ticketAdapterFingerprint?: (game: PermutationGameDefinition) => string;
 }
 
 /**
@@ -231,6 +245,14 @@ export class SessionStore {
 
   get limits(): Readonly<ServerLimits> {
     return this.#limits;
+  }
+
+  #ticketIdentity(game: PermutationGameDefinition): TicketAdapterIdentity {
+    const identity = ticketAdapterIdentity(game);
+    const adapterFingerprint = this.#testFaults?.ticketAdapterFingerprint?.(game);
+    return adapterFingerprint === undefined
+      ? identity
+      : Object.freeze({ ...identity, adapterFingerprint });
   }
 
   create(): Session {
@@ -547,6 +569,7 @@ export class SessionStore {
       previousCommitment: session.previousCommitment,
       transcript: null,
       ticket: null,
+      ticketBinding: null,
       settlement: null,
       receipt: null,
       resolution: null,
@@ -606,6 +629,7 @@ export class SessionStore {
       previousCommitment,
       transcript: null,
       ticket: null,
+      ticketBinding: null,
       settlement: null,
       receipt: null,
       resolution: null,
@@ -640,9 +664,9 @@ export class SessionStore {
    * draw resolves. In solo play the two halves are one call; in the shared
    * chamber the ticket waits for the lobby's clock.
    *
-   * The idempotency key is derived from the ticket digest by the engine, never
-   * chosen by the caller, so a retry on a flaky connection presents the same key
-   * with the same payload and returns the same round instead of debiting twice.
+   * The engine derives its ticket digest; this service wraps that digest with
+   * the adapter version and fingerprint before deriving the replay key. The key
+   * is never caller-chosen, and cannot survive an adapter definition change.
    * The replay check runs *before* pacing: a retransmitted commit is not a
    * second bet and must not be refused as one.
    */
@@ -660,8 +684,12 @@ export class SessionStore {
       { variantId: round.variantId, roundId: round.roundId, nonce: round.nonce },
       { lines: lineSnapshot },
     );
+    const identity = this.#ticketIdentity(game);
+    const ticketBinding = makeAdapterTicketBinding(identity, ticket.ticketDigest);
+    if (round.ticketBinding)
+      assertAdapterTicketBinding(identity, ticket.ticketDigest, round.ticketBinding);
 
-    const replayed = session.commitsByIdempotencyKey.get(ticket.idempotencyKey);
+    const replayed = session.commitsByIdempotencyKey.get(ticketBinding.idempotencyKey);
     if (replayed) return { ticket, replayed: this.#roundView(replayed) };
 
     if (round.phase !== 'COMMITTED' || round.ticket !== null)
@@ -686,9 +714,10 @@ export class SessionStore {
       balanceChips: session.balanceChips,
       stakedChips: session.stakedChips,
       ticket: round.ticket,
+      ticketBinding: round.ticketBinding,
       lastCommitAt: session.lastCommitAt,
       commitTimestampLength: session.commitTimestamps.length,
-      priorCommit: session.commitsByIdempotencyKey.get(ticket.idempotencyKey),
+      priorCommit: session.commitsByIdempotencyKey.get(ticketBinding.idempotencyKey),
     };
     try {
       // Debit and record the matching staged bet as one exception-safe patch.
@@ -697,7 +726,8 @@ export class SessionStore {
       session.balanceChips = before.balanceChips - ticket.totalStake;
       session.stakedChips = before.stakedChips + ticket.totalStake;
       round.ticket = ticket;
-      session.commitsByIdempotencyKey.set(ticket.idempotencyKey, round);
+      round.ticketBinding = ticketBinding;
+      session.commitsByIdempotencyKey.set(ticketBinding.idempotencyKey, round);
       session.lastCommitAt = now;
       session.commitTimestamps.push(now);
       this.#testFaults?.afterStagePatch?.();
@@ -705,11 +735,12 @@ export class SessionStore {
       session.balanceChips = before.balanceChips;
       session.stakedChips = before.stakedChips;
       round.ticket = before.ticket;
+      round.ticketBinding = before.ticketBinding;
       session.lastCommitAt = before.lastCommitAt;
       session.commitTimestamps.length = before.commitTimestampLength;
       if (before.priorCommit)
-        session.commitsByIdempotencyKey.set(ticket.idempotencyKey, before.priorCommit);
-      else session.commitsByIdempotencyKey.delete(ticket.idempotencyKey);
+        session.commitsByIdempotencyKey.set(ticketBinding.idempotencyKey, before.priorCommit);
+      else session.commitsByIdempotencyKey.delete(ticketBinding.idempotencyKey);
       throw error;
     }
     this.#pruneCommitTimestamps(session);
@@ -737,7 +768,11 @@ export class SessionStore {
       { variantId: round.variantId, roundId: round.roundId, nonce: round.nonce },
       { lines: lineSnapshot },
     );
-    const replayed = session.commitsByIdempotencyKey.get(ticket.idempotencyKey);
+    const identity = this.#ticketIdentity(game);
+    if (!round.ticketBinding) return null;
+    assertAdapterTicketBinding(identity, ticket.ticketDigest, round.ticketBinding);
+    const ticketBinding = makeAdapterTicketBinding(identity, ticket.ticketDigest);
+    const replayed = session.commitsByIdempotencyKey.get(ticketBinding.idempotencyKey);
     return replayed ? this.#roundView(replayed) : null;
   }
 
@@ -761,6 +796,17 @@ export class SessionStore {
     const game = gameFor(round.variantId);
     const ticket = round.ticket;
     if (!ticket) throw new ServiceError('ROUND_NOT_FOUND', 'Round has no staged ticket', '$.ticket');
+    if (!round.ticketBinding)
+      throw new ServiceError(
+        'IDEMPOTENCY_CONFLICT',
+        'Round has no adapter-bound ticket identity',
+        '$.idempotencyKey',
+      );
+    assertAdapterTicketBinding(
+      this.#ticketIdentity(game),
+      ticket.ticketDigest,
+      round.ticketBinding,
+    );
     const settlement = settleTicket(game, transcript, ticket);
     const receipt = signReceipt(
       makeReceipt({ transcript, ticket, settlement, signerId: this.#operatorKey.signerId }),
@@ -934,8 +980,8 @@ export class SessionStore {
       const evicted = session.rounds.pop();
       if (!evicted) break;
       session.roundsById.delete(evicted.roundId);
-      if (evicted.ticket)
-        session.commitsByIdempotencyKey.delete(evicted.ticket.idempotencyKey);
+      if (evicted.ticketBinding)
+        session.commitsByIdempotencyKey.delete(evicted.ticketBinding.idempotencyKey);
     }
   }
 
