@@ -1202,11 +1202,28 @@ async function playRound(round: RoundView): Promise<void> {
   sound.lock(info.n, info.n);
   resolveLinesAt(info.n);
 
-  // §9 step 5: the multiplier stamps over the tube. The figure is the round's
-  // realised return multiple, computed on the server in chips because it is
-  // arithmetic on money and this client does none.
+  /*
+   * §9 step 5: the plate lands over the tube. Both figures are the server's —
+   * the credit in `presentation.netChips` and the realised return multiple in
+   * `stampMultipleDecimal` — because this is arithmetic on money and the client
+   * does none of it.
+   *
+   * The amount leads and the multiple is the caption, which is the one change of
+   * emphasis this pass makes to the beat: a payout surface whose only figure is
+   * `4.80×` asks the player to convert before they know what happened, and §8's
+   * standing test is that a win reads as a win with the sound off.
+   * `presentation.multiplierStamp` is `celebrate`, so the plate exists on no
+   * other outcome — a losing or partially-returning round builds no surface at
+   * all (§10).
+   */
   if (round.presentation?.multiplierStamp && round.presentation.stampMultipleDecimal)
-    chamber.setStamp(round.presentation.stampMultipleDecimal, true);
+    chamber.setStamp(
+      {
+        amount: credits(BigInt(round.presentation.netChips)),
+        multiple: round.presentation.stampMultipleDecimal,
+      },
+      true,
+    );
   if (celebrate) {
     // The desaturation lifts as the burst blooms — the picture's version of §8's
     // "full-frequency return" on the closing lock. Leaving it down would make the

@@ -83,8 +83,9 @@ function elementGradients(element: ElementInfo): string {
     </radialGradient>
     <radialGradient id="orb-bleed-${id}">
       <stop offset="0" stop-color="${hex}" stop-opacity="0.5"/>
-      <stop offset="0.52" stop-color="${hex}" stop-opacity="0.28"/>
-      <stop offset="0.74" stop-color="${hex}" stop-opacity="0.09"/>
+      <stop offset="0.5" stop-color="${hex}" stop-opacity="0.3"/>
+      <stop offset="0.7" stop-color="${hex}" stop-opacity="0.15"/>
+      <stop offset="0.86" stop-color="${hex}" stop-opacity="0.06"/>
       <stop offset="1" stop-color="${hex}" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="orb-core-${id}">
@@ -133,9 +134,9 @@ const SHARED_DEFS = `
     on a sphere's outer edge means the sign is wrong.
   -->
   <radialGradient id="orb-fresnel">
-    <stop offset="0.56" stop-color="var(--void)" stop-opacity="0"/>
-    <stop offset="0.86" stop-color="var(--void)" stop-opacity="0.24"/>
-    <stop offset="1" stop-color="var(--void)" stop-opacity="0.6"/>
+    <stop offset="0.56" stop-color="var(--deep)" stop-opacity="0"/>
+    <stop offset="0.86" stop-color="var(--deep)" stop-opacity="0.24"/>
+    <stop offset="1" stop-color="var(--deep)" stop-opacity="0.6"/>
   </radialGradient>
   <!-- §6.3's fill: a warm ~3000 K bounce off the base plate at intensity 0.12. -->
   <radialGradient id="orb-bounce">
@@ -213,7 +214,7 @@ export function orbArt(element: ElementInfo, radius: number, options: OrbOptions
   const etch = options.etch ?? 0.24;
   const round = (value: number): string => value.toFixed(2);
   return `
-    ${bleed ? `<circle class="orb__bleed" r="${round(radius * 1.9)}" fill="url(#orb-bleed-${id})"/>` : ''}
+    ${bleed ? `<circle class="orb__bleed" r="${round(radius * 2.35)}" fill="url(#orb-bleed-${id})"/>` : ''}
     <circle class="orb__body" r="${round(radius)}" fill="url(#orb-body-${id})"/>
     ${
       interior

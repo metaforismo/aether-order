@@ -164,6 +164,16 @@ const IMPELLER_AT: readonly (readonly [number, number])[] = [
 export type Beat = 'idle' | 'charge' | 'agitate' | 'settle' | 'close' | 'done';
 
 /**
+ * The two figures the payout plate carries: the round's credit and the multiple
+ * it came to. Both arrive from the server already formatted — the client does no
+ * money arithmetic, here or anywhere.
+ */
+export interface StampFace {
+  amount: string;
+  multiple: string;
+}
+
+/**
  * The tier of the best line that won, which voices the celebration (§9).
  *
  * One definition, shared with the sound layer, because the picture and the audio
@@ -233,6 +243,9 @@ export class Chamber {
   #burst: SVGGElement | null = null;
   #flash: SVGRectElement | null = null;
   #stamp: SVGGElement | null = null;
+  #halo: SVGEllipseElement | null = null;
+  /** Cell floods whose animation is waiting on `celebrate`'s single reflow. */
+  readonly #pendingFloods: Element[] = [];
   #shock: SVGGElement | null = null;
   #motes: HTMLElement | null = null;
   #svg: SVGSVGElement | null = null;
@@ -243,7 +256,7 @@ export class Chamber {
   #rimLit = false;
   #mono = false;
   #burstAt = 0;
-  #stampText = '';
+  #stampFace: StampFace = { amount: '', multiple: '' };
   #stampOn = false;
   #won = false;
   #voicing: Voicing = 'FORM';
@@ -343,11 +356,22 @@ export class Chamber {
       { length: n },
       (_unused, index) => tubeBottom - TUBE_RIM - (index + 0.5) * pitch,
     );
+    // The plate is seated on a slot division (see `#stampMarkup`); the bloom it
+    // throws is drawn behind the glass, so it needs the same figure out here.
+    const stampY = Math.round(this.slotY(Math.ceil(n / 2)) - pitch / 2);
 
     this.#root.innerHTML = `
       <svg class="chamber" viewBox="0 0 ${WIDTH} ${height}" preserveAspectRatio="xMidYMid meet" data-beat="idle" role="img" aria-label="Chamber with ${n} spheres and a ${n}-slot tube">
         <defs>${this.#defs(height, glassTop, glassHeight, tubeTop, tubeHeight, pitch)}</defs>
-        <rect x="0" y="0" width="${WIDTH}" height="${height}" fill="var(--void)"/>
+        <!--
+          The drawing's own backdrop, and it is a gradient so the instrument sits
+          on the page rather than in a hole cut out of it. At 200% text the
+          chamber is scaled down inside a taller stage and this rect is what
+          shows either side of the glass: a flat fill read as a darker band
+          across the screen at exactly the scale accessibility support exists
+          for.
+        -->
+        <rect x="0" y="0" width="${WIDTH}" height="${height}" fill="url(#chamber-field)"/>
         <g class="cham-fit">
           <g class="cham-stretch">
             <g clip-path="url(#glass-clip)">
@@ -373,6 +397,17 @@ export class Chamber {
               <rect class="vignette" x="16" y="${glassTop}" width="${
                 WIDTH - 32
               }" height="${glassHeight}" fill="url(#vignette)"/>
+              <!--
+                The payout bloom, and it is *behind* the instrument on purpose.
+                Inside the plate's own group it washed the band where the tube's
+                ignited rim crosses it, so the two gold objects the win frame is
+                read from stopped being one surface — measured, the rim and the
+                plate resolved as three separate regions with a desaturated seam
+                between them. Behind the glass it does what §9 asks instead: the
+                light in the frame is light in the *liquid*, and everything gold
+                is painted over it at full saturation.
+              -->
+              <ellipse class="stamp-halo" cx="${CENTRE_X}" cy="${stampY}" rx="264" ry="146" fill="url(#stamp-glow)"/>
             </g>
             <!--
               The cylinder read, and the last thing over the liquid: a 1 px edge
@@ -448,9 +483,17 @@ export class Chamber {
                 <rect class="tube-rim__bloom" x="${TUBE_X - 14}" y="${tubeTop - 14}" width="${
                   TUBE_WIDTH + 28
                 }" height="${tubeHeight + 28}" rx="20" fill="url(#rim-bloom)"/>
-                <rect class="tube-rim__line" x="${TUBE_X - 2}" y="${tubeTop - 2}" width="${
-                  TUBE_WIDTH + 4
-                }" height="${tubeHeight + 4}" rx="10" fill="none" stroke="url(#rim-gold)" stroke-width="3"/>
+                <!--
+                  6 px, not 3. §6.1's sixth gold use is "the tube's full-height
+                  rim during a celebrated close", and at 3 px it was a hairline
+                  drawing of a rim rather than a lit band: the payout surface is
+                  the plate *plus* this rim — they meet where the plate crosses
+                  the column — and together they are the one bright, saturated
+                  region the win frame is read from.
+                -->
+                <rect class="tube-rim__line" x="${TUBE_X - 3}" y="${tubeTop - 3}" width="${
+                  TUBE_WIDTH + 6
+                }" height="${tubeHeight + 6}" rx="11" fill="none" stroke="url(#rim-gold)" stroke-width="6"/>
               </g>
               ${this.#lockPulses(pitch)}
             </g>
@@ -514,6 +557,7 @@ export class Chamber {
     this.#burst = this.#root.querySelector('.burst');
     this.#flash = this.#root.querySelector('.cham-flash');
     this.#stamp = this.#root.querySelector('.stamp');
+    this.#halo = this.#root.querySelector('.stamp-halo');
     this.#shock = this.#root.querySelector('.stamp-shock');
 
     this.#restore();
@@ -595,11 +639,18 @@ export class Chamber {
         vignette drawn over this, which is the right tool for it — the liquid's
         own darkness never was.
       -->
+      <linearGradient id="chamber-field" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#123a52"/>
+        <stop offset="0.2" stop-color="var(--deep-lit)"/>
+        <stop offset="0.5" stop-color="#0d2740"/>
+        <stop offset="0.76" stop-color="#0a1d33"/>
+        <stop offset="1" stop-color="var(--deep)"/>
+      </linearGradient>
       <linearGradient id="brine" x1="0" y1="1" x2="0" y2="0">
         <stop offset="0" stop-color="var(--brine-deep)"/>
         <stop offset="0.44" stop-color="var(--brine)"/>
-        <stop offset="0.86" stop-color="var(--brine-lit)"/>
-        <stop offset="1" stop-color="var(--brine-lit)"/>
+        <stop offset="0.86" stop-color="#1a5c85"/>
+        <stop offset="1" stop-color="#1c6491"/>
       </linearGradient>
       <!-- §6.2: brushed 316 steel, anisotropic highlight running horizontally. -->
       <linearGradient id="collar" x1="0" y1="0" x2="0" y2="1">
@@ -607,14 +658,14 @@ export class Chamber {
         <stop offset="0.28" stop-color="var(--chrome)"/>
         <stop offset="0.5" stop-color="var(--chrome-mid)"/>
         <stop offset="0.78" stop-color="var(--chrome-dark)"/>
-        <stop offset="1" stop-color="var(--void)"/>
+        <stop offset="1" stop-color="var(--deep-lit)"/>
       </linearGradient>
       <linearGradient id="collar-grain" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--void)" stop-opacity="0.5"/>
+        <stop offset="0" stop-color="var(--deep)" stop-opacity="0.5"/>
         <stop offset="0.22" stop-color="var(--specular)" stop-opacity="0.18"/>
-        <stop offset="0.5" stop-color="var(--void)" stop-opacity="0.3"/>
+        <stop offset="0.5" stop-color="var(--deep)" stop-opacity="0.3"/>
         <stop offset="0.78" stop-color="var(--specular)" stop-opacity="0.13"/>
-        <stop offset="1" stop-color="var(--void)" stop-opacity="0.5"/>
+        <stop offset="1" stop-color="var(--deep)" stop-opacity="0.5"/>
       </linearGradient>
       <!-- The cylinder: bright at both walls, nothing in the middle (§6.2). -->
       <linearGradient id="glass-wall" x1="0" y1="0" x2="1" y2="0">
@@ -641,26 +692,35 @@ export class Chamber {
         laboratory with the lights off.
       -->
       <radialGradient id="shaft">
-        <stop offset="0" stop-color="var(--specular)" stop-opacity="0.34"/>
-        <stop offset="0.4" stop-color="var(--glass-edge)" stop-opacity="0.15"/>
-        <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0"/>
+        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.5"/>
+        <stop offset="0.24" stop-color="var(--key)" stop-opacity="0.42"/>
+        <stop offset="0.55" stop-color="var(--key)" stop-opacity="0.2"/>
+        <stop offset="0.8" stop-color="var(--key-deep)" stop-opacity="0.08"/>
+        <stop offset="1" stop-color="var(--key-deep)" stop-opacity="0"/>
       </radialGradient>
       <radialGradient id="caustic">
-        <stop offset="0" stop-color="var(--brine-lit)" stop-opacity="0.95"/>
-        <stop offset="0.55" stop-color="var(--brine-lit)" stop-opacity="0.38"/>
+        <stop offset="0" stop-color="var(--key)" stop-opacity="0.72"/>
+        <stop offset="0.35" stop-color="var(--brine-lit)" stop-opacity="0.6"/>
+        <stop offset="0.7" stop-color="var(--brine-lit)" stop-opacity="0.24"/>
         <stop offset="1" stop-color="var(--brine-lit)" stop-opacity="0"/>
       </radialGradient>
-      <!-- Corners fall to the void, so the light reads as one source from above. -->
-      <radialGradient id="vignette" cx="0.5" cy="0.26" r="0.82">
-        <stop offset="0" stop-color="var(--void)" stop-opacity="0"/>
-        <stop offset="0.4" stop-color="var(--void)" stop-opacity="0.2"/>
-        <stop offset="0.72" stop-color="var(--void)" stop-opacity="0.62"/>
-        <stop offset="1" stop-color="var(--void)" stop-opacity="0.9"/>
+      <!--
+        Corners fall away from the key, so the light reads as one source from
+        above — and they fall to the colour of the room rather than to black.
+        Falling to black is what made the instrument's own corners the
+        largest near-black region in the frame; a vignette is a *falloff*, and a
+        falloff to zero is a hole cut in the picture.
+      -->
+      <radialGradient id="vignette" cx="0.46" cy="0.2" r="0.9">
+        <stop offset="0" stop-color="var(--deep)" stop-opacity="0"/>
+        <stop offset="0.38" stop-color="var(--deep)" stop-opacity="0.2"/>
+        <stop offset="0.68" stop-color="var(--deep)" stop-opacity="0.62"/>
+        <stop offset="1" stop-color="var(--deep)" stop-opacity="0.9"/>
       </radialGradient>
       <radialGradient id="floor-caustic">
-        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.34"/>
-        <stop offset="0.6" stop-color="var(--glass-edge)" stop-opacity="0.1"/>
-        <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0"/>
+        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.42"/>
+        <stop offset="0.42" stop-color="var(--key)" stop-opacity="0.2"/>
+        <stop offset="1" stop-color="var(--key)" stop-opacity="0"/>
       </radialGradient>
       <!--
         The liquid column inside the tube, which round 1 drew as --void at 30
@@ -683,16 +743,16 @@ export class Chamber {
       </linearGradient>
       <!-- Cylinder shading: the column is round, so it darkens at both walls. -->
       <linearGradient id="tube-round" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--void)" stop-opacity="0.72"/>
-        <stop offset="0.18" stop-color="var(--void)" stop-opacity="0.24"/>
-        <stop offset="0.4" stop-color="var(--specular)" stop-opacity="0.07"/>
-        <stop offset="0.7" stop-color="var(--void)" stop-opacity="0.16"/>
-        <stop offset="1" stop-color="var(--void)" stop-opacity="0.66"/>
+        <stop offset="0" stop-color="var(--deep)" stop-opacity="0.72"/>
+        <stop offset="0.18" stop-color="var(--deep)" stop-opacity="0.24"/>
+        <stop offset="0.4" stop-color="var(--key-hot)" stop-opacity="0.11"/>
+        <stop offset="0.7" stop-color="var(--deep)" stop-opacity="0.16"/>
+        <stop offset="1" stop-color="var(--deep)" stop-opacity="0.66"/>
       </linearGradient>
       <linearGradient id="tube-caustic" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0"/>
-        <stop offset="0.5" stop-color="var(--glass-edge)" stop-opacity="0.5"/>
-        <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0"/>
+        <stop offset="0" stop-color="var(--key)" stop-opacity="0"/>
+        <stop offset="0.5" stop-color="var(--key)" stop-opacity="0.5"/>
+        <stop offset="1" stop-color="var(--key)" stop-opacity="0"/>
       </linearGradient>
       <!--
         The tube's front glass, and the DOM lane's stand-in for §7 technique 2's
@@ -702,17 +762,17 @@ export class Chamber {
       -->
       <linearGradient id="tube-wall-l" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.6"/>
-        <stop offset="0.55" stop-color="var(--void)" stop-opacity="0.45"/>
+        <stop offset="0.55" stop-color="var(--deep)" stop-opacity="0.45"/>
         <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0.14"/>
       </linearGradient>
       <linearGradient id="tube-wall-r" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.1"/>
-        <stop offset="0.4" stop-color="var(--void)" stop-opacity="0.45"/>
+        <stop offset="0.4" stop-color="var(--deep)" stop-opacity="0.45"/>
         <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0.7"/>
       </linearGradient>
       <linearGradient id="tube-sheen" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--specular)" stop-opacity="0.2"/>
-        <stop offset="0.6" stop-color="var(--specular)" stop-opacity="0.04"/>
+        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.24"/>
+        <stop offset="0.6" stop-color="var(--key-hot)" stop-opacity="0.05"/>
         <stop offset="1" stop-color="var(--specular)" stop-opacity="0"/>
       </linearGradient>
       <linearGradient id="rim-gold" x1="0" y1="1" x2="0" y2="0">
@@ -743,17 +803,42 @@ export class Chamber {
         <stop offset="0.6" stop-color="var(--chrome-mid)"/>
         <stop offset="1" stop-color="var(--chrome-dark)"/>
       </radialGradient>
-      <!-- The stamp: PVD gold, warm, low roughness, one thin specular (§6.2). -->
+      <!--
+        The stamp: PVD gold, warm, low roughness, one thin specular (§6.2) — and
+        a face that is *lit all the way across*.
+        Round 3's plate carried a near-black recessed well with the numerals in
+        hot gold inside it, so the one object the whole production builds
+        toward was light-on-dark: the same polarity as every other pixel in the
+        game, on the frame that has to read as a different event. Every payoff in
+        the reference set inverts — the payout surface is the luminance maximum
+        and the number sits *inside* it, dark-on-light — and that inversion is
+        most of what announces "this is the moment" before a word is read.
+      -->
       <linearGradient id="stamp-face" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="var(--gold-hot)"/>
-        <stop offset="0.4" stop-color="var(--gold)"/>
-        <stop offset="0.62" stop-color="#8f7133"/>
-        <stop offset="1" stop-color="var(--gold)"/>
+        <!--
+          The lip is WARM, not white. §6.2 specifies PVD gold with one thin warm
+          specular, and a near-white top stop broke that twice over: it read as
+          chrome rather than gold, and it put the plate's hottest 5 px below the
+          saturation the rest of the surface holds — enough to disconnect the
+          plate from the tube's ignited rim, which is the other half of the same
+          payout surface.
+        -->
+        <stop offset="0" stop-color="#ffe08a"/>
+        <stop offset="0.12" stop-color="var(--gold-hot)"/>
+        <stop offset="0.52" stop-color="#e2bd71"/>
+        <stop offset="0.86" stop-color="var(--gold)"/>
+        <stop offset="1" stop-color="#a37c33"/>
       </linearGradient>
-      <linearGradient id="stamp-well" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#0b0f18"/>
-        <stop offset="0.55" stop-color="#181f2e"/>
-        <stop offset="1" stop-color="#0b0f18"/>
+      <linearGradient id="stamp-bevel" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="var(--gold-hot)" stop-opacity="0.95"/>
+        <stop offset="0.5" stop-color="var(--gold-hot)" stop-opacity="0.24"/>
+        <!--
+          The lower edge is a shade of the metal, not a shadow on it. A dark
+          bronze lip cut the plate off from the ignited rim it crosses, and the
+          two are one surface: the plate carries the form in its face gradient
+          instead, which is where a rolled edge gets it from anyway.
+        -->
+        <stop offset="1" stop-color="#b0862f" stop-opacity="0.9"/>
       </linearGradient>
       <linearGradient id="stamp-shine" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="var(--specular)" stop-opacity="0"/>
@@ -761,9 +846,17 @@ export class Chamber {
         <stop offset="0.55" stop-color="var(--specular)" stop-opacity="0.5"/>
         <stop offset="1" stop-color="var(--specular)" stop-opacity="0"/>
       </linearGradient>
+      <!--
+        The bloom, and it is deliberately modest. §9 measured what a gold wash
+        over saturated colour does — it turns the settled cells khaki — so this
+        is a short falloff that is spent before it reaches either neighbouring
+        sphere, and the frame's warmth comes from the plate and the rim rather
+        than from a disc laid over the objects.
+      -->
       <radialGradient id="stamp-glow">
-        <stop offset="0" stop-color="var(--gold-hot)" stop-opacity="0.42"/>
-        <stop offset="0.45" stop-color="var(--gold)" stop-opacity="0.16"/>
+        <stop offset="0" stop-color="var(--gold-hot)" stop-opacity="0.6"/>
+        <stop offset="0.3" stop-color="var(--gold-hot)" stop-opacity="0.34"/>
+        <stop offset="0.6" stop-color="var(--gold)" stop-opacity="0.11"/>
         <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
       </radialGradient>
       <!--
@@ -801,7 +894,7 @@ export class Chamber {
         <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" rx="8"/>
       </clipPath>
       <clipPath id="stamp-clip">
-        <rect x="-150" y="${-Math.round(pitch / 2)}" width="300" height="${pitch}" rx="8"/>
+        <rect x="-187" y="${-Math.round(pitch / 2)}" width="374" height="${pitch}" rx="9"/>
       </clipPath>
 `;
   }
@@ -817,9 +910,11 @@ export class Chamber {
    * edge in any direction.
    */
   #lightShaft(height: number): string {
-    return `<ellipse class="shaft" cx="${CENTRE_X - 18}" cy="${
-      8 + COLLAR
-    }" rx="188" ry="${Math.round(height * 0.62)}" fill="url(#shaft)"/>`;
+    return `<ellipse class="shaft" cx="${CENTRE_X - 74}" cy="${
+      2 + COLLAR
+    }" rx="150" ry="${Math.round(height * 0.46)}" fill="url(#shaft)" transform="rotate(-18 ${
+      CENTRE_X - 74
+    } ${2 + COLLAR})"/>`;
   }
 
   /**
@@ -908,7 +1003,7 @@ export class Chamber {
         <path d="${body}" fill="url(#collar)" opacity="0.95"/>
         <path d="${body}" fill="url(#collar-grain)" opacity="0.4"/>
         <line x1="${left}" y1="${sheen}" x2="${right}" y2="${sheen}" stroke="var(--specular)" stroke-width="1" opacity="0.3"/>
-        <line x1="${left}" y1="${lip}" x2="${right}" y2="${lip}" stroke="var(--void)" stroke-width="1" opacity="0.6"/>
+        <line x1="${left}" y1="${lip}" x2="${right}" y2="${lip}" stroke="var(--deep)" stroke-width="1" opacity="0.6"/>
       </g>`;
   }
 
@@ -924,7 +1019,7 @@ export class Chamber {
         return `
           <line x1="${TUBE_X + TUBE_WALL}" y1="${line}" x2="${
             TUBE_X + TUBE_WIDTH - TUBE_WALL
-          }" y2="${line}" stroke="var(--void)" stroke-opacity="0.7" stroke-width="1"/>
+          }" y2="${line}" stroke="var(--deep)" stroke-opacity="0.7" stroke-width="1"/>
           <line x1="${TUBE_X + TUBE_WALL}" y1="${line + 1}" x2="${
             TUBE_X + TUBE_WIDTH - TUBE_WALL
           }" y2="${line + 1}" stroke="var(--glass-edge)" stroke-opacity="0.5" stroke-width="1"/>`;
@@ -1177,11 +1272,11 @@ export class Chamber {
     return `<g class="impeller-at" transform="translate(${cx},${cy})">
       <g class="impeller">
         <circle r="${IMPELLER_RADIUS}" fill="none" stroke="url(#impeller-metal)" stroke-width="5"/>
-        <circle r="${IMPELLER_RADIUS - 2.5}" fill="none" stroke="var(--void)" stroke-width="1" stroke-opacity="0.6"/>
+        <circle r="${IMPELLER_RADIUS - 2.5}" fill="none" stroke="var(--deep)" stroke-width="1" stroke-opacity="0.6"/>
         <circle r="${IMPELLER_RADIUS - 9}" fill="none" stroke="var(--chrome-dark)" stroke-width="1.5"/>
         ${vanes}
         <circle r="${hub}" fill="url(#impeller-hub)"/>
-        <circle r="${hub}" fill="none" stroke="var(--void)" stroke-width="1" stroke-opacity="0.5"/>
+        <circle r="${hub}" fill="none" stroke="var(--deep)" stroke-width="1" stroke-opacity="0.5"/>
         <circle r="3.4" fill="var(--chrome-dark)"/>
       </g>
     </g>`;
@@ -1201,29 +1296,50 @@ export class Chamber {
    */
   #burstMarkup(tubeTop: number, tubeHeight: number): string {
     const elements = this.#variant?.elements ?? [];
-    const length = Math.max(300, tubeHeight * 0.86);
-    const spokes = Array.from({ length: 18 }, (_unused, index) => {
-      const angle = (index / 18) * 360 + 10;
+    /*
+     * Nine broad fans, not eighteen needles — and every one of them stays inside
+     * the glass.
+     *
+     * Round 4 threw eighteen 300-unit spokes from a group that sat outside
+     * `glass-clip`, so at the peak of a win the frame carried coloured rays
+     * running off all four edges of the instrument and across the page: the one
+     * moment the production is judged on measured as a screen full of
+     * independent effects rather than one big thing. The category's most violent
+     * payoff moves 17% of its frame and 79% of that is a single region; the
+     * budget for the rest is a handful of supporting details.
+     *
+     * So the prism stays — it is light thrown *through* the chamber (§7), and it
+     * is the objects' own colours — and it becomes a bloom instead of a
+     * starburst: fewer, shorter, wider, softer, and clipped to the vessel that
+     * is supposed to be refracting it.
+     */
+    const length = Math.max(190, tubeHeight * 0.52);
+    const spokes = Array.from({ length: 9 }, (_unused, index) => {
+      const angle = (index / 9) * 360 + 10;
       const element = elements[index % Math.max(1, elements.length)];
       const fill = element ? `url(#wedge-${element.id})` : 'var(--specular)';
-      const width = index % 2 === 0 ? 26 : 11;
+      const width = index % 2 === 0 ? 44 : 26;
       return `<path transform="rotate(${angle.toFixed(1)})" d="M${-width / 2} 0 L${
         width / 2
       } 0 L0 ${-length.toFixed(0)} Z" fill="${fill}"/>`;
     }).join('');
-    return `<g class="burst-at" transform="translate(${CENTRE_X},${Math.round(
+    // The clip lives on a wrapper with no transform of its own: `clip-path` is
+    // resolved in the user space the element's own `transform` establishes, so
+    // putting it on `.burst-at` would have moved the vessel's outline with the
+    // burst instead of cropping the burst to the vessel.
+    return `<g clip-path="url(#glass-clip)"><g class="burst-at" transform="translate(${CENTRE_X},${Math.round(
       tubeTop + tubeHeight / 2,
     )})">
       <g class="burst">
         <g class="burst__spokes">${spokes}</g>
-        <circle class="burst__core" r="${(length * 0.4).toFixed(0)}" fill="url(#burst-core)"/>
+        <circle class="burst__core" r="${(length * 0.44).toFixed(0)}" fill="url(#burst-core)"/>
         <g class="burst__ring">
-          <circle r="${(length * 0.32).toFixed(
+          <circle r="${(length * 0.36).toFixed(
             0,
           )}" fill="none" stroke="var(--gold-hot)" stroke-width="3" stroke-opacity="0.7"/>
         </g>
       </g>
-    </g>`;
+    </g></g>`;
   }
 
   /**
@@ -1248,8 +1364,14 @@ export class Chamber {
     const radius = diameter / 2;
     const gap = pitch - diameter;
     const half = Math.max(15, Math.min(23, Math.round(gap / 2 + radius - radius * 0.46 - 3)));
-    const width = 302;
-    const inner = half - 6;
+    /*
+     * Full-bleed across the instrument, 8 px inside each glass wall. Round 3 ran
+     * it to 302 and left 44 px of liquid either side, so the object the round
+     * exists to produce was smaller than the tube it sat on. The height is
+     * unchanged and still bounded by the glyph rule above — the plate grows
+     * along the only axis that costs nothing.
+     */
+    const width = 374;
     return `<g class="stamp-at" transform="translate(${CENTRE_X},${y})" data-half="${half}">
       <!--
         The landing shock: one stroked ellipse, scaled and faded, thrown outward
@@ -1258,25 +1380,32 @@ export class Chamber {
         a tooltip appearing rather than as a machined plate arriving.
       -->
       <g class="stamp-shock">
-        <ellipse rx="${width * 0.44}" ry="${half * 1.9}" fill="none" stroke="var(--gold-hot)" stroke-width="2" stroke-opacity="0.8"/>
+        <ellipse rx="${width * 0.4}" ry="${half * 1.9}" fill="none" stroke="var(--gold-hot)" stroke-width="2" stroke-opacity="0.8"/>
       </g>
       <g class="stamp">
         <!-- The pop's origin anchor; see the sphere markup. The shine translates
              300 px inside a clip, which would otherwise drag the box with it. -->
         <circle class="stamp__anchor" r="${(width * 0.8).toFixed(0)}" fill="none"/>
-        <ellipse class="stamp__glow" rx="${width * 0.62}" ry="${half * 3.4}" fill="url(#stamp-glow)"/>
         <rect class="stamp__plate" x="${-width / 2}" y="${-half}" width="${width}" height="${
           half * 2
-        }" rx="${half}" fill="url(#stamp-face)"/>
-        <rect x="${-width / 2 + 1.5}" y="${-half + 1.5}" width="${width - 3}" height="${
-          half * 2 - 3
-        }" rx="${half - 1.5}" fill="none" stroke="var(--gold-hot)" stroke-width="1" stroke-opacity="0.6"/>
-        <rect class="stamp__well" x="${-width / 2 + 5}" y="${-inner}" width="${
-          width - 10
-        }" height="${inner * 2}" rx="${inner}" fill="url(#stamp-well)"/>
+        }" rx="9" fill="url(#stamp-face)"/>
+        <!-- One bevel: a hot lip on top, a machined shade under the bottom. -->
+        <rect x="${-width / 2 + 1}" y="${-half + 1}" width="${width - 2}" height="${
+          half * 2 - 2
+        }" rx="8" fill="none" stroke="url(#stamp-bevel)" stroke-width="2"/>
+        <!--
+          The money, inside the surface, dark on light — and it is the round's
+          own credit rather than a ratio, because §8's brief is that a win must
+          read as a win with the sound off and a multiple is a thing you have to
+          convert. The multiple keeps its place at the right, which is §9 step
+          5's stamp; it is now the caption on the money instead of the headline.
+        -->
         <text class="stamp__value" text-anchor="middle" y="${Math.round(
-          half * 0.34,
-        )}" fill="var(--gold-hot)"></text>
+          half * 0.76,
+        )}" fill="var(--void)"><tspan class="stamp__cap" data-cap>WON </tspan><tspan class="stamp__num" data-num></tspan></text>
+        <text class="stamp__mult" text-anchor="end" x="${
+          width / 2 - 16
+        }" y="${Math.round(half * 0.34)}" fill="#4a3812" data-mult></text>
         <g clip-path="url(#stamp-clip)">
           <rect class="stamp__shine" x="${-width / 2}" y="${-half}" width="76" height="${
             half * 2
@@ -1304,7 +1433,7 @@ export class Chamber {
     svg?.classList.add('chamber--restoring');
     this.setBeat(this.#beat);
     this.igniteRim(this.#rimLit);
-    this.setStamp(this.#stampText, this.#stampOn);
+    this.setStamp(this.#stampFace, this.#stampOn);
     this.desaturate(this.#mono);
     for (const [slot, element] of this.#seated) {
       const orb = this.#orbs.get(element);
@@ -1345,12 +1474,24 @@ export class Chamber {
 
   reset(): void {
     if (!this.#variant) return;
+    /*
+     * The clear is instantaneous, and this class is the whole reason.
+     *
+     * The payout plate and its bloom fade on a 220 ms / 300 ms transition, which
+     * is right when the round ends and wrong when the *next* round opens: a
+     * frame dump of REBET caught a grey ghost of the plate — the word WON still
+     * legible — lying across a chamber whose spheres had already been put back
+     * and whose tube was empty. A record that dissolves over a screen showing a
+     * different state is not a record, it is a rendering fault.
+     */
+    const restoring = this.#svg;
+    restoring?.classList.add('chamber--restoring');
     this.#seated.clear();
     this.#turbulence = null;
     this.#beat = 'idle';
     this.setBeat('idle');
     this.igniteRim(false);
-    this.setStamp('', false);
+    this.setStamp({ amount: '', multiple: '' }, false);
     this.desaturate(false);
     this.#burstAt = 0;
     this.#won = false;
@@ -1392,6 +1533,10 @@ export class Chamber {
     for (const pulse of this.#pulses.values())
       pulse.querySelector('.pulse')?.classList.remove('pulse--on');
     for (const numeral of this.#numerals.values()) numeral.classList.remove('slot-no--lit');
+    if (restoring) {
+      void restoring.getBoundingClientRect();
+      restoring.classList.remove('chamber--restoring');
+    }
   }
 
   /* ---------------------------------------------------------------- beats -- */
@@ -1628,26 +1773,17 @@ export class Chamber {
       burst.dataset.voicing = voicing;
       burst.classList.remove('burst--on', 'burst--calm');
       burst.style.animationDelay = '';
-      void burst.getBoundingClientRect();
-      if (!this.#reduced) burst.classList.add('burst--on');
-      else burst.classList.add('burst--calm');
     }
     const flash = this.#flash;
     if (flash) {
       flash.classList.remove('cham-flash--on');
-      void flash.getBoundingClientRect();
       flash.dataset.voicing = voicing;
-      flash.classList.add('cham-flash--on');
     }
     // The settled column blooms once, on `opacity` alone: the spheres are the
     // only light sources in the world (§6.6 reference 3), so the honest way to
     // say the round won is to turn them up.
     const tube = this.#tube;
-    if (tube) {
-      tube.classList.remove('tube--won');
-      void tube.getBoundingClientRect();
-      tube.classList.add('tube--won');
-    }
+    tube?.classList.remove('tube--won');
     /*
      * **The spheres are the celebration.** Round 1's win fired an eighteen-wedge
      * burst behind the tube, a gold ring, a gold rim and a plate that faded in —
@@ -1668,14 +1804,14 @@ export class Chamber {
      * §2.1 gates every celebration on the round, and this fires on `celebrate`
      * alone.
      */
+    const popped: HTMLElement[] = [];
     for (const [slot, element] of this.#seated) {
       const delay = (slot - 1) * POP_STAGGER_MS;
       const orb = this.#orbs.get(element);
       if (orb) {
         orb.style.setProperty('--pop-delay', `${delay}ms`);
         orb.classList.remove('orb--won');
-        void orb.getBoundingClientRect();
-        orb.classList.add('orb--won');
+        popped.push(orb as unknown as HTMLElement);
       }
       this.#floodCell(slot, element, delay);
     }
@@ -1700,20 +1836,40 @@ export class Chamber {
      * which is §9's no-manufactured-near-miss rule at the render layer: the
      * neutral close is still one fall, one lock and no dramatic beat.
      */
-    if (!this.#reduced) {
-      this.#tube?.classList.remove('tube--flex');
-      for (const [node, name] of [
-        [this.#stamp, 'stamp--land'],
-        [this.#shock, 'stamp-shock--on'],
-        [this.#tube, 'tube--impact'],
-      ] as const) {
-        if (!node) continue;
-        node.classList.remove(name);
-        void node.getBoundingClientRect();
-        node.classList.add(name);
-      }
-    }
+    const landing: [Element | null, string][] = this.#reduced
+      ? []
+      : [
+          [this.#stamp, 'stamp--land'],
+          [this.#shock, 'stamp-shock--on'],
+          [this.#tube, 'tube--impact'],
+        ];
+    if (!this.#reduced) this.#tube?.classList.remove('tube--flex');
+    for (const [node, name] of landing) node?.classList.remove(name);
     this.#dropMotes(voicing);
+
+    /*
+     * **One forced layout, not eleven.**
+     *
+     * Every animation in this beat has to be restarted, and restarting a CSS
+     * animation means remove-the-class, flush, add-the-class. Round 4 did that
+     * eleven times in a row — burst, flash, tube, five spheres, five cell
+     * floods, plate, shock, recoil — each `getBoundingClientRect()` interleaved
+     * between a write and the next write, so the browser recomputed style and
+     * layout for the whole document eleven times inside the single frame that
+     * has to draw the game's hero moment. Measured over a celebrated round at
+     * 390 x 844: eight frames over 33 ms with a 67 ms worst case, against zero
+     * on a neutral round. Batched — every removal, then one flush, then every
+     * addition — the same beat draws with nothing removed from it.
+     */
+    void this.#svg?.getBoundingClientRect();
+
+    if (burst) burst.classList.add(this.#reduced ? 'burst--calm' : 'burst--on');
+    flash?.classList.add('cham-flash--on');
+    tube?.classList.add('tube--won');
+    for (const orb of popped) orb.classList.add('orb--won');
+    for (const flood of this.#pendingFloods) flood.classList.add('cell-flood--on');
+    this.#pendingFloods.length = 0;
+    for (const [node, name] of landing) node?.classList.add(name);
   }
 
   /**
@@ -1731,8 +1887,8 @@ export class Chamber {
     flood.setAttribute('fill', `url(#orb-bloom-${id})`);
     flood.style.setProperty('--pop-delay', `${delay}ms`);
     flood.classList.remove('cell-flood--on');
-    void flood.getBoundingClientRect();
-    flood.classList.add('cell-flood--on');
+    // Started by `celebrate`, after the one flush that restarts the whole beat.
+    this.#pendingFloods.push(flood);
   }
 
   /**
@@ -1762,12 +1918,24 @@ export class Chamber {
 
   /* ---------------------------------------------------------------- stamp -- */
 
-  setStamp(text: string, on: boolean): void {
-    this.#stampText = text;
+  /**
+   * The payout plate's ink: the round's credit, and the multiple beside it.
+   *
+   * Both figures are the server's — `presentation.headline`'s own number and
+   * `presentation.stampMultipleDecimal` — so this client still computes no
+   * money. The plate carries the amount because §8 asks a win to read as a win
+   * with the sound off, and a multiple is a figure the player has to convert
+   * before it means anything.
+   */
+  setStamp(face: StampFace, on: boolean): void {
+    this.#stampFace = face;
     this.#stampOn = on;
     if (!this.#stamp) return;
-    const label = this.#stamp.querySelector('text');
-    if (label) label.textContent = text;
+    const amount = this.#stamp.querySelector('[data-num]');
+    if (amount) amount.textContent = face.amount;
+    const multiple = this.#stamp.querySelector('[data-mult]');
+    if (multiple) multiple.textContent = face.multiple;
     this.#stamp.classList.toggle('stamp--on', on);
+    this.#halo?.classList.toggle('stamp-halo--on', on);
   }
 }

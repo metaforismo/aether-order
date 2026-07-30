@@ -42,9 +42,23 @@
   /* §6.1 environment */
   --void: #05070c;
   --abyss: #0a1220;
+  /*
+   * The field, and it is not black — §6.1's own reasoning about a dark
+   * laboratory, taken to the pixels.
+   *
+   * `--void` is still the ink that sits on gold and the scrim behind a sheet,
+   * but it is no longer what the page is *painted* with: a frame measured at
+   * 21.9% of its pixels below luminance 0.06 is a frame with a hole in it, and
+   * every premium reference in the category measures 0.0–0.1% there while
+   * reading just as dark. These two are the same room lit rather than switched
+   * off — saturation 0.81 and 0.75, luminance 0.089 and 0.170, so they sit in
+   * the dark-surface band the references occupy instead of under it.
+   */
+  --deep: #08192b;
+  --deep-lit: #123049;
   --brine-deep: #0c1e30;
-  --brine: #10283f;
-  --brine-lit: #17405c;
+  --brine: #143d5a;
+  --brine-lit: #1f6e9e;
   --glass-edge: #7fa6c4;
   --chrome: #c3ceda;
   --chrome-mid: #7a8695;
@@ -55,7 +69,25 @@
   --ink: #e7eef5;
   --ink-dim: #93a3b4;
   --win: #4ce0a6;
-  --scrim: rgba(5, 7, 12, 0.72);
+  --scrim: rgba(6, 20, 34, 0.76);
+
+  /*
+   * The key light, made solid — the face of the one control that spends money.
+   *
+   * §6.3's key is a single cool source at ≈6200 K, and this is that source
+   * rendered as a lit borosilicate keycap rather than as a hollow rectangle.
+   * Never gold: §6.1 is unconditional that gold means *settled and true* and a
+   * bet that has not been placed is neither. Never a sphere hex either, so the
+   * control can never be misread as being about one of the five objects.
+   *
+   * It is the brightest saturated surface in the idle frame by construction,
+   * which is the whole point: in every reference in the category the object the
+   * eye lands on while the player is deciding is the button that starts the
+   * round, and it sits under the thumb.
+   */
+  --key: #43b4e8;
+  --key-hot: #a7e2fb;
+  --key-deep: #1d6f9e;
 
   --display: 'Inter Tight', 'Helvetica Now Display', system-ui, -apple-system, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -67,6 +99,7 @@
    * tokens made OS and browser font scaling a no-op: the requirement was not
    * merely unmet, it was unimplementable without this change.
    */
+  --t-hero: 3rem;
   --t-display: 2.5rem;
   --t-xl: 1.75rem;
   --t-lg: 1.375rem;
@@ -105,7 +138,7 @@
 
   --edge: rgba(65, 75, 88, 0.55);
   --edge-soft: rgba(65, 75, 88, 0.32);
-  --lift: linear-gradient(180deg, rgba(195, 206, 218, 0.09), rgba(10, 18, 32, 0.34));
+  --lift: linear-gradient(180deg, rgba(167, 226, 251, 0.13), rgba(10, 32, 52, 0.4));
 }
 
 * {
@@ -131,13 +164,13 @@
 html {
   margin: 0;
   height: 100%;
-  background: var(--void);
+  background: var(--deep);
 }
 
 body {
   margin: 0;
   height: 100%;
-  background: var(--void);
+  background: var(--deep);
   color: var(--ink);
   font-family: var(--display);
   font-size: var(--t-sm);
@@ -225,7 +258,7 @@ button {
   display: grid;
   place-content: center;
   gap: 28px;
-  background: radial-gradient(90% 60% at 50% 42%, var(--abyss), var(--void) 70%);
+  background: radial-gradient(90% 60% at 50% 42%, var(--deep-lit), var(--deep) 74%);
   transition: opacity 200ms ease;
 }
 .splash[hidden] {
@@ -312,9 +345,51 @@ button {
   width: 100%;
   max-width: 430px;
   min-height: 100dvh;
+  /*
+   * Four layers, and not one of them is a flat fill.
+   *
+   * The old field was `--abyss` → `--void` over the top 46% and then 54% of
+   * dead black, which is where 21.9% of the frame's pixels came from. This is
+   * the same room with the lights on: a cool key from above (the same source
+   * §6.3 puts over the chamber), a warmer bounce off the bench at the bottom,
+   * and a three-stop vertical that never falls out of the dark-surface band.
+   * The two soft pools are the instrument's own spill on the surface it stands
+   * on — motivated light, not decoration, and low-frequency so they add colour
+   * depth without adding a single hard edge.
+   */
   background:
-    radial-gradient(94% 42% at 50% 2%, rgba(127, 166, 196, 0.17), rgba(127, 166, 196, 0) 68%),
-    linear-gradient(180deg, var(--abyss) 0%, var(--void) 46%);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.5'/%3E%3C/svg%3E"),
+    radial-gradient(96% 40% at 50% 0%, rgba(167, 226, 251, 0.2), rgba(167, 226, 251, 0) 72%),
+    radial-gradient(78% 26% at 50% 46%, rgba(67, 180, 232, 0.13), rgba(67, 180, 232, 0) 76%),
+    radial-gradient(120% 30% at 50% 100%, rgba(23, 64, 92, 0.55), rgba(23, 64, 92, 0) 74%),
+    /*
+     * Five stops rather than three, and they travel in hue as well as in value:
+     * the bench light at the top is a teal-leaning blue, the middle is the room,
+     * and the floor falls toward indigo. A gradient whose ends are 6° apart
+     * quantises to a handful of distinct colours however smooth it looks, which
+     * is half of why the frame measured 1 600 colours against a reference band
+     * of 2 400–7 400.
+     */
+    linear-gradient(
+      180deg,
+      #123a52 0%,
+      var(--deep-lit) 22%,
+      #0d2740 48%,
+      #0a1d33 74%,
+      var(--deep) 100%
+    );
+  /*
+   * The grain, and it is the one thing on this page that is not a gradient.
+   *
+   * Every premium reference in the category carries a low-contrast texture in
+   * its background plate — the "empty" area is still made of something — and the
+   * measurable signature of its absence is a collapsed colour count: 1 800
+   * distinct quantised colours against a reference band of 2 400–7 400. It is
+   * generated here rather than downloaded: one inline `feTurbulence` tile,
+   * 160 px, blended at 4%, so it costs one raster and reads as anodised metal
+   * rather than as noise.
+   */
+  background-blend-mode: overlay, normal, normal, normal, normal;
   color: var(--ink);
   position: relative;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
@@ -699,10 +774,28 @@ button {
     transform: translate(11px, -9px) scale(1.09);
   }
 }
-.caustic--a {
+/*
+ * The liquid moves when the round moves, and not before.
+ *
+ * Every one of these layers used to drift through IDLE. Measured as a diff
+ * between two frames 520 ms apart on the build screen, the chamber changed 4.0%
+ * of the frame across ten independently moving regions while the player was
+ * doing nothing but reading a bet menu — against a category whose best reference
+ * animates *literally nothing* in the same state, and whose busiest is 2.3%
+ * across eight. Ambient motion behind a decision surface is not atmosphere; it
+ * is the frame spending its whole effect budget before the round starts.
+ *
+ * So the caustics, the floor pool, the tube's bands and the tube's bubbles are
+ * still until CHARGE, and the one thing that moves while the player decides is
+ * the five spheres — slowly enough (§6.4's idle rule: nothing fast enough to
+ * compete for attention) that two consecutive frames are all but identical.
+ */
+.chamber[data-beat='charge'] .caustic--a,
+.chamber[data-beat='agitate'] .caustic--a {
   animation: caustic-a 19s ease-in-out infinite alternate;
 }
-.caustic--b {
+.chamber[data-beat='charge'] .caustic--b,
+.chamber[data-beat='agitate'] .caustic--b {
   animation: caustic-b 19s ease-in-out infinite alternate;
 }
 @keyframes caustic-a {
@@ -724,6 +817,19 @@ button {
 .floor-caustic {
   transform-box: fill-box;
   transform-origin: center;
+}
+/*
+ * And the liquid goes still again at SETTLE, which is §6.4's own sentence:
+ * "turbulent, overlapping, organic during agitation; crisp, staggered, snapped
+ * during settle." Round 4 kept the churn running underneath the falls, and a
+ * frame pair taken 520 ms apart inside SETTLE measured 12.7% of the frame
+ * changing across seven regions — a beat whose whole job is one sphere landing
+ * in one slot. With the liquid calm the fall is the motion, which is the shape
+ * every reference in the category has in-round: one object, one region, most of
+ * the budget.
+ */
+.chamber[data-beat='charge'] .floor-caustic,
+.chamber[data-beat='agitate'] .floor-caustic {
   animation: floor-breathe 19s ease-in-out infinite alternate;
 }
 @keyframes floor-breathe {
@@ -751,13 +857,16 @@ button {
   transform-origin: center;
   opacity: 0.5;
 }
-.tube-caustic--0 {
+.chamber[data-beat='charge'] .tube-caustic--0,
+.chamber[data-beat='agitate'] .tube-caustic--0 {
   animation: band-drift 19s ease-in-out infinite alternate;
 }
-.tube-caustic--1 {
+.chamber[data-beat='charge'] .tube-caustic--1,
+.chamber[data-beat='agitate'] .tube-caustic--1 {
   animation: band-drift 19s ease-in-out infinite alternate-reverse;
 }
-.tube-caustic--2 {
+.chamber[data-beat='charge'] .tube-caustic--2,
+.chamber[data-beat='agitate'] .tube-caustic--2 {
   animation: band-drift 15s ease-in-out infinite alternate;
 }
 @keyframes band-drift {
@@ -786,7 +895,8 @@ button {
  * running, and a still tube on the home screen is exactly what made the well read
  * as a black channel rather than as brine.
  */
-.bubbles--tube circle {
+.chamber[data-beat='charge'] .bubbles--tube circle,
+.chamber[data-beat='agitate'] .bubbles--tube circle {
   animation-name: bubble-rise;
   animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
   animation-iteration-count: infinite;
@@ -857,21 +967,36 @@ button {
 }
 .chamber[data-beat='idle'] .orb__m,
 .chamber[data-beat='charge'] .orb__m {
-  animation: orb-drift 11s ease-in-out infinite alternate;
+  animation: orb-drift 26s ease-in-out infinite alternate;
 }
+/*
+ * Suspension, not motion. 17 s over 4 px of travel is about a quarter of a pixel
+ * per half-second, so the spheres read as floating over seconds and two frames
+ * half a second apart are effectively identical — which is the whole of the idle
+ * effect budget spent on the one thing the screen is about.
+ */
 @keyframes orb-drift {
   from {
-    transform: translate(-3px, 3px);
+    transform: translate(-1.5px, 1.5px);
   }
   to {
-    transform: translate(3px, -4px);
+    transform: translate(1.5px, -1.5px);
   }
 }
 /* §7 technique 3: apparent rotation from scrolling the interior caustic. */
+/*
+ * §7 technique 3's apparent rotation: the interior caustic scrolls, so a sphere
+ * with no external rim light still turns. It belongs to the beats where the
+ * liquid is moving — in IDLE the spheres hang still, and that stillness is the
+ * budget being saved for the round.
+ */
 .orb__core {
   transform-box: fill-box;
   transform-origin: center;
-  animation: orb-core 7s ease-in-out infinite alternate;
+}
+.chamber[data-beat='charge'] .orb__core,
+.chamber[data-beat='agitate'] .orb__core {
+  animation: orb-core 9s ease-in-out infinite alternate;
 }
 @keyframes orb-core {
   from {
@@ -1218,11 +1343,19 @@ button {
     opacity: 0;
   }
 }
+/*
+ * §8 scales a win by voicing, not loudness. These three steps are that scale on
+ * the prism — and all three are a fraction of what they were, because the payout
+ * plate is the event and this is the light around it.
+ */
 .burst[data-voicing='FLOW'] .burst__spokes {
-  opacity: 0.5;
+  opacity: 0.22;
 }
 .burst[data-voicing='FORM'] .burst__spokes {
-  opacity: 0.78;
+  opacity: 0.34;
+}
+.burst[data-voicing='ORDER'] .burst__spokes {
+  opacity: 0.5;
 }
 /* The shock ring: one stroke, scaled and faded, never a growing stroke-width. */
 .burst__ring {
@@ -1437,10 +1570,46 @@ button {
     transform: translate(0, 0);
   }
 }
+/*
+ * The money, set on the plate.
+ *
+ * `--void` on `--gold` measures 8.40:1 and on `--gold-hot` 15.79:1, so the
+ * inversion the payoff needs — dark on light, against a game that is light on
+ * dark everywhere else — costs nothing in legibility. The label rides the
+ * number's own baseline so the pair centres as one object.
+ */
+/*
+ * The bloom the payout throws into the liquid. It rides the plate's own timing —
+ * one `opacity` ramp on a pre-promoted layer, no travel, no filter — and it is
+ * painted behind the tube so nothing gold is ever washed by it (§9).
+ */
+.stamp-halo {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms cubic-bezier(0, 0.7, 0.2, 1);
+}
+.stamp-halo--on {
+  opacity: 1;
+}
 .stamp__value {
-  font-size: var(--t-xl);
+  font-size: var(--t-hero);
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
+}
+.stamp__cap {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+.stamp__num {
+  font-size: var(--t-hero);
+  font-weight: 700;
+}
+/* The multiple keeps §9 step 5's place, as the caption on the money. */
+.stamp__mult {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 .stamp__shine {
   transform-box: fill-box;
@@ -1482,10 +1651,35 @@ button {
   flex-direction: column;
   gap: var(--deck-gap);
   padding: 10px 12px 12px;
+  /*
+   * A bench, lit from the instrument above it — not a hole under it.
+   *
+   * The panel used to bottom out in `--void` at 78%, so the half of the screen
+   * the player spends the whole session looking at was flat black behind
+   * hairline cards. Every stop here is saturated and inside the dark-surface
+   * band, and the cool wash falls off across the panel the way light from one
+   * source overhead actually does.
+   */
   background:
-    linear-gradient(180deg, rgba(23, 64, 92, 0.34), rgba(10, 18, 32, 0.72) 34%, var(--void) 78%),
-    var(--void);
-  box-shadow: inset 0 1px 0 rgba(127, 166, 196, 0.26);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.5'/%3E%3C/svg%3E"),
+    radial-gradient(120% 62% at 50% 0%, rgba(127, 166, 196, 0.22), rgba(127, 166, 196, 0) 78%),
+    /*
+     * The bench reads a step cooler and bluer than the instrument, so the frame
+     * is carried by two hues rather than one. Measured, a single-hue build put
+     * 84% of its hue mass in one 30° bin; the references run 1–3 hues with the
+     * dominant at 40–55%, and the second hue is what stops a saturated screen
+     * reading as a monochrome wash.
+     */
+    linear-gradient(
+      180deg,
+      #17395f 0%,
+      #133054 22%,
+      #102845 46%,
+      #0c1f36 72%,
+      var(--deep) 100%
+    );
+  background-blend-mode: overlay, normal, normal;
+  box-shadow: inset 0 1px 0 rgba(167, 226, 251, 0.34);
   transition: opacity 200ms ease;
   container-type: inline-size;
   container-name: deck;
@@ -1496,7 +1690,7 @@ button {
  * rather than the information on it — the strip is deliberately never dimmed.
  */
 .app[data-mode='round'] .deck {
-  background: linear-gradient(180deg, rgba(10, 18, 32, 0.72), var(--void) 70%), var(--void);
+  background: linear-gradient(180deg, #0d2438 0%, #0a1d2f 54%, var(--deep) 100%);
 }
 
 /*
@@ -1700,10 +1894,20 @@ button {
   width: 96px;
   min-height: 92px;
   border: 1px solid var(--chrome-dark);
-  border-radius: 5px;
-  background:
-    linear-gradient(180deg, rgba(23, 64, 92, 0.5), rgba(23, 64, 92, 0.14) 62%),
-    var(--abyss);
+  border-radius: 6px;
+  /*
+   * A machined glass key, not a hole in the bench. Once the deck became a lit
+   * panel a card filled at 14% alpha over `--abyss` read as a cut-out: the chips
+   * are the second-most-looked-at objects on the home screen and they have to be
+   * things sitting *on* the surface. Lit from the same source as everything
+   * else, one step below the deck's own value so the row still recedes behind
+   * the CTA.
+   */
+  background: linear-gradient(180deg, #1e4b6d 0%, #143a57 46%, #0e2b42 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.3),
+    inset 0 -1px 0 rgba(5, 12, 20, 0.6),
+    0 2px 6px rgba(5, 12, 20, 0.45);
   /*
    * 6 px on the inline axis, not 8: at 8 the longest label in the catalogue was
    * 2 px wider than the box it had to sit in even at the smallest published step.
@@ -1850,17 +2054,28 @@ button {
 }
 
 /*
- * The CTA: a filled, lit control — the most important tap on every screen, and
- * round 1 gave it the same hollow dark rectangle with a 1 px grey border that
- * COMMIT, ADD, REBET, NEW TICKET, VERIFY THIS ROUND, PAYTABLE and CLEAR ALL all
- * shared. The app contained zero filled buttons. This one is filled with the
- * chamber's own key light: `--brine-lit` → `--brine` → `--brine-deep`, a
- * `--glass-edge` edge, one `--specular` lip and a cool outer glow, so it reads as
- * lit glass rather than as an outline.
+ * The CTA: the lit key of the instrument, and the brightest thing on the idle
+ * screen.
  *
- * Never gold — §6.1 is explicit that gold never appears on a call to action,
- * because everything gold in this product means *settled and true* and a bet that
- * has not been placed is neither. `--ink` on `--brine-lit` measures 9.2:1.
+ * Round 2 filled it with `--brine-lit` → `--brine-deep` and `--ink` on top —
+ * dimensional, but a *dark* control. Measured on the 390 × 844 reference frame
+ * the largest bright-and-saturated region in the build screen was 0.6% of the
+ * frame with its centroid at y = 0.33: a sliver of specular line in the middle
+ * of the chamber. In every reference in this category the object the eye lands
+ * on while the player is deciding is the button that starts the round, it is the
+ * luminance maximum of the frame, and it sits under the thumb at y = 0.88–0.94.
+ * Ours pointed the eye at nothing.
+ *
+ * So the face is `--key`: §6.3's 6200 K key light rendered as a solid, backlit
+ * borosilicate cap, seated in a `--chrome` bezel taken from the housing so the
+ * control belongs to the instrument rather than to a UI kit. The label is
+ * `--void` on it — dark-on-light, the same inversion the payout plate uses — at
+ * 8.57:1.
+ *
+ * Never gold. §6.1 is explicit that gold never appears on a call to action,
+ * because everything gold in this product means *settled and true* and a bet
+ * that has not been placed is neither. Never a sphere hex either, so the control
+ * cannot be misread as being about one of the five objects.
  */
 .cta {
   position: relative;
@@ -1879,21 +2094,26 @@ button {
   position: sticky;
   bottom: 6px;
   z-index: 2;
-  border-radius: 6px;
-  border: 1px solid var(--glass-edge);
+  border-radius: 10px;
+  border: 1px solid var(--chrome);
   background:
-    linear-gradient(180deg, rgba(234, 243, 250, 0.3), rgba(234, 243, 250, 0) 44%),
-    linear-gradient(180deg, var(--brine-lit), var(--brine) 58%, var(--brine-deep));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0) 36%),
+    linear-gradient(180deg, var(--key-hot) 0%, var(--key) 26%, var(--key) 62%, var(--key-deep) 100%);
   box-shadow:
-    inset 0 1px 0 rgba(234, 243, 250, 0.5),
-    inset 0 -1px 0 rgba(5, 7, 12, 0.5),
-    0 4px 18px rgba(23, 64, 92, 0.55),
+    /* The lit cap: a specular lip on top, a machined shadow under the bottom
+       edge, a tight contact shadow on the bench and one wide cool bloom. */
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -2px 0 rgba(9, 46, 70, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 2px 0 rgba(10, 32, 48, 0.9),
+    0 6px 14px rgba(5, 12, 20, 0.62),
+    0 0 26px rgba(67, 180, 232, 0.38),
     /* Upward, for the scale where the button is pinned over its own deck: a
        control that floats needs an edge or it reads as a rendering fault. */
-      0 -10px 22px rgba(5, 7, 12, 0.62);
-  color: var(--ink);
+      0 -10px 22px rgba(5, 7, 12, 0.5);
+  color: var(--void);
   font-size: var(--t-md);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.1em;
   display: flex;
   flex-direction: column;
@@ -1902,32 +2122,28 @@ button {
   gap: 1px;
   overflow: hidden;
   flex: none;
+  transition:
+    transform 70ms cubic-bezier(0.3, 0.9, 0.4, 1),
+    box-shadow 70ms cubic-bezier(0.3, 0.9, 0.4, 1),
+    filter 70ms linear;
 }
-/* The travelling sheen: one composited gradient on `transform`, nothing else. */
-.cta::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -40%;
-  width: 34%;
-  background: linear-gradient(
-    100deg,
-    rgba(234, 243, 250, 0),
-    rgba(234, 243, 250, 0.22),
-    rgba(234, 243, 250, 0)
-  );
-  animation: cta-sheen 5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  pointer-events: none;
-}
-@keyframes cta-sheen {
-  0%,
-  62% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(420%);
-  }
+/*
+ * The press, inside 100 ms and before any network round-trip — the reference
+ * behaviour measured on the category's own primary button: the specular
+ * highlight goes, the cap translates down into its own shadow, the contact
+ * shadow collapses and the face darkens a step. `button:active` further up
+ * already translates every control 1 px; this one commits properly, because it
+ * is the tap that spends money.
+ */
+.cta:active:not(:disabled) {
+  transform: translateY(3px);
+  filter: brightness(0.9) saturate(1.05);
+  box-shadow:
+    inset 0 2px 5px rgba(9, 46, 70, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 0 0 rgba(10, 32, 48, 0.9),
+    0 1px 4px rgba(5, 12, 20, 0.7),
+    0 0 14px rgba(67, 180, 232, 0.22);
 }
 /*
  * Disabled, and still legible. §11's floor is written without an exemption, and
@@ -1939,28 +2155,28 @@ button {
  * Opaque, and that is not cosmetic: the control is sticky (see above), so at
  * large text scales it is painted over the chip rail. A translucent fill let the
  * chips read straight through the most important button on the screen.
+ *
+ * The light goes out of the cap and the ink returns to `--ink-dim`, so the
+ * control stays plainly in place and plainly unavailable — §6.6's disabled rule
+ * is that it desaturates rather than disappears, and the layout never moves.
  */
 .cta:disabled {
   color: var(--ink-dim);
   border-color: var(--chrome-dark);
-  background:
-    linear-gradient(180deg, rgba(65, 75, 88, 0.5), rgba(20, 26, 38, 0.9)),
-    var(--void);
+  background: linear-gradient(180deg, #234055 0%, #16293c 58%, #101f30 100%);
   box-shadow:
     inset 0 1px 0 rgba(234, 243, 250, 0.12),
-    0 -10px 22px rgba(5, 7, 12, 0.62);
+    0 -10px 22px rgba(5, 7, 12, 0.5);
   cursor: not-allowed;
-}
-.cta:disabled::before {
-  animation: none;
-  opacity: 0;
+  filter: none;
+  transform: none;
 }
 .cta__hairline {
   position: absolute;
   left: 0;
   bottom: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--chrome-mid), var(--glass-edge));
+  background: linear-gradient(90deg, var(--chrome-mid), var(--key-hot));
   width: 0;
 }
 .cta__sub {
@@ -2139,8 +2355,10 @@ button {
   color: var(--ink);
   background:
     linear-gradient(180deg, rgba(195, 206, 218, 0.2), rgba(195, 206, 218, 0.04) 46%),
-    linear-gradient(180deg, rgba(23, 64, 92, 0.4), rgba(10, 18, 32, 0.9));
-  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.24);
+    linear-gradient(180deg, #1c4568 0%, #123350 52%, #0d2439 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.26),
+    inset 0 -1px 0 rgba(5, 12, 20, 0.5);
   transition:
     transform 60ms cubic-bezier(0.2, 0.8, 0.2, 1),
     border-color 140ms linear;
@@ -2228,8 +2446,8 @@ button {
       rgba(127, 166, 196, 0.07) 44%,
       rgba(127, 166, 196, 0) 76%
     ),
-    linear-gradient(180deg, rgba(23, 64, 92, 0.62), rgba(23, 64, 92, 0.16) 42%, rgba(23, 64, 92, 0.04)),
-    var(--abyss);
+    linear-gradient(180deg, rgba(31, 110, 158, 0.5), rgba(31, 110, 158, 0.14) 42%, rgba(31, 110, 158, 0.03)),
+    linear-gradient(180deg, #12314e 0%, #0d2440 40%, var(--deep) 100%);
   border-top: 1px solid var(--glass-edge);
   box-shadow:
     inset 0 1px 0 rgba(234, 243, 250, 0.34),
@@ -2337,9 +2555,11 @@ button {
   border: 1px solid var(--chrome-dark);
   border-radius: 6px;
   background:
-    linear-gradient(180deg, rgba(234, 243, 250, 0.14), rgba(234, 243, 250, 0.01) 44%),
-    linear-gradient(180deg, rgba(23, 64, 92, 0.72), rgba(10, 18, 32, 0.9));
-  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.28);
+    linear-gradient(180deg, rgba(234, 243, 250, 0.16), rgba(234, 243, 250, 0.01) 44%),
+    linear-gradient(180deg, #1f4f73 0%, #143a57 52%, #0f2c44 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.3),
+    inset 0 -1px 0 rgba(5, 12, 20, 0.5);
 }
 .price b {
   font-size: var(--t-xl);
@@ -2412,8 +2632,10 @@ button {
    */
   background:
     linear-gradient(180deg, rgba(195, 206, 218, 0.26), rgba(195, 206, 218, 0.05) 48%),
-    linear-gradient(180deg, rgba(23, 64, 92, 0.6), rgba(10, 18, 32, 0.88));
-  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.32);
+    linear-gradient(180deg, #1e4b6d 0%, #143a57 46%, #0e2b42 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.32),
+    inset 0 -1px 0 rgba(5, 12, 20, 0.5);
   transition:
     transform 60ms cubic-bezier(0.2, 0.8, 0.2, 1),
     border-color 140ms linear,
@@ -3087,7 +3309,6 @@ table.paytable td.pays {
   .tube--impact,
   .orb--won .orb__pop,
   .tube--won .orb--seated .orb__bleed,
-  .cta::before,
   .tube-caustic,
   .caustic-churn,
   .chamber[data-beat='charge'] .caustic-churn,

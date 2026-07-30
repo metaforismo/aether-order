@@ -2,7 +2,7 @@
  * The client is an asserted artefact too — for the two properties that were
  * silently wrong in the graybox and are invisible to every other test here.
  *
- * **The type scale.** §6.5 publishes seven steps (40 / 28 / 22 / 17 / 15 / 13 /
+ * **The type scale.** §6.5 publishes eight steps (48 / 40 / 28 / 22 / 17 / 15 / 13 /
  * 11). Round 1 held them as fixed pixels, so OS and browser text scaling was a
  * no-op and §11's "text scaling to 200%" was not merely unmet but
  * unimplementable. Round 2 converted them to `rem` — and then set
@@ -66,8 +66,9 @@ describe('the client implements §6.5’s published type scale', () => {
   const tokens = declaredTokens();
 
   it('declares exactly one token per published step', () => {
-    expect(scale).toHaveLength(7);
+    expect(scale).toHaveLength(8);
     expect(tokens.map((token) => token.name)).toEqual([
+      '--t-hero',
       '--t-display',
       '--t-xl',
       '--t-lg',

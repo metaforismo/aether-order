@@ -772,11 +772,16 @@ and is published here rather than left to drift into a stylesheet.
 
 | Token | Hex | Use |
 | --- | --- | --- |
-| `--void` | `#05070C` | page background, outside the chamber |
+| `--void` | `#05070C` | the ink that sits dark-on-light: on gold, and on `--key` |
+| `--deep` | `#08192B` | the field the page is painted on, and the colour every falloff falls to |
+| `--deep-lit` | `#123049` | the field where the instrument's light reaches it |
 | `--abyss` | `#0A1220` | chamber back plate |
 | `--brine-deep` | `#0C1E30` | liquid, bottom of the column |
-| `--brine` | `#10283F` | liquid, mid |
-| `--brine-lit` | `#17405C` | liquid where the key light passes |
+| `--brine` | `#143D5A` | liquid, mid |
+| `--brine-lit` | `#1F6E9E` | liquid where the key light passes |
+| `--key` | `#43B4E8` | the key light made solid: the face of the primary control |
+| `--key-hot` | `#A7E2FB` | its specular lip, and the key's own colour in the liquid |
+| `--key-deep` | `#1D6F9E` | its shaded lower edge |
 | `--glass-edge` | `#7FA6C4` | glass edge tint, 6 px inner gradient |
 | `--chrome` | `#C3CEDA` | housing, lit face |
 | `--chrome-mid` | `#7A8695` | housing, body |
@@ -787,7 +792,7 @@ and is published here rather than left to drift into a stylesheet.
 | `--ink` | `#E7EEF5` | primary text |
 | `--ink-dim` | `#93A3B4` | secondary text |
 | `--win` | `#4CE0A6` | a verified-true state: a round that won, and a signature that recomputed (§5 S6) |
-| `--scrim` | `rgba(5,7,12,0.72)` | sheet backdrop |
+| `--scrim` | `rgba(6,20,34,0.76)` | sheet backdrop |
 
 UI accents — **the chrome layer only, and never inside the chamber rect.**
 
@@ -800,6 +805,39 @@ UI accents — **the chrome layer only, and never inside the chamber rect.**
 | `--alert` | `#FF6B6B` | a destructive control, and an over-limit figure |
 | `--edge` | `rgba(65,75,88,0.55)` | a 1 px divider on `--abyss` |
 | `--edge-soft` | `rgba(65,75,88,0.32)` | the same divider where it separates rather than encloses |
+
+**`--void` is a token, and it is no longer the paint.** The first sentence of
+this section says the chamber is neutral; it never said the world was *black*,
+and round 4 rendered it that way — the field bottomed out in `--void` for the
+lower half of the page and every falloff in the instrument, the vignette
+included, terminated at zero. Measured on the 390 × 844 reference frame, **21.9%
+of the pixels sat below luminance 0.06**, against a premium reference band of
+0.0–0.1% for frames that read every bit as dark. Dead black above about 5% of a
+frame is the clearest numeric signature of an unlit build, and it is a hole
+rather than a colour: nothing in it has a surface, and it drags the saturated
+share of the frame down with it because a black pixel has no hue.
+
+So the page, the deck, the chamber's own plate and every vignette now fall to
+`--deep` — the same room with the lights on: saturation 0.81 at luminance 0.089,
+inside the dark-surface band the references occupy rather than under it. Near-
+black is **0.1%** of the frame after the change and saturated pixels went from
+37.5% to 75.3%. `--void` keeps exactly one job, and it is a foreground one: it is
+the ink that reads dark-on-light — on gold at 8.40:1, on `--key` at 8.57:1 —
+which is the inversion §9's payout plate and §6.6's primary control are both
+built on. The sheet scrim went with the rest of the paint: it is a saturated
+deep blue at 76% now, not black at 72%, because a black scrim reintroduced 9.4%
+near-black on the one screen a player opens most.
+
+**`--key` is the one addition to the palette, and it is the light rather than a
+colour.** §6.3's key is a single cool source at ≈6200 K; `--key` is that source
+rendered as a solid, so the control that starts the round is a *lit* object
+instead of an outline of one. Every reference in this category makes the primary
+button the brightest saturated surface in the idle frame, sitting under the
+thumb; ours measured 0.6% of the frame at a centroid of y = 0.33 — a sliver of
+specular line in the middle of the instrument — and now measures 4.1% at
+y = 0.95. It is never gold (§6.1's gold rule is unconditional: gold means
+*settled and true*, and an unplaced bet is neither), it is never a sphere hex,
+and it never enters the chamber except as the light it already was.
 
 **Why this table exists at all, given the sentence above it.** Round 1's art
 pass shipped the three tier accents and shipped no change here, so the build
@@ -903,6 +941,15 @@ never on a balance, never on a call to action.
 
 ### 6.2 Materials
 
+- **The primary control** — a lit borosilicate keycap in a `--chrome` bezel:
+  `--key-hot` lip, `--key` face, `--key-deep` shaded lower edge, a tight contact
+  shadow and one wide cool bloom, with `--void` type on it. **Within 100 ms of a
+  tap** the specular lip goes, the cap translates 3 px down into its own shadow,
+  the contact shadow collapses and the face darkens a step — measured on a
+  capture taken 60 ms after pointer-down, the frame's highlight share falls
+  **41%** and its mean luminance **1.7%**, which is the same signature the
+  category's reference button produces (−22% and −2.1%). Disabled, the light goes
+  out of it and the ink steps to `--ink-dim`; it never moves and never hides.
 - **Chamber glass** — borosilicate, 2.4 mm wall, IOR 1.47. Rendered as a 6 px
   inner edge gradient to `--glass-edge`, plus one 1 px `--specular` line down
   the left third. Never a full glass shader.
@@ -979,6 +1026,29 @@ the impellers. No easing curve is linear. `prefers-reduced-motion` replaces
 agitate with a 200 ms cross-dissolve and the falls with 120 ms fades, keeping
 the same total duration so the audio phrase still lands.
 
+**The effect budget, and it is a budget rather than a mood.** Every ambient
+layer in the chamber — the two caustic fields, the floor pool, the tube's
+drifting bands, the tube's fizz, and the interior scroll that gives a sphere its
+apparent rotation — is **animated during CHARGE and AGITATE only**. Two
+consequences, both of them the point:
+
+- **IDLE animates one thing: the five spheres, and barely.** 3 px of travel over
+  26 s is a quarter of a pixel per half-second, so the chamber reads as
+  suspended over seconds and two frames half a second apart are *identical*.
+  Measured as a pixel diff between consecutive 520 ms captures of the build
+  screen: **0.00% of the frame, zero moving regions**, down from 4.03% across ten
+  independent regions. A premium instant game is allowed to be completely still
+  while it waits for the player, and the whole budget is being saved for the
+  round.
+- **SETTLE is the fall and nothing else**, which is this section's own first
+  sentence — *crisp, staggered, snapped* — taken literally. With the liquid calm
+  the settle beat measures 10.2% of the frame changing across **three** regions
+  with **97% of the motion in one of them**: the sphere that is landing.
+
+The payoff is the one place the budget is spent: the plate, the ignited rim, the
+column running up itself, one shock ring and a short prism. It holds for 1.8 s
+and then the screen is still again.
+
 **One more rule, and it is a performance rule with a visual consequence.** Rows
 4 to 7 of that table animate the DOM/SVG chrome layer, not the canvas — §6.2
 moved every hard edge out there deliberately — and that layer is composited at
@@ -998,8 +1068,15 @@ one ring is ever in flight; that headroom is not an invitation to spend it.
   `"Inter Tight", "Helvetica Now Display", system-ui, sans-serif`.
 - **Technical (seeds, hashes, transcripts):** JetBrains Mono 400, tracking
   `+0.02em`, hashes truncated with a mid-ellipsis at 16 characters.
-- **Scale at 390 px:** 40 / 28 / 22 / 17 / 15 / 13 / 11. Line height 1.05 for
+- **Scale at 390 px:** 48 / 40 / 28 / 22 / 17 / 15 / 13 / 11. Line height 1.05 for
   display, 1.4 for body.
+  The 48 px step is the **payout numeral and nothing else** — the credit set
+  inside §9's plate, which is the largest type the product ever draws and exists
+  in exactly one state. It was added because the plate is the frame the game is
+  judged on and its number was two steps below the height that reads as money at
+  a glance: measured, a 40 px numeral is a cap height of 3.4% of a 844 px frame
+  against a category that sets its payout at 4–5%. Nothing else may use it, and
+  the second step down remains the display size for every other heading.
 - **Numerals are always `tabular-nums lining-nums`.** Balances and multipliers
   must not jitter as they count.
 - **Multipliers always render with two decimals and the `×` glyph (U+00D7)** —
@@ -1515,10 +1592,34 @@ mathematically already won:
 3. The last sphere falls at **0.35× speed** — a 970 ms fall instead of 340 ms.
 4. The tube's full-height gold rim ignites from the bottom up, tracking the
    fall.
-5. On lock: full-frequency return, the pentatonic chord, and the multiplier
-   **lands** over the tube — dropping from 2.3× with an overshoot, throwing one
+5. On lock: full-frequency return, the pentatonic chord, and the **payout plate
+   lands** across the tube — dropping from 2.3× with an overshoot, throwing one
    shock ring, and the instrument recoiling 3 px under it. It arrives; it does
    not fade in.
+
+   **What is written on it is the money, and the multiple is the caption.** The
+   plate reads `WON 3.80` at §6.5's 48 px step with `4.80×` set small at its
+   right edge, both in `--void` on lit gold — **dark on light**, inverting the
+   light-on-dark polarity of every other pixel in the game. Three things follow
+   from that and each was a defect in round 4's version, which was a near-black
+   pill with hot-gold numerals inside a gold rim:
+
+   - **A multiple is a figure the player has to convert.** §8's standing test is
+     that a win reads as a win with the sound off; `4.80×` alone does not say
+     what was won until the stake is remembered and multiplied.
+   - **The inversion is most of the announcement.** In every payoff in the
+     reference set the payout surface is the frame's luminance maximum and the
+     number sits *inside* it, dark on light. A dark plate with light type is the
+     base state wearing a gold frame.
+   - **The plate and the rim are one surface.** The plate spans the instrument
+     (374 units of 390) and the rim it crosses is 6 px rather than 3, so the
+     largest bright, saturated region in a win frame is a single connected object
+     at **7.4% of the frame, centred at y = 0.43** — against **4.1% at y = 0.95**
+     in the build state, which is the action button. The brightest thing on
+     screen rotates by state, and that rotation *is* the hierarchy.
+
+   All three figures — 7.4%, 4.1%, and the numeral's 4.1% of frame height — are
+   measured from captures of this build at 390 × 844, not asserted.
 6. **And the settled column celebrates itself, in the order it settled.** Each
    sphere overshoots its own size — 1.24× and back, 68 ms behind the one below
    it — while its emissive core blooms out into the liquid and the cell it
@@ -1838,7 +1939,8 @@ exist.
 
   **Surface tokens are explicitly exempt and must be**, because they are the
   dark world the spheres glow inside: `--abyss` is 1.07:1, `--brine-deep` 1.19:1,
-  `--brine` 1.34:1, `--brine-lit` 1.85:1, `--chrome-dark` 2.28:1. Requiring 4.5:1
+  `--brine` 1.77:1, `--brine-lit` 3.63:1, `--deep` 1.14:1, `--deep-lit` 1.48:1,
+  `--chrome-dark` 2.28:1. Requiring 4.5:1
   of a chamber back plate against the page background would mean a grey game. The
   earlier blanket claim that *no* token ships below 4.5:1 was simply false, and
   saying it undermined the four numbers above that are exactly right.
