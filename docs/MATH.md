@@ -329,18 +329,20 @@ Stakes and credits are integer **chips**. One display credit is 100 chips.
 | Maximum lines per ticket | 12 |
 | Published stake ladder (credits) | 0.25, 0.50, 1.00, 2.50, 5.00, 10.00, 25.00, 50.00 |
 
-**Theorem (zero rounding drift).** Every published multiplier has a denominator
-dividing 25, and every legal stake is a multiple of 25 chips. Therefore
-`stake × multiplier` is an exact integer number of chips for every legal line,
-and the floor applied at the credit boundary is a no-op.
+**Theorem (zero payout-rounding shortfall).** Every published multiplier has a
+denominator dividing 25, and every legal stake is a multiple of 25 chips.
+Therefore `stake × multiplier` is an exact integer number of chips for every
+legal line, the floor applied at the credit boundary is a no-op, and rounding
+contributes exactly `0` chips of shortfall.
 
-*Consequence.* The realised RTP equals the theoretical RTP with no truncation
-deficit whatsoever. This is stronger than the usual "floors lose at most one
-minor unit per payout" — there is nothing to lose. The enumerator verifies it
-for every multiplier against every legal stake, and the settlement path
-(`settleTicket`) throws `INEXACT_PAYOUT` rather than round, so a future
-multiplier that broke the property would fail loudly instead of silently
-shaving the player.
+*Consequence.* Under §2's uniform-draw assumptions, expected credited/staked
+remains exactly `24/25 = 96%`; a finite sample's realised RTP can differ because
+its winning outcomes differ, but never because a payout was truncated. This is
+stronger than the usual "floors lose at most one minor unit per payout" — there
+is nothing to lose to rounding. The enumerator verifies the property for every
+multiplier against every legal stake, and the settlement path (`settleTicket`)
+throws `INEXACT_PAYOUT` rather than round, so a future multiplier that broke the
+property would fail loudly instead of silently shaving the player.
 
 ---
 

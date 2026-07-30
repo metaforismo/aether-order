@@ -46,6 +46,10 @@ describe('RTP wording distinguishes expectation from realised samples', () => {
     expect(README).toContain('exactly `24/25 = 96%`');
     expect(README).toContain("a finite sample's realised RTP can differ");
     expect(README).not.toContain('realised RTP equals theoretical RTP with zero drift');
+    expect(MATH).toMatch(/rounding\s+contributes exactly `0` chips of shortfall/u);
+    expect(MATH).toContain('expected credited/staked');
+    expect(MATH).toContain("a finite sample's realised RTP can differ");
+    expect(MATH).not.toContain('The realised RTP equals the theoretical RTP');
   });
 });
 
