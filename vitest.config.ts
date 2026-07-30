@@ -23,6 +23,13 @@ export default defineConfig({
     testTimeout: 120_000,
     hookTimeout: 120_000,
     /*
+     * Several files are exhaustive and CPU-bound. File concurrency can starve
+     * SEVEN's adapter-conformance check past the timeout even though it
+     * completes in under 40 s alone. Vitest's serial file mode forces one
+     * worker, so the timeout measures the check rather than scheduler pressure.
+     */
+    fileParallelism: false,
+    /*
      * `tests/bench.test.mjs` measures wall-clock time and asserts the bands
      * docs/ENGINE.md §4 publishes, so it must not run while eighteen other test
      * files are saturating the machine — that is measuring contention, not the
