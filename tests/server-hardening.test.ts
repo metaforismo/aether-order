@@ -1,6 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { describe, expect, it, vi } from 'vitest';
 import {
   makePermutationTranscript,
@@ -550,22 +549,37 @@ describe('development-only seams', () => {
   it('keeps the HTTP clock-skew hook disabled in production even when dev is requested', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     const app = createApp({ lobby: false, dev: true });
-    const server = createServer(app.handler);
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const request = Object.assign(new EventEmitter(), {
+      method: 'POST',
+      url: '/api/dev/skew',
+    }) as unknown as IncomingMessage;
+    let status = 0;
+    let body = '';
+    let headersSent = false;
+    const response = Object.assign(new EventEmitter(), {
+      get headersSent(): boolean {
+        return headersSent;
+      },
+      writableEnded: false,
+      writeHead(nextStatus: number): ServerResponse {
+        status = nextStatus;
+        headersSent = true;
+        return response;
+      },
+      end(value?: string): ServerResponse {
+        body = value ?? '';
+        return response;
+      },
+    }) as unknown as ServerResponse;
     try {
-      const response = await fetch(`${base}/api/dev/skew`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId: 'none', minutes: 1 }),
-      });
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({
+      app.handler(request, response);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(status).toBe(400);
+      expect(JSON.parse(body)).toMatchObject({
         error: { code: 'BAD_REQUEST', message: 'Dev hooks are disabled' },
       });
     } finally {
       app.close();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
       vi.unstubAllEnvs();
     }
   });
