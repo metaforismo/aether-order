@@ -23,6 +23,27 @@ function bytes(value: unknown): string {
   });
 }
 
+function expectDeepFrozen(value: unknown): void {
+  if (typeof value !== 'object' || value === null) return;
+  expect(Object.isFrozen(value)).toBe(true);
+  for (const child of Object.values(value)) expectDeepFrozen(child);
+}
+
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.floor(sorted.length / 2)] as number;
+}
+
+function medianGetMs(store: SessionStore, sessionId: string, samples: number): number {
+  const durations: number[] = [];
+  for (let index = 0; index < samples; index += 1) {
+    const startedAt = performance.now();
+    store.get(sessionId);
+    durations.push(performance.now() - startedAt);
+  }
+  return median(durations);
+}
+
 describe('AO-01 wallet patches are exception-atomic', () => {
   it('restores the complete staged-debit state when posting throws', () => {
     const faults: SessionStoreTestFaults = {
@@ -102,6 +123,86 @@ describe('AO-02 shared-chamber idempotency', () => {
 });
 
 describe('AO-04 bounded and encapsulated public service state', () => {
+  it('materializes session views in near-constant time across the retained-round ceiling', () => {
+    let now = 1_800_000_000_000;
+    const smallStore = new SessionStore({ now: () => now });
+    const smallSession = smallStore.create();
+    const fullStore = new SessionStore({ now: () => now });
+    const fullSession = fullStore.create();
+
+    for (let index = 0; index < SERVER_LIMITS.maxRetainedRoundsPerSession; index += 1) {
+      const round = fullStore.openRound(fullSession);
+      fullStore.commit(fullSession, {
+        roundId: round.roundId,
+        clientSeed: `retained-${index}`,
+        lines: [LINE],
+      });
+      now += GAMES.classic.play.minRoundCycleMs;
+    }
+
+    // Warm both paths before comparing medians. Pre-fix, the full-history path
+    // eagerly clones each round three times and exceeds this ratio by orders of
+    // magnitude; the lazy view pays only for the collection shells.
+    smallStore.get(smallSession.id);
+    fullStore.get(fullSession.id);
+    const smallMs = medianGetMs(smallStore, smallSession.id, 11);
+    const fullMs = medianGetMs(fullStore, fullSession.id, 11);
+    expect(fullMs, `small=${smallMs.toFixed(4)}ms full=${fullMs.toFixed(4)}ms`).toBeLessThan(
+      Math.max(0.25, smallMs * 8),
+    );
+  });
+
+  it('lazily returns every retained round byte-for-byte and deeply frozen', () => {
+    let now = 1_800_000_000_000;
+    const store = new SessionStore({ now: () => now });
+    const session = store.create();
+    for (let index = 0; index < 8; index += 1) {
+      const round = store.openRound(session);
+      store.commit(session, {
+        roundId: round.roundId,
+        clientSeed: `correctness-${index}`,
+        lines: [{ ...LINE, params: { c: index % 5 } }],
+      });
+      now += GAMES.classic.play.minRoundCycleMs;
+    }
+
+    const exposed = store.get(session.id);
+    const expectedById = new Map(
+      [...exposed.roundsById.keys()].map((roundId) => [
+        roundId,
+        bytes(store.getRound(session, roundId)),
+      ]),
+    );
+    expect(Object.isFrozen(exposed.rounds)).toBe(true);
+    expect(Object.isFrozen(exposed.roundsById)).toBe(true);
+    expect(Object.isFrozen(exposed.commitsByIdempotencyKey)).toBe(true);
+
+    for (const round of exposed.rounds) {
+      expect(bytes(round)).toBe(expectedById.get(round.roundId));
+      expectDeepFrozen(round);
+    }
+    for (const [roundId, round] of exposed.roundsById) {
+      expect(bytes(round)).toBe(expectedById.get(roundId));
+      expectDeepFrozen(round);
+    }
+    for (const round of exposed.commitsByIdempotencyKey.values()) {
+      expect(bytes(round)).toBe(expectedById.get(round.roundId));
+      expectDeepFrozen(round);
+    }
+
+    const fromArray = exposed.rounds[0]!;
+    const fromId = exposed.roundsById.get(fromArray.roundId)!;
+    const fromReplay = [...exposed.commitsByIdempotencyKey.values()][0]!;
+    for (const round of [fromArray, fromId, fromReplay])
+      expect(() => {
+        round.balanceAfterChips = 0n;
+      }).toThrow();
+    exposed.roundsById.clear();
+    exposed.commitsByIdempotencyKey.delete(fromReplay.ticketBinding!.idempotencyKey);
+    expect(store.get(session.id).roundsById.size).toBe(8);
+    expect(store.get(session.id).commitsByIdempotencyKey.size).toBe(8);
+  });
+
   it('rejects session creation with a typed error at the explicit ceiling', () => {
     const maxConcurrentSessions = 4;
     const store = new SessionStore({ testLimits: { maxConcurrentSessions } });

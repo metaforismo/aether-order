@@ -326,12 +326,14 @@ export class SessionStore {
 
   #sessionView(session: Session): Session {
     const roundView = (round: RoundRecord): RoundRecord => this.#roundView(round);
-    const rounds = Object.freeze(session.rounds.map(roundView)) as RoundRecord[];
-    const roundsById = new Map(
-      [...session.roundsById].map(([roundId, round]) => [roundId, roundView(round)]),
-    );
-    const commitsByIdempotencyKey = new Map(
-      [...session.commitsByIdempotencyKey].map(([key, round]) => [key, roundView(round)]),
+    // Keep session materialisation independent of retained-history size. The
+    // collection shells expose keys/length immediately, but a round pays the
+    // clone-and-freeze cost only if that particular value is read.
+    const rounds = lazyRoundArray(session.rounds, roundView);
+    const roundsById = new LazyRoundMap(session.roundsById, roundView);
+    const commitsByIdempotencyKey = new LazyRoundMap(
+      session.commitsByIdempotencyKey,
+      roundView,
     );
     const view: Session = {
       ...session,
@@ -1012,6 +1014,116 @@ function deepFreeze<T>(value: T): T {
   if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
   for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
   return Object.freeze(value);
+}
+
+/**
+ * Frozen Array-shaped access to live round references.
+ *
+ * The sparse target fixes the view's length in O(1); reads are intercepted and
+ * detached one at a time. Mutating Array methods hit the frozen target and
+ * throw, while iteration/map/slice observe every logical index through `has`.
+ */
+function lazyRoundArray(
+  source: readonly RoundRecord[],
+  materialize: (round: RoundRecord) => RoundRecord,
+): RoundRecord[] {
+  const length = source.length;
+  const target = Object.freeze(new Array<RoundRecord>(length)) as RoundRecord[];
+  return new Proxy(target, {
+    get(array, property, receiver) {
+      const index = roundArrayIndex(property, length);
+      if (index !== null) {
+        const round = source[index];
+        return round === undefined ? undefined : materialize(round);
+      }
+      return Reflect.get(array, property, receiver);
+    },
+    has(array, property) {
+      return roundArrayIndex(property, length) !== null || Reflect.has(array, property);
+    },
+    set: () => false,
+    deleteProperty: () => false,
+    defineProperty: () => false,
+  });
+}
+
+function roundArrayIndex(property: PropertyKey, length: number): number | null {
+  if (typeof property !== 'string' || property === '') return null;
+  const index = Number(property);
+  return Number.isSafeInteger(index) &&
+    index >= 0 &&
+    index < length &&
+    String(index) === property
+    ? index
+    : null;
+}
+
+/**
+ * Frozen Map-shaped access that never exposes a live round object.
+ *
+ * Map's mutators deliberately no-op: `Object.freeze(new Map())` alone does not
+ * freeze its entries, so relying on object freezing here would be misleading.
+ */
+class LazyRoundMap extends Map<string, RoundRecord> {
+  readonly #source: ReadonlyMap<string, RoundRecord>;
+  readonly #materialize: (round: RoundRecord) => RoundRecord;
+
+  constructor(
+    source: ReadonlyMap<string, RoundRecord>,
+    materialize: (round: RoundRecord) => RoundRecord,
+  ) {
+    super();
+    this.#source = source;
+    this.#materialize = materialize;
+    Object.freeze(this);
+  }
+
+  override get size(): number {
+    return this.#source.size;
+  }
+
+  override has(key: string): boolean {
+    return this.#source.has(key);
+  }
+
+  override get(key: string): RoundRecord | undefined {
+    const round = this.#source.get(key);
+    return round === undefined ? undefined : this.#materialize(round);
+  }
+
+  override keys(): MapIterator<string> {
+    return this.#source.keys();
+  }
+
+  override *values(): MapIterator<RoundRecord> {
+    for (const round of this.#source.values()) yield this.#materialize(round);
+  }
+
+  override *entries(): MapIterator<[string, RoundRecord]> {
+    for (const [key, round] of this.#source) yield [key, this.#materialize(round)];
+  }
+
+  override [Symbol.iterator](): MapIterator<[string, RoundRecord]> {
+    return this.entries();
+  }
+
+  override forEach(
+    callbackfn: (value: RoundRecord, key: string, map: Map<string, RoundRecord>) => void,
+    thisArg?: unknown,
+  ): void {
+    for (const [key, round] of this.#source)
+      callbackfn.call(thisArg, this.#materialize(round), key, this);
+  }
+
+  override set(_key: string, _value: RoundRecord): this {
+    return this;
+  }
+
+  override delete(_key: string): boolean {
+    return false;
+  }
+
+  override clear(): void {}
 }
 
 function loweredLimits(overrides: Partial<ServerLimits> | undefined): Readonly<ServerLimits> {
