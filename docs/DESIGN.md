@@ -389,6 +389,15 @@ target during a round.
 810                  ▁▁▁▁▁▁                        home indicator
 ```
 
+- **§1's one line of copy sits at the top of the deck, directly under the
+  chamber and directly above the tier tabs** — the first row of the deck, not a
+  caption on the instrument. The wireframe above predates it and shows the deck
+  starting at the tabs; this bullet is the normative placement. Round 1 printed
+  it *inside* the chamber's SVG, where it landed on the housing's bevel band with
+  both bottom corner radii passing behind its first and last glyphs and the line
+  itself wider than the housing, so it began and ended over the void. It was the
+  only text in the app sitting on the art, and it collided with it. There is
+  exactly one copy of the line on screen at every text scale.
 - Tier tabs are **labelled with what they mean**: `FLOW · lands often`,
   `FORM · the core game`, `ORDER · rare, big`. Never "low/medium/high risk"
   without the plain-language gloss.
@@ -505,10 +514,23 @@ read their result look away during the close without missing anything.
 
 ### S5 — RESULT
 
-Lines that won light gold; lines that lost fade to 40% opacity. Both stay in
+Lines that won light gold; lines that lost step back from `--ink` to
+`--ink-dim`, and their left rail steps back to `--chrome-dark`. Both stay in
 place — nothing is removed, hidden, reordered or animated away, because the
 record of the round has to stay legible (§10). Every line has already changed
 state during SETTLE (§2.1); this screen is the record, not the reveal.
+
+**A dead line is not dimmed with opacity, and that is a correction.** Rounds 1
+to 4 of this document said *"fade to 40% opacity"*, and a build that did exactly
+that put a dead line's stake and multiplier at **2.08:1** and — compounded with
+the 0.8 the claim cell already carried — its claim text at **1.72:1**, measured
+from rendered pixels against §11's published floor of 4.5:1 and a published
+`--ink-dim` of 7.81:1. This is the primary money surface and the strip where
+lines resolve lock by lock, so §11 wins outright: "dead" is carried by colour
+and by the rail, which cost no legibility, and on this screen by the row's own
+words — a dead row reads `1.00 × 4.80×` where a won row reads `returned 4.80`.
+The transition is still §6.4's 120 ms and still identical for won and lost, so
+§2.1's rule is untouched.
 
 **The headline is gated on the round's net position, not on whether any line
 won.** The rule is a single comparison, implemented in
@@ -711,7 +733,11 @@ one metal.
 
 ### 6.1 Palette
 
-Environment — the whole world is neutral so the spheres are the only colour.
+Environment — **the chamber** is neutral so the spheres are the only colour
+inside it. That scope is the whole of the rule, and it is written as a scope
+rather than as "the whole world" because the build proved the wider claim
+unliveable: see the UI accents table below, which is the exception, is bounded,
+and is published here rather than left to drift into a stylesheet.
 
 | Token | Hex | Use |
 | --- | --- | --- |
@@ -729,8 +755,42 @@ Environment — the whole world is neutral so the spheres are the only colour.
 | `--gold-hot` | `#F0D089` | gold at bloom |
 | `--ink` | `#E7EEF5` | primary text |
 | `--ink-dim` | `#93A3B4` | secondary text |
-| `--win` | `#4CE0A6` | win state only |
+| `--win` | `#4CE0A6` | a verified-true state: a round that won, and a signature that recomputed (§5 S6) |
 | `--scrim` | `rgba(5,7,12,0.72)` | sheet backdrop |
+
+UI accents — **the chrome layer only, and never inside the chamber rect.**
+
+| Token | Hex | Use |
+| --- | --- | --- |
+| `--tier-flow` | `#2FE0C8` | FLOW: tab label and underline, chip numeral, ticket-row rail |
+| `--tier-form` | `#F2F4F8` | FORM: the same three places |
+| `--tier-order` | `#FF5A5F` | ORDER: the same three places |
+| `--pending` | `#D9A441` | the fairness chip while a round is committed and not yet revealed (§6.8) |
+| `--alert` | `#FF6B6B` | a destructive control, and an over-limit figure |
+| `--edge` | `rgba(65,75,88,0.55)` | a 1 px divider on `--abyss` |
+| `--edge-soft` | `rgba(65,75,88,0.32)` | the same divider where it separates rather than encloses |
+
+**Why this table exists at all, given the sentence above it.** Round 1's art
+pass shipped the three tier accents and shipped no change here, so the build
+contradicted its own closed spec in the one place the spec is loudest. Reviewing
+it, the *colouring* is right and the *silence* was the defect: §4's whole claim
+is that a tier is "how wild the ride is, not how good the deal is", and three
+tabs that differ only in weight teach that in a caption where three tabs that
+differ in colour teach it in a glance. So the rule is scoped and the accents are
+published, with four constraints that keep §6.1's first sentence true:
+
+1. **Every tier hex is a hex this table already publishes for a sphere** —
+   AQUA, IVORY, CORAL, cool to hot. No new colour enters the world.
+2. **They appear as a hairline, a numeral and a rail — never as a fill.** A
+   tinted *card* would read as being *about* the sphere of that colour; a 2 px
+   rail beside a name that is already written in words does not. The semantic
+   collision is real and it is bounded by this rule: an `amber < aqua` BEFORE
+   line does carry an aqua rail, and it carries it as a 2 px edge next to the
+   words `amber < aqua`, which are the channel (§11).
+3. **They never enter the chamber.** Nothing in `chamber.ts` may reference
+   them; the instrument stays `--void` through `--specular` plus the spheres.
+4. **They are never gold and gold is never them.** §6.1's six gold uses are
+   unchanged, and a tier accent may not appear in any of the six.
 
 Spheres — each is a body tint plus an emissive core plus a glyph.
 
@@ -1021,11 +1081,23 @@ budget somebody will quote the wrong half of.
 **The impeller.** Two of them, one behind the tube at each end of the chamber,
 visible only as silhouette and motion:
 
-- A **96 px outer ring**, 3 px stroke, `--chrome-mid` at 30% opacity, with
-  **five 18 px vanes** at 72°, tapering from 6 px at the hub to 2 px at the rim.
-  Five, not seven, in both variants: it is machinery, not a counter, and a
-  five-vane wheel at 3.2 Hz never appears to stand still under the settle
-  cadence the way a seven-vane one does at 360 ms.
+- A **96 px outer ring**, 5 px stroke, filled with a `--chrome` → `--chrome-mid`
+  → `--chrome-dark` gradient running with §6.3's key (above-left lit, below-right
+  in shadow), an inner `--chrome-dark` race, a shaded hub, and **five 18 px
+  vanes** at 72°, drawn as quads that meet the hub and taper from 6 px there to
+  2 px at the rim. Five, not seven, in both variants: it is machinery, not a
+  counter, and a five-vane wheel at 3.2 Hz never appears to stand still under the
+  settle cadence the way a seven-vane one does at 360 ms.
+- **Opacity 0.30 at rest, 0.62 while it turns**, and this is a correction to the
+  flat 30% earlier rounds published. At 26–42% on a flat 3 px stroke the wheel
+  read as a wireframe — an Illustrator guide or a loading spinner, not a machined
+  part — and its rotation was imperceptible in a frame dump, because a five-fold
+  rotationally symmetric outline at that weight has almost no silhouette to
+  turn. The number that changed is not the one that fixed it: what makes it
+  machinery is the shading and the hub-to-rim taper above, and what makes the
+  rotation legible is the *shaded* silhouette. The wheel is still subordinate to
+  the spheres at both values — it is never the brightest object in the frame,
+  and if it ever is, the value is wrong in the other direction.
 - Centred at `(72, 88)` and `(318, 342)` relative to the chamber rect —
   diagonally opposed, off the tube's axis, so neither ever sits behind a sphere
   at rest.
@@ -1674,7 +1746,19 @@ exist.
   carry text, an icon or a state indicator — and is measured against `--void`:
   `--ink` 17.22:1, `--ink-dim` 7.81:1, `--gold` 8.40:1, `--win` 12.01:1. All four
   clear WCAG AAA for normal text (7:1), and no foreground token may ship below
-  4.5:1.
+  4.5:1. §6.1's UI accents are foreground tokens and are held to the same floor:
+  `--tier-flow` 12.11:1, `--tier-form` 18.30:1, `--tier-order` 6.60:1,
+  `--pending` 8.96:1, `--alert` 7.26:1. `--tier-order` is the one that clears AA
+  and not AAA, and it is allowed to because it never carries a sentence — it is a
+  tab label, a numeral and a 2 px rail, each of which is repeated in `--ink` text
+  beside it.
+
+  **The floor is unconditional, which means it also binds the states a UI
+  usually exempts.** Two of them shipped under it in round 1 and are named here
+  so they cannot come back: a *dead* ticket line may not be dimmed below the
+  floor (§5 S5), and a *disabled* control dims its fill and its border, never its
+  label. WCAG exempts a disabled control; this document does not, because the
+  disabled `COMMIT` carries the stake the player is about to place.
 
   **Surface tokens are explicitly exempt and must be**, because they are the
   dark world the spheres glow inside: `--abyss` is 1.07:1, `--brine-deep` 1.19:1,

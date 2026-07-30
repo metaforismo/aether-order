@@ -24,10 +24,10 @@ import { haptics, sound, type WinVoicing } from './audio.js';
 import { Chamber } from './chamber.js';
 import { turbulence } from './choreo.js';
 import { claimKey, claimSummary, elementName, type Params } from './claims.js';
-import { credits, signedCredits } from './money.js';
+import { balanceDuringRound, credits, signedCredits } from './money.js';
 import { openPicker, stakeLadder } from './picker.js';
 import { draftRows, roundRows } from './rows.js';
-import { orbSvg } from './sphere.js';
+import { mountOrbDefs, orbSvg } from './sphere.js';
 import {
   openFairness,
   openHistory,
@@ -95,6 +95,18 @@ const state = {
    * of the pinned strip, and nothing reorders after that.
    */
   displayOrder: null as number[] | null,
+  /**
+   * The balance the rail shows while a round is playing, frozen for exactly the
+   * same reason `displayOrder` is: the COMMIT response carries the fully settled
+   * round, so anything rendered straight out of it is the result — printed before
+   * the choreography whose job is to deliver it.
+   *
+   * It holds the post-debit figure (`money.ts`, `balanceDuringRound`) from COMMIT
+   * until the close, and is cleared there. That is also what makes §10's balance
+   * count-up reachable at all: the "before" value it interpolates from is now the
+   * debited balance rather than the final one.
+   */
+  displayBalanceChips: null as bigint | null,
 };
 
 let chamber: Chamber;
@@ -120,6 +132,16 @@ async function boot(): Promise<void> {
   state.catalogue = catalogue;
   state.session = created.session;
   state.operatorKeyHex = key?.publicKeyHex ?? null;
+  /*
+   * Every variant's spheres, once, before anything draws one.
+   *
+   * The app renders spheres that do not belong to the variant in play — the
+   * variant sheet shows both rows side by side, so CLASSIC draws INDIGO and ROSE
+   * tokens — and a gradient that is not in the document paints nothing. Mounting
+   * the union here is the whole fix (`sphere.ts`, `mountOrbDefs`); the set is
+   * closed at seven, and this is the one place that knows all of them.
+   */
+  for (const info of Object.values(catalogue.variants)) mountOrbDefs(info.elements);
 
   app().innerHTML = `
     <header class="rail" data-rail></header>
@@ -129,19 +151,11 @@ async function boot(): Promise<void> {
       <div class="chamber-holder" id="chamber"></div>
       <button class="skip" data-skip aria-label="Skip the animation">SKIP</button>
       <!--
-        §1's three-second test names five things a new player must see, in this
-        order: five spheres, the numbered tube, THIS SENTENCE, the FORM chips,
-        the 96% line. Round 1 shipped items 1, 2, 4 and 5 and left the
-        explanation one level down inside the picker sheet — which is after the
-        tap the criterion is about. It sits on the chamber rather than in the
-        deck so that saying what the game is costs the chip rail no reach: §5
-        keeps every control needed to play inside the thumb zone.
-      -->
-      <p class="stage__note">They settle in a random order. Bet on the order.</p>
-      <!--
-        §9's mote fall lives here rather than inside the chamber, because the
-        chamber's markup is replaced whenever the layout gives it a different
-        height — and one of those moments is 220 ms into the celebration.
+        §9's mote fall lives here rather than inside the chamber, so it outlives a
+        redraw: the shower is three seconds long and a variant switch or a rotation
+        replaces the chamber's markup wholesale. Mode changes no longer redraw at
+        all (chamber.ts), which is what deleted the original bug — the shower being
+        wiped 220 ms into every celebration as the result deck mounted.
       -->
       <div class="motes" id="motes" aria-hidden="true"></div>
     </main>
@@ -188,10 +202,10 @@ async function boot(): Promise<void> {
   });
   // A resize event is not the only thing that changes the space the chamber
   // gets: OS or browser text scaling reflows the deck without one, and §11 asks
-  // this layout to survive 200%. Observing the stage catches every cause.
-  new ResizeObserver(() => {
-    if (state.mode !== 'round') fitChamber();
-  }).observe(document.getElementById('stage') as HTMLElement);
+  // this layout to survive 200%. Observing the stage catches every cause — and
+  // it is safe to run during a round now, because answering a smaller band is
+  // three custom properties rather than a redraw.
+  new ResizeObserver(() => fitChamber()).observe(document.getElementById('stage') as HTMLElement);
 
   await openRound();
   render();
@@ -234,6 +248,7 @@ async function switchVariant(variantId: 'classic' | 'seven'): Promise<void> {
   state.quote = null;
   state.round = null;
   state.displayOrder = null;
+  state.displayBalanceChips = null;
   state.mode = 'build';
   state.verified = false;
   chamber.render(variant());
@@ -346,10 +361,16 @@ function railMarkup(): string {
       <span class="rail__title">SHARED CHAMBER</span>
       <span class="badge">free play</span>
       ${fairness}`;
+  /*
+   * The frozen figure wins while a round is playing (§2's beat order: the wallet
+   * is debited at COMMIT and credited at STAMP). Rendering `session.balanceChips`
+   * here unconditionally is what printed the outcome before the reveal.
+   */
+  const shown = state.displayBalanceChips ?? BigInt(session.balanceChips);
   return `
     <button class="icon-btn" data-menu aria-label="Menu">${ICON_HOME}</button>
     <span class="rail__balance"><b data-balance>${esc(
-      credits(BigInt(session.balanceChips)),
+      credits(shown),
     )}</b><span>balance</span></span>
     <button class="variant-toggle" data-variant>${esc(variant().label)}</button>
     <span class="badge">free play</span>
@@ -397,23 +418,37 @@ function countBalanceUp(fromChips: bigint, toChips: bigint): void {
 }
 
 /**
- * S4 asks the chamber to go full-bleed. An SVG with a fixed viewBox in a taller
- * box letterboxes instead, so the chamber is redrawn to the height the layout
- * actually gives it. Never mid-round: a re-layout during SETTLE would restart
- * every transition in flight.
+ * Tell the chamber how much room the layout is giving it.
+ *
+ * Two numbers, and the difference between them is the whole reason a mode change
+ * no longer snaps:
+ *
+ * - **The reference box** is the tallest band the stage can ever show — the space
+ *   between the progress hairline and the bottom of the app, minus one pinned
+ *   ticket row. It depends on the viewport and on nothing else, so it does not
+ *   move when the deck changes size, and the chamber is drawn for it exactly once.
+ * - **The visible band** is the stage's current height. It changes at every mode
+ *   change, and the chamber answers it with three transforms (`Chamber#fit`).
+ *
+ * Round 1 had only the second number and redrew the instrument from it, which is
+ * how the largest element on screen came to jump inside one frame, twice a round.
  */
 function fitChamber(): void {
-  const holder = document.getElementById('chamber');
-  if (!holder || !state.session) return;
-  const available = holder.clientHeight;
-  if (available <= 0) return;
-  // Hysteresis: the tight layout adds a line to the deck and so shrinks the
-  // stage further. Without a gap between the two thresholds the two layouts
-  // would flip each other back and forth forever.
-  const tight = available < (app().dataset.tight === 'yes' ? 300 : 240);
-  app().dataset.tight = tight ? 'yes' : 'no';
-  if (Math.abs(available - chamber.height) < 8) return;
-  chamber.render(variant(), available);
+  const stage = document.getElementById('stage');
+  if (!stage || !state.session) return;
+  const visible = stage.clientHeight;
+  if (visible <= 0) return;
+  const bounds = app().getBoundingClientRect();
+  const style = window.getComputedStyle(app());
+  const floor = bounds.bottom - Number.parseFloat(style.paddingBottom || '0');
+  // One 28 px row plus the deck's own padding is the smallest deck there is: the
+  // round screen with a single-line ticket.
+  const box = Math.round(floor - stage.getBoundingClientRect().top - 48);
+  // Never redrawn mid-round: a re-layout during SETTLE would restart every
+  // transition in flight. The band still adapts, because `fit` is transforms.
+  if (box > 0 && Math.abs(box - chamber.box) > 2 && state.mode !== 'round')
+    chamber.render(variant(), box);
+  chamber.fit(visible);
 }
 
 function render(): void {
@@ -556,7 +591,7 @@ function chipRail(): string {
   for (const line of state.lines) counts.set(line.code, (counts.get(line.code) ?? 0) + 1);
   const longestWord = (name: string): number =>
     name.split(/\s+/u).reduce((longest, word) => Math.max(longest, word.length), 0);
-  return `<div class="rail-scroll">${info.bets
+  return `<div class="rail-row"><div class="rail-scroll">${info.bets
     .filter((bet) => bet.tier === state.tier)
     .map((bet) => {
       const count = counts.get(bet.code) ?? 0;
@@ -571,7 +606,17 @@ function chipRail(): string {
         )}</u>
       </button>`;
     })
-    .join('')}</div>`;
+    .join('')}</div>
+    <!--
+      §5 S1's wireframe puts an explicit arrow **after** the last visible chip —
+      in the gutter beside the rail, not over it. It is a sibling of the scroller
+      in a flex row rather than an absolutely positioned overlay, which is the
+      whole fix: an overlay sat on top of the fourth chip's own text and tap
+      area, so the affordance that says "there is more" was printed across the
+      thing it was pointing at. It is an affordance and never a control — the
+      scroll is the interaction.
+    -->
+    <span class="rail-arrow" aria-hidden="true">→</span></div>`;
 }
 
 function ticketStrip(): string {
@@ -724,7 +769,18 @@ function presenceMarkup(): string {
 }
 
 function wireDeck(deck: HTMLElement): void {
-  on(deck, '[data-tier]', 'click', (_event, node) => {
+  /*
+   * `.tab[data-tier]`, not `[data-tier]`.
+   *
+   * The chips carry `data-tier` too — it drives the volatility hairline and the
+   * numeral's colour — so an unscoped selector matched them as well, and every
+   * chip tap ran `state.tier = …; render()` *before* the picker opened. That
+   * rebuilt `.rail-scroll` and destroyed its scroll position: measured
+   * `scrollLeft` 42 → 0. On FLOW and FORM the fourth chip (NEIGHBOURS, STACK) is
+   * off-screen, so the player scrolled right, tapped it, and found the rail back
+   * at the start when the sheet closed — once per line added.
+   */
+  on(deck, '.tab[data-tier]', 'click', (_event, node) => {
     state.tier = node.dataset.tier as typeof state.tier;
     render();
   });
@@ -802,6 +858,7 @@ function wireDeck(deck: HTMLElement): void {
     state.mode = 'build';
     state.round = null;
     state.displayOrder = null;
+    state.displayBalanceChips = null;
     chamber.reset();
     void openRound().then(render);
   });
@@ -876,6 +933,7 @@ async function commit(): Promise<void> {
     // failure must never leave the player without their result.
     await playRound(result.round).catch(() => {
       state.mode = 'result';
+      state.displayBalanceChips = null;
       render();
     });
   } catch (error) {
@@ -996,7 +1054,19 @@ async function playRound(round: RoundView): Promise<void> {
   const reduced = reducedMotion();
   const stagger = info.staggerMs;
   const fall = reduced ? 120 : beats.fallMs;
-  const balanceBefore = BigInt((state.session as SessionState).balanceChips);
+  /*
+   * The balance the rail carries for the whole of beats 3 to 6: the wallet after
+   * the debit and before the credit (§2, and `money.ts`'s `balanceDuringRound`).
+   *
+   * It is derived from the round rather than captured from the session, because by
+   * the time this runs the session has already been replaced by the settled one —
+   * in solo play by `commit`, in the shared chamber by the reveal event. Deriving
+   * it means both places get the same freeze from one line.
+   */
+  const settledChips = BigInt(round.balanceAfterChips ?? (state.session as SessionState).balanceChips);
+  const creditedChips = BigInt(round.settlement?.creditedChips ?? '0');
+  const balanceBefore = balanceDuringRound(settledChips, creditedChips);
+  state.displayBalanceChips = balanceBefore;
 
   /*
    * The agitation track, built once, from the transcript.
@@ -1011,7 +1081,12 @@ async function playRound(round: RoundView): Promise<void> {
   const turbulenceTrack = turbulence(
     round.transcript?.commitment ?? round.seedCommitment,
     info.n,
-    [32, 23],
+    // Raised from [32, 23]. At the old amplitude, with §6.4's envelope and damping
+    // on top, a frame dump across the whole 1,150 ms of CHARGE plus AGITATE showed
+    // sub-10 px of travel in fixed columns — the beat read as nothing happening. The
+    // vertical figure is the larger one because the chamber is tall, and both are
+    // still clamped per sphere so nothing crosses the machinery.
+    [34, 42],
   );
 
   state.mode = 'round';
@@ -1154,6 +1229,20 @@ async function playRound(round: RoundView): Promise<void> {
   );
 
   state.mode = 'result';
+  /*
+   * The close is over, so the wallet may speak — but *when* the freeze lifts
+   * depends on whether §10's gate lets the figure climb.
+   *
+   * Below the gate the freeze lifts here and the rail simply renders the new
+   * number. Above it the freeze has to survive both renders below, because
+   * `openRound()` is awaited between them: lifting it here painted the settled
+   * figure for at least one frame, and then `countBalanceUp` wrote the *pre*-
+   * credit figure back and climbed from it. Measured at 50 ms resolution:
+   * 501.40 → 499.51 → 499.88 → … → 501.40. The player saw the answer, saw it
+   * taken away, and watched it be re-earned.
+   */
+  const counts = round.presentation?.balanceCountsUp === true;
+  if (!counts) state.displayBalanceChips = null;
   render();
   await openRound();
   render();
@@ -1165,8 +1254,10 @@ async function playRound(round: RoundView): Promise<void> {
   // It runs *after* the final render on purpose. The rail is re-rendered as
   // markup, so a count-up started before it would have its node replaced
   // mid-flight and stop halfway up.
-  if (round.presentation?.balanceCountsUp)
-    countBalanceUp(balanceBefore, BigInt((state.session as SessionState).balanceChips));
+  if (counts) countBalanceUp(balanceBefore, BigInt((state.session as SessionState).balanceChips));
+  // And the freeze lifts only now, so any later render — a tab switch, a sheet,
+  // the next round's build screen — shows the settled figure the climb landed on.
+  state.displayBalanceChips = null;
 }
 
 /* ----------------------------------------------------------------- menus -- */
@@ -1391,6 +1482,7 @@ async function togglePlace(): Promise<void> {
     state.mode = 'build';
     state.round = null;
     state.displayOrder = null;
+    state.displayBalanceChips = null;
     chamber.reset();
     connectLobby();
   } else {
@@ -1401,6 +1493,7 @@ async function togglePlace(): Promise<void> {
     state.mode = 'build';
     state.round = null;
     state.displayOrder = null;
+    state.displayBalanceChips = null;
     chamber.reset();
     await openRound();
   }
@@ -1431,6 +1524,7 @@ function connectLobby(): void {
       state.mode = 'build';
       state.round = null;
       state.displayOrder = null;
+      state.displayBalanceChips = null;
       chamber.reset();
       render();
     }

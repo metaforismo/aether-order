@@ -117,22 +117,37 @@ const SHARED_DEFS = `
     <stop offset="1" stop-color="#FFCF95" stop-opacity="0"/>
   </radialGradient>`;
 
-let mountedFor = '';
+/** Every element whose gradients are in the document, by id. */
+const mounted = new Map<string, ElementInfo>();
 
 /**
- * Mount the sphere master once, for the whole document.
+ * Mount the sphere master once, for the whole document — **additively**.
  *
  * Same-document fragment references (`fill="url(#orb-body-amber)"`) resolve
  * across separate inline `<svg>` roots, so one hidden definition block serves
- * the chamber and every sheet. It is replaced only when the element set changes,
- * i.e. when the variant does.
+ * the chamber and every sheet.
+ *
+ * It accumulates rather than replaces, and that is a bug fix. It used to hold
+ * exactly the *current variant's* five or seven elements and rebuild on a
+ * switch — but the app draws spheres that do not belong to the current variant:
+ * the variant sheet shows both rows, so in CLASSIC it renders INDIGO and ROSE
+ * tokens whose `url(#orb-body-indigo)` resolved to nothing and painted two black
+ * discs into the middle of the sheet that sells SEVEN. The element set is closed
+ * and tiny (seven), so the union is simply the right thing to hold; `boot`
+ * mounts every variant's elements at start-up and the chamber's per-variant call
+ * is then a no-op.
  */
 export function mountOrbDefs(elements: readonly ElementInfo[]): void {
-  const key = elements.map((element) => `${element.id}:${element.hex}`).join('|');
-  if (mountedFor === key) return;
-  mountedFor = key;
+  let added = false;
+  for (const element of elements) {
+    const known = mounted.get(element.id);
+    if (known && known.hex === element.hex) continue;
+    mounted.set(element.id, element);
+    added = true;
+  }
+  if (!added) return;
   const existing = document.getElementById('orb-defs');
-  const markup = `<defs>${elements.map(elementGradients).join('')}${SHARED_DEFS}</defs>`;
+  const markup = `<defs>${[...mounted.values()].map(elementGradients).join('')}${SHARED_DEFS}</defs>`;
   if (existing) {
     existing.innerHTML = markup;
     return;

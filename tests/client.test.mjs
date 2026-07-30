@@ -143,13 +143,25 @@ describe('§1’s three-second test is present on the first screen', () => {
     return match[1];
   };
 
-  it('carries item 3 — the one line that says what the game is', () => {
+  it('carries item 3 — the one line that says what the game is, once, in the deck', () => {
     const line = copy('One line of copy');
     expect(line).toBe('They settle in a random order. Bet on the order.');
-    // Twice on purpose: over the chamber, and in the deck for the text scales
-    // where the chamber is a band rather than a chamber. Exactly one is visible.
-    expect(MAIN.split(line).length - 1).toBe(2);
-    expect(CSS).toMatch(/\.app\[data-tight='yes'\] \.stage__note \{\s*display: none/u);
+    /*
+     * Once, and in the deck.
+     *
+     * Round 1 shipped it twice — printed inside the chamber's SVG as
+     * `.stage__note`, plus a deck copy hidden at every text scale but the
+     * largest — and the chamber copy is the one a frame dump caught: it sat on
+     * the housing's chrome bevel with both bottom corner radii passing behind
+     * its first and last glyphs, and the line was wider than the housing so it
+     * began and ended over the void. It was the only text in the app on the art,
+     * and it collided with it. §5 S1 now states the placement normatively: the
+     * first row of the deck, under the chamber and above the tier tabs.
+     */
+    expect(MAIN.split(line).length - 1).toBe(1);
+    expect(MAIN).toContain(`<p class="premise">${line}</p>`);
+    expect(CSS).not.toMatch(/\.stage__note/u);
+    expect(DESIGN).toContain('the first row of the deck, not a\n  caption on the instrument');
   });
 
   it('carries item 5 — the line under the rail', () => {

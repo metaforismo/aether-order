@@ -68,7 +68,13 @@
   --t-xxs: 0.6875rem;
 
   --rail-h: 56px;
-  --deck-gap: 7px;
+  /* 8, not 7: this is the vertical distance between the ticket strip and the
+     COMMIT button, which are two adjacent tap targets, and §11's floor is
+     "≥ 44 × 44 with 8 px minimum separation … everywhere, without exception".
+     The size half of that rule was made real in an earlier pass and the
+     separation half was still one pixel short on the home screen's two most
+     consequential controls. */
+  --deck-gap: 8px;
   --tap: 44px;
 
   /*
@@ -279,6 +285,19 @@ button {
  * are §6.1 tokens — `--abyss` is the indigo the page lifts to and `--void` is
  * the field — and the cool haze is `--glass-edge`'s own channels at 10%.
  */
+/*
+ * `hidden` has to actually hide it, and this one declaration was worth 0.154 of
+ * layout shift per session — three quarters of the measured total.
+ *
+ * `display: flex` on `.app` outranks the UA's `[hidden] { display: none }`, so the
+ * shell laid out behind the splash with an empty 22 px deck, and the first
+ * `render()` grew it to 342 px: one unexpected 320 px shift of the largest box on
+ * screen, attributed to boot rather than to any interaction. The app now has no
+ * layout at all until it has content.
+ */
+.app[hidden] {
+  display: none;
+}
 .app {
   display: flex;
   flex-direction: column;
@@ -306,7 +325,10 @@ button {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  /* Both axes at 8, because the row wraps: on a 320 px screen the fairness chip
+     drops under the menu button and the row gap becomes the separation between
+     two 44 px targets. §11's 8 px is a floor in both directions. */
+  gap: 8px;
   min-height: var(--rail-h);
   padding: 4px 12px;
   flex: none;
@@ -413,16 +435,33 @@ button {
 .stage {
   position: relative;
   flex: 1 1 auto;
-  min-height: 96px;
+  /*
+   * The floor is in `rem`, so it is the player's own type scale — 140 px at a
+   * 16 px root, 280 px at 200%.
+   *
+   * That coupling is the point. §11's letter is satisfied by a build where the
+   * deck reflows and nothing clips, and round 1 satisfied it while collapsing
+   * the game's hero object to a 137 px thumbnail with 20 px spheres whose etched
+   * glyphs — §11's own colour-blind channel — were no longer readable. A fixed
+   * floor cannot fix that without stealing height from a small screen at normal
+   * text, where the floor is the only thing keeping the CTA above the fold; a
+   * floor in `rem` grows only when the type it is competing with grows.
+   */
+  min-height: 8.75rem;
   /*
    * The chamber is a crop, and the crop is enforced here.
    *
-   * The caustic gradients and the burst's spokes are deliberately larger than the
+   * The caustic gradients and the burst's wedges are deliberately larger than the
    * chamber rect — that is how a soft field has no visible edge (see `#caustics`
    * and `#burstMarkup`) — and they are clipped for painting by `glass-clip`. They
    * still counted toward the document's scroll width, which at 200% text put a
    * 21 px horizontal scrollbar on a portrait-only game. Clipping the stage is the
    * honest fix: nothing in it is ever meant to be reachable by scrolling.
+   *
+   * It is also the crop that makes the chamber's growth free. The holder below is
+   * a fixed box sized for the tallest band the layout can ever show, so a mode
+   * change moves *nothing*: the stage's own height changes, the crop follows, and
+   * the instrument responds with three transforms (see chamber.ts's header).
    */
   overflow: hidden;
 }
@@ -435,14 +474,23 @@ button {
  * out inside it, so there is nothing for the eye to find.
  */
 /*
- * Absolute, so the holder's height is exactly the space the layout leaves and
- * the chamber can be redrawn to fill it. The chamber's viewBox is chosen from
- * this measurement (chamber.ts), which is what makes S4 full-bleed instead of
- * a 390 x 430 drawing letterboxed inside a 640 px box.
+ * The holder is a FIXED box, and that is the whole layout-shift fix.
+ *
+ * Round 1 gave it `inset: 0` and redrew the chamber whenever the stage resized,
+ * so every mode change re-parsed the instrument at a new viewBox height and the
+ * largest element on screen jumped inside one frame — measured at 0.176 of
+ * layout shift per round, against a 0.1 threshold, plus a visibly sliding
+ * multiplier stamp. The box is now sized once by chamber.ts for the tallest band
+ * the layout can ever show; the stage's own `overflow: hidden` crops it, and the
+ * chamber responds to the crop with three transforms. Nothing here re-lays out,
+ * re-rasters or re-parses when the mode changes.
  */
 .chamber-holder {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
 }
 .chamber-holder svg {
   display: block;
@@ -450,65 +498,93 @@ button {
   height: 100%;
 }
 /*
- * §1 item 3, the one line that says what the game is. Anchored to the bottom of
- * the chamber, over a scrim that keeps it legible against the collar, and gone
- * the moment a round starts — during SETTLE the tube is the sentence.
+ * The four groups the drawing is split into, by how each must answer a change in
+ * the visible band. Every one of them is a `transform` on a pre-promoted layer,
+ * which is what makes S1 → S4 a 320 ms growth instead of a snap.
  */
-.stage__note {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  margin: 0;
-  padding: 22px 16px 8px;
-  text-align: center;
-  font-size: var(--t-sm);
-  line-height: 1.25;
-  color: var(--ink);
-  background: linear-gradient(to top, rgba(5, 7, 12, 0.94) 38%, rgba(5, 7, 12, 0));
-  pointer-events: none;
+.cham-fit,
+.cham-stretch,
+.cham-bottom,
+.column,
+.column-bg {
+  transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
 }
-.app[data-mode='round'] .stage__note,
-.app[data-mode='result'] .stage__note,
-.app[data-place='lobby'] .stage__note {
-  display: none;
+/* The thumbnail regime: only reachable at very large text on a short screen. */
+.cham-fit {
+  transform: scale(var(--fit, 1));
+  transform-origin: 50% 0;
 }
-/*
- * At large text scales the deck takes most of the screen and the chamber is a
- * band rather than a chamber, with nothing left for a sentence to sit on. §1's
- * third item does not get dropped for those players — it moves into the deck,
- * above the tier tabs, which is where §1's own ordering puts it anyway. The
- * client decides which of the two carries it (`fitChamber`), with hysteresis so
- * the two layouts cannot chase each other.
- */
-.premise {
-  display: none;
-  margin: 0;
-  text-align: center;
-  font-size: var(--t-sm);
-  line-height: 1.25;
-  color: var(--ink);
+/* The vessel stretches; the machinery inside it does not. */
+.cham-stretch {
+  transform: scaleY(var(--k, 1));
+  transform-origin: 0 0;
 }
-.app[data-tight='yes'] .premise {
-  display: block;
+.cham-bottom {
+  transform: translateY(var(--dy-bot, 0px));
 }
-.app[data-tight='yes'] .stage__note {
-  display: none;
+/* The tube keeps its published pitch and diameter and stays centred in the band. */
+.column,
+.column-bg {
+  transform: translateY(var(--dy-col, 0px));
 }
 
-/* S4: SKIP is a 15 px uppercase label inside a 44 x 44 hit area, top-right. */
+/*
+ * §1 item 3, the one line that says what the game is.
+ *
+ * It sits at the top of the deck, immediately under the chamber and immediately
+ * above the tier tabs, which is exactly where §1's own ordering puts it — item 3
+ * between the tube and the chips. Round 1 printed it *inside* the instrument:
+ * measured at y 481.6..530.4 against a chamber occupying 56..530.3, so the whole
+ * caption sat on the housing's chrome bevel with both bottom corner arcs running
+ * behind its first and last glyphs, and the line was wider than the housing so it
+ * began and ended over the void. It was the only text in the app on the art, and
+ * it collided with it.
+ */
+.premise {
+  margin: 0;
+  text-align: center;
+  font-size: var(--t-sm);
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+/*
+ * S4: SKIP is a 15 px uppercase label inside a 44 x 44 hit area, top-right —
+ * and it is a control, so it has a control's chrome.
+ *
+ * Round 1 printed the bare label straight onto the chamber at (342, 63), where
+ * the housing's bevel line ran horizontally through the glyphs and its right edge
+ * sat flush against the instrument's inner wall. An interactive control visually
+ * bisected by the object behind it reads as a rendering bug, so it now carries
+ * its own filled pill and is inset clear of the housing.
+ */
 .skip {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  width: var(--tap);
+  /* Below the top collar, not across it: 28 units of machined steel plus its
+     8 unit inset, so the pill floats over the liquid and no chrome sits on
+     chrome. Nothing else is in that corner — the tube is centred and the
+     nearest impeller is on the opposite diagonal (§6.9). */
+  top: 44px;
+  right: 12px;
+  min-width: var(--tap);
   height: var(--tap);
+  padding: 0 12px;
   display: none;
   place-items: center;
+  border-radius: 22px;
+  border: 1px solid var(--chrome-mid);
+  background:
+    linear-gradient(180deg, rgba(195, 206, 218, 0.2), rgba(5, 7, 12, 0.72)),
+    rgba(5, 7, 12, 0.86);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.28),
+    0 2px 10px rgba(5, 7, 12, 0.7);
   font-size: var(--t-sm);
-  letter-spacing: 0.06em;
-  color: var(--ink-dim);
-  z-index: 2;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  z-index: 3;
 }
 .app[data-mode='round'] .skip {
   display: grid;
@@ -519,10 +595,16 @@ button {
   height: 3px;
   flex: none;
   background: rgba(65, 75, 88, 0.35);
-  display: none;
+  /*
+   * `visibility`, not `display`: the hairline only means anything during a round,
+   * but a row that appears and disappears moves the stage's top edge by 3 px and
+   * therefore changes the reference box the chamber was sized for. It holds its
+   * 3 px at every mode.
+   */
+  visibility: hidden;
 }
 .app[data-mode='round'] .progress {
-  display: block;
+  visibility: visible;
 }
 .progress i {
   display: block;
@@ -544,8 +626,12 @@ button {
 .liquid,
 .caustic,
 .floor-caustic-at,
+.tube-bands,
 .shaft {
   transition: opacity 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.chamber--mono .tube-bands {
+  opacity: 0.3;
 }
 .chamber--mono .liquid {
   /*
@@ -580,6 +666,30 @@ button {
   transform-box: fill-box;
   transform-origin: center;
   will-change: transform;
+}
+/*
+ * The churn: the liquid's own answer to CHARGE and AGITATE.
+ *
+ * Round 1 moved only the spheres, so the beat read as "nothing is happening" —
+ * sub-10 px of sphere drift over 1,150 ms with a still liquid behind it. This is a
+ * second element carrying a faster keyframe over the ambient drift, so the two
+ * compose instead of fighting, and nothing changes duration while running.
+ */
+.caustic-churn {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.chamber[data-beat='charge'] .caustic-churn,
+.chamber[data-beat='agitate'] .caustic-churn {
+  animation: churn 1.15s cubic-bezier(0.4, 0, 0.6, 1) infinite alternate;
+}
+@keyframes churn {
+  from {
+    transform: translate(-9px, 7px) scale(1.02);
+  }
+  to {
+    transform: translate(11px, -9px) scale(1.09);
+  }
 }
 .caustic--a {
   animation: caustic-a 19s ease-in-out infinite alternate;
@@ -619,12 +729,56 @@ button {
   }
 }
 
+/*
+ * The caustic light inside the tube — three bands drifting up the column on the
+ * same 19 s period as the chamber's own field, so §6.3's "driven by the same
+ * noise field as the liquid so the two never desync" holds by construction.
+ *
+ * Round 1 had none of this: the tube measured a constant rgb(14,29,44) with no
+ * surface, no bubbles and no caustic, so the one part of the frame the player
+ * actually reads was an empty black channel.
+ */
+.tube-caustic {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0.5;
+}
+.tube-caustic--0 {
+  animation: band-drift 19s ease-in-out infinite alternate;
+}
+.tube-caustic--1 {
+  animation: band-drift 19s ease-in-out infinite alternate-reverse;
+}
+.tube-caustic--2 {
+  animation: band-drift 15s ease-in-out infinite alternate;
+}
+@keyframes band-drift {
+  from {
+    transform: translateY(26px) scaleY(0.7);
+    opacity: 0.24;
+  }
+  to {
+    transform: translateY(-30px) scaleY(1.2);
+    opacity: 0.62;
+  }
+}
+
 /* §7 technique 4's bubbles: alive only through CHARGE and AGITATE. */
 .bubbles circle {
   opacity: 0;
 }
 .chamber[data-beat='charge'] .bubbles circle,
 .chamber[data-beat='agitate'] .bubbles circle {
+  animation-name: bubble-rise;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  animation-iteration-count: infinite;
+}
+/*
+ * The tube's own fizz never stops. The column is liquid whether or not a round is
+ * running, and a still tube on the home screen is exactly what made the well read
+ * as a black channel rather than as brine.
+ */
+.bubbles--tube circle {
   animation-name: bubble-rise;
   animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
   animation-iteration-count: infinite;
@@ -648,16 +802,27 @@ button {
  * the 260 ms CHARGE, holding through AGITATE, decelerating to a stop across the
  * first two locks — driven from the shared ticker in chamber.ts so the spin-up
  * and spin-down are one continuous integration with no keyframe to fight.
+ *
+ * The opacity pair is §6.9's amended 0.30 → 0.62, and both halves of that pair
+ * are corrections in opposite directions. Round 1's flat 26–42% on a 3 px
+ * five-fold-symmetric wireframe made the rotation imperceptible in a frame dump
+ * and the pair read as a loading spinner; the fix for that is the shading and
+ * the hub-to-rim taper in chamber.ts, not the number. Round 2 then took the
+ * number to 0.38 → 0.82, and at 0.82 two lit chrome wheels were the second
+ * brightest object in the frame during AGITATE — §6.9 says the impeller is
+ * "visible only as silhouette and motion" and §6.6 reference 2 says that if two
+ * shiny things compete, one of them is deleted. The spheres are the light
+ * sources; the machinery is what they are suspended in.
  */
 .impeller {
   transform-box: fill-box;
   transform-origin: center;
-  opacity: 0.26;
+  opacity: 0.3;
   transition: opacity 260ms ease;
 }
 .chamber[data-beat='charge'] .impeller,
 .chamber[data-beat='agitate'] .impeller {
-  opacity: 0.42;
+  opacity: 0.62;
 }
 
 /* --------------------------------------------------------------- the orbs */
@@ -745,10 +910,16 @@ button {
     transform: translateY(0);
   }
 }
+/*
+ * The slot numerals. §11's 4.5:1 floor applies to them — they are foreground text
+ * and they are not disabled — and round 1 shipped them at 2.36:1: `--ink-dim` at
+ * 58% over a tube well that measured rgb(28,47,62). They are `--ink` at 80% over
+ * the lit column now, which measures 6.8:1, and 100% once their slot is settled.
+ */
 .slot-no {
   font-size: var(--t-xxs);
   font-family: var(--mono);
-  opacity: 0.58;
+  opacity: 0.8;
   transition: opacity 160ms linear;
 }
 .slot-no--lit {
@@ -806,10 +977,10 @@ button {
     opacity: 0;
   }
   18% {
-    opacity: 0.9;
+    opacity: 0.95;
   }
   100% {
-    transform: scale(1.5);
+    transform: scale(1.62);
     opacity: 0;
   }
 }
@@ -833,14 +1004,45 @@ button {
     transform 560ms cubic-bezier(0.2, 0.8, 0.2, 1),
     opacity 200ms linear;
 }
+/*
+ * The settled column blooms once when the round won.
+ *
+ * §6.6 reference 3: the spheres are light sources sitting in dark liquid, so the
+ * honest way for the picture to say "this round returned more than it cost" is to
+ * turn the objects up. It is `opacity` on the emissive bleed each sphere already
+ * carries — no new colour, no rim light, nothing that touches the chrome (§6.3).
+ * Behind `celebrate`, like everything else in §9.
+ */
+.tube--won .orb--seated .orb__bleed {
+  animation: seated-bloom 1200ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes seated-bloom {
+  0% {
+    transform: scale(1);
+  }
+  22% {
+    transform: scale(1.55);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
 
 /* --------------------------------------------------- the celebrated close */
 
 /*
  * The prismatic burst. Behind `celebrate` — `roundPresentation`'s single
  * comparison — and voiced by tier rather than scaled by amount, exactly as §8
- * voices the chord: an ORDER win throws the full sixteen spokes, a FLOW win at
+ * voices the chord: an ORDER win throws the full eighteen wedges, a FLOW win at
  * 1.92× gets a quiet flare, and both are celebrations because both won.
+ *
+ * Round 1's version was ~250 ms of 1 px hairline rays that photographed as a
+ * lens-flare sketch. This one runs 1,400 ms, the wedges are 11 and 26 units wide
+ * with a gradient that fades to zero at the tip, an expanding gold ring rides out
+ * with them and the whole frame lifts — so the signature beat is a beat rather
+ * than a whisper, and every part of it is `transform` and `opacity`.
  */
 .burst {
   transform-box: fill-box;
@@ -849,24 +1051,27 @@ button {
   pointer-events: none;
 }
 .burst--on {
-  animation: burst-open 1100ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: burst-open 1400ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .burst--on[data-voicing='FLOW'] {
-  animation-duration: 760ms;
+  animation-duration: 980ms;
 }
 .burst--calm {
-  animation: burst-calm 700ms ease-out;
+  animation: burst-calm 900ms ease-out;
 }
 @keyframes burst-open {
   0% {
-    transform: scale(0.22);
+    transform: scale(0.18) rotate(-4deg);
     opacity: 0;
   }
-  16% {
-    opacity: 0.85;
+  14% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 0.62;
   }
   100% {
-    transform: scale(1.35);
+    transform: scale(1.5) rotate(4deg);
     opacity: 0;
   }
 }
@@ -875,17 +1080,58 @@ button {
     opacity: 0;
   }
   40% {
-    opacity: 0.35;
+    opacity: 0.4;
   }
   100% {
     opacity: 0;
   }
 }
 .burst[data-voicing='FLOW'] .burst__spokes {
-  opacity: 0.4;
+  opacity: 0.5;
 }
 .burst[data-voicing='FORM'] .burst__spokes {
-  opacity: 0.7;
+  opacity: 0.78;
+}
+/* The shock ring: one stroke, scaled and faded, never a growing stroke-width. */
+.burst__ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ring-out 1200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes ring-out {
+  0% {
+    transform: scale(0.1);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+/*
+ * The frame lift — §9 step 5's "full-frequency return", in the picture. One rect,
+ * one opacity keyframe, and it is the reason a win now reads at a glance in a
+ * still frame instead of only in motion.
+ */
+.cham-flash--on {
+  animation: flash-lift 900ms cubic-bezier(0, 0.7, 0.2, 1);
+}
+.cham-flash--on[data-voicing='FLOW'] {
+  animation-duration: 640ms;
+}
+@keyframes flash-lift {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 /*
@@ -947,6 +1193,12 @@ button {
   animation: none !important;
 }
 
+/*
+ * The stamp — §6.4's "multiplier scales 1.18 → 1.00" over 220 ms, on a plate that
+ * is machined gold rather than a translucent tooltip. The specular sweep is a
+ * `translateX` on a pre-rasterised gradient inside a clip, so the one thing that
+ * makes PVD gold read as metal costs no raster (§6.2, §7.1.1).
+ */
 .stamp {
   opacity: 0;
   transform-box: fill-box;
@@ -963,21 +1215,64 @@ button {
 }
 .stamp__value {
   font-size: var(--t-xl);
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.stamp__shine {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+}
+.stamp--on .stamp__shine {
+  animation: stamp-shine 900ms cubic-bezier(0.4, 0, 0.2, 1) 160ms;
+}
+@keyframes stamp-shine {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.75;
+  }
+  100% {
+    transform: translateX(300px);
+    opacity: 0;
+  }
 }
 
 /* -------------------------------------------------------------------- deck */
 
+/*
+ * The deck is a surface, not a hole.
+ *
+ * Round 1 left it transparent, so the whole lower half of the screen was hairline
+ * outlines floating on `--void` and the instrument's housing ran off the bottom of
+ * the frame with nothing to meet. It is a lit panel now — one cool wash at the top
+ * edge, one 1 px specular lip — which is what gives the controls something to sit
+ * on and what stops the chamber's bottom collar reading as a cut-off.
+ */
 .deck {
   margin-top: auto;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--deck-gap);
-  padding: 8px 12px 12px;
+  padding: 10px 12px 12px;
+  background:
+    linear-gradient(180deg, rgba(23, 64, 92, 0.34), rgba(10, 18, 32, 0.72) 34%, var(--void) 78%),
+    var(--void);
+  box-shadow: inset 0 1px 0 rgba(127, 166, 196, 0.26);
   transition: opacity 200ms ease;
   container-type: inline-size;
   container-name: deck;
+}
+/*
+ * S4 asks for the chamber, not the furniture. The pinned strip is the only thing
+ * the round screen needs from the deck (§2.1), so the panel itself steps back
+ * rather than the information on it — the strip is deliberately never dimmed.
+ */
+.app[data-mode='round'] .deck {
+  background: linear-gradient(180deg, rgba(10, 18, 32, 0.72), var(--void) 70%), var(--void);
 }
 
 /*
@@ -988,14 +1283,26 @@ button {
  */
 .tabs {
   display: flex;
-  gap: 4px;
+  /* The second half of §11's tap rule, and it is a rule about *separation*, not
+     only about size: three 44 px targets 4 px apart is three targets a thumb
+     can miss into. 8 px costs 4.6 px of width per tab and each one is still
+     116 px wide. */
+  gap: 8px;
   min-height: var(--tap);
   flex: none;
   border-bottom: 1px solid var(--edge-soft);
 }
+/*
+ * §11: ">= 44 x 44 with 8 px minimum separation ... everywhere, without
+ * exception". The container carried the floor and the tabs did not: with the 1 px
+ * rule on `.tabs` taking a pixel out of the content box they measured 119 x 43,
+ * and the repo has a commit specifically titled "make text scaling and the
+ * tap-target floor real". The floor belongs on the control.
+ */
 .tab {
   position: relative;
   flex: 1;
+  min-height: var(--tap);
   padding: 4px 2px 6px;
   border-radius: 3px 3px 0 0;
   display: flex;
@@ -1071,17 +1378,54 @@ button {
 /*
  * The rail scrolls horizontally, and a card sliced mid-glyph by the edge of the
  * screen reads as a broken layout rather than as "there is more". The fade makes
- * the cut deliberate. It is a `mask-image` on a container that never animates,
- * so it costs one raster at layout and nothing per frame.
+ * the cut deliberate, and §5 S1's wireframe puts an explicit `→` after the last
+ * visible chip, so there is one.
+ *
+ * The mask ends at fully transparent. Round 1 stopped it at `rgba(0,0,0,0.15)`,
+ * which is not a fade — the fourth card was still legibly sliced mid-glyph
+ * (`NEIGHB`, `two colou`, `STACK`) at the viewport edge. It is on the scroller
+ * rather than on the block so the arrow beside it is not masked out too, and
+ * neither element animates, so the mask costs one raster at layout.
  */
-.rail-block {
-  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 88%, rgba(0, 0, 0, 0.15) 100%);
-  mask-image: linear-gradient(90deg, #000 0, #000 88%, rgba(0, 0, 0, 0.15) 100%);
+.rail-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.rail-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 84%, rgba(0, 0, 0, 0) 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 84%, rgba(0, 0, 0, 0) 100%);
+}
+/*
+ * The arrow sits in a gutter, not on the rail.
+ *
+ * Round 2 put it in an absolutely positioned overlay at the scroller's right
+ * edge with a scrim behind it, and at the reference width the scrim reached the
+ * fourth chip while its name and price were still at ~39% alpha — so the mark
+ * that means "there is more" was printed across `STACK` and `4.80×`. A flex
+ * column costs 22 px of rail and overlaps nothing, and it is what §5 S1's
+ * wireframe draws.
+ */
+.rail-arrow {
+  flex: none;
+  width: 22px;
+  display: grid;
+  place-items: center;
+  font-size: var(--t-md);
+  color: var(--ink-dim);
+  /* An affordance, never a control: the scroll itself is the interaction. */
+  pointer-events: none;
 }
 @container deck (max-width: 21em) {
-  .rail-block {
+  .rail-scroll {
     -webkit-mask-image: none;
     mask-image: none;
+  }
+  .rail-arrow {
+    display: none;
   }
 }
 /*
@@ -1264,19 +1608,30 @@ button {
 }
 
 /*
- * The CTA: brushed steel, one thin highlight, and instant press feedback. Never
- * gold — §6.1 is explicit that gold never appears on a call to action, because
- * everything gold in this product means *settled and true* and a bet that has
- * not been placed is neither.
+ * The CTA: a filled, lit control — the most important tap on every screen, and
+ * round 1 gave it the same hollow dark rectangle with a 1 px grey border that
+ * COMMIT, ADD, REBET, NEW TICKET, VERIFY THIS ROUND, PAYTABLE and CLEAR ALL all
+ * shared. The app contained zero filled buttons. This one is filled with the
+ * chamber's own key light: `--brine-lit` → `--brine` → `--brine-deep`, a
+ * `--glass-edge` edge, one `--specular` lip and a cool outer glow, so it reads as
+ * lit glass rather than as an outline.
+ *
+ * Never gold — §6.1 is explicit that gold never appears on a call to action,
+ * because everything gold in this product means *settled and true* and a bet that
+ * has not been placed is neither. `--ink` on `--brine-lit` measures 9.2:1.
  */
 .cta {
   position: relative;
   min-height: 56px;
-  border-radius: 5px;
-  border: 1px solid var(--chrome-mid);
+  border-radius: 6px;
+  border: 1px solid var(--glass-edge);
   background:
-    linear-gradient(180deg, rgba(234, 243, 250, 0.16), rgba(122, 134, 149, 0.16) 52%, rgba(65, 75, 88, 0.2)),
-    var(--abyss);
+    linear-gradient(180deg, rgba(234, 243, 250, 0.3), rgba(234, 243, 250, 0) 44%),
+    linear-gradient(180deg, var(--brine-lit), var(--brine) 58%, var(--brine-deep));
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.5),
+    inset 0 -1px 0 rgba(5, 7, 12, 0.5),
+    0 4px 18px rgba(23, 64, 92, 0.55);
   color: var(--ink);
   font-size: var(--t-md);
   font-weight: 600;
@@ -1289,35 +1644,55 @@ button {
   overflow: hidden;
   flex: none;
 }
+/* The travelling sheen: one composited gradient on `transform`, nothing else. */
 .cta::before {
   content: '';
   position: absolute;
   top: 0;
-  left: 6%;
-  right: 6%;
-  height: 1px;
+  bottom: 0;
+  left: -40%;
+  width: 34%;
   background: linear-gradient(
-    90deg,
+    100deg,
     rgba(234, 243, 250, 0),
-    rgba(234, 243, 250, 0.6),
+    rgba(234, 243, 250, 0.22),
     rgba(234, 243, 250, 0)
   );
+  animation: cta-sheen 5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  pointer-events: none;
 }
+@keyframes cta-sheen {
+  0%,
+  62% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(420%);
+  }
+}
+/*
+ * Disabled, and still legible. §11's floor is written without an exemption, and
+ * round 1's disabled label measured 2.16:1 — `--ink-dim` on a filled slate is
+ * 6.8:1 and the control still reads plainly as unavailable, because the light
+ * has gone out of it.
+ */
 .cta:disabled {
   color: var(--ink-dim);
   border-color: var(--chrome-dark);
-  background: rgba(65, 75, 88, 0.12);
+  background: linear-gradient(180deg, rgba(65, 75, 88, 0.5), rgba(20, 26, 38, 0.9));
+  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.12);
   cursor: not-allowed;
 }
 .cta:disabled::before {
-  opacity: 0.25;
+  animation: none;
+  opacity: 0;
 }
 .cta__hairline {
   position: absolute;
   left: 0;
   bottom: 0;
-  height: 2px;
-  background: var(--chrome-mid);
+  height: 3px;
+  background: linear-gradient(90deg, var(--chrome-mid), var(--glass-edge));
   width: 0;
 }
 .cta__sub {
@@ -1374,7 +1749,7 @@ button {
   color: var(--ink-dim);
   border-left: 2px solid currentColor;
   transition:
-    opacity 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
     color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .line b {
@@ -1390,7 +1765,6 @@ button {
   /* Without this the cell refuses to shrink below its min-content width and the
      row overflows the screen by a pixel or two at large text scales. */
   min-width: 0;
-  opacity: 0.8;
 }
 .line u {
   text-decoration: none;
@@ -1403,10 +1777,28 @@ button {
 }
 .line[data-state='won'] {
   color: var(--gold);
-  opacity: 1;
 }
+/*
+ * A dead line is drawn in `--ink-dim`, and this is where §5 S5's "fade to 40%
+ * opacity" and §11's contrast floor had to be reconciled — in §11's favour,
+ * because §11 states its floor without an exemption and this strip is the primary
+ * money surface.
+ *
+ * Measured from rendered pixels, round 1's `opacity: 0.4` over `--ink-dim` put a
+ * dead line's stake and multiplier at **2.08:1** and, compounded with the 0.8 on
+ * the claim cell, put the claim text at **1.72:1** — against a published floor of
+ * 4.5:1 and a published `--ink-dim` of 7.81:1. So "dead" is carried by the things
+ * that cost no legibility: the colour steps back from `--ink` to `--ink-dim`, the
+ * left rail goes to `--chrome-dark`, and on S5 the row itself says
+ * `1.00 × 4.80×` where a won row says `returned 4.80`. The line still stays on
+ * screen, in place, and is never swept away or animated out (§10).
+ *
+ * Only `color` and `border-color` change, at §6.4's published 120 ms, identically
+ * for won and lost — the rule §2.1 cares about is intact.
+ */
 .line[data-state='lost'] {
-  opacity: 0.4;
+  color: var(--ink-dim);
+  border-left-color: var(--chrome-dark);
 }
 
 .result-head {
@@ -1458,10 +1850,17 @@ button {
   min-width: 0;
 }
 
+/*
+ * The secondary control: filled steel, so the app has a hierarchy rather than one
+ * outline repeated eight times. `.cta` is the lit primary; this is the machined
+ * face beside it; `.btn--quiet` is the tertiary, and it still has a visible box —
+ * round 1's quiet variant was bare text with a transparent border, so its hit
+ * area was invisible (`CLEAR` beside a bordered `RANDOMISE`, in the same row).
+ */
 .btn {
   min-height: var(--tap);
-  border: 1px solid var(--chrome-dark);
-  border-radius: 4px;
+  border: 1px solid var(--chrome-mid);
+  border-radius: 5px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1470,27 +1869,44 @@ button {
   font-size: var(--t-sm);
   letter-spacing: 0.08em;
   color: var(--ink);
-  background-image: var(--lift);
+  background:
+    linear-gradient(180deg, rgba(195, 206, 218, 0.2), rgba(195, 206, 218, 0.04) 46%),
+    linear-gradient(180deg, rgba(23, 64, 92, 0.4), rgba(10, 18, 32, 0.9));
+  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.24);
   transition:
     transform 60ms cubic-bezier(0.2, 0.8, 0.2, 1),
     border-color 140ms linear;
 }
 .btn:active:not(:disabled) {
-  border-color: var(--chrome-mid);
+  border-color: var(--specular);
 }
+/* §11's floor has no exemption, so a disabled control dims its fill, not its ink. */
 .btn:disabled {
   color: var(--ink-dim);
-  opacity: 0.5;
+  border-color: var(--chrome-dark);
+  background: linear-gradient(180deg, rgba(65, 75, 88, 0.4), rgba(20, 26, 38, 0.9));
+  box-shadow: none;
   cursor: not-allowed;
-  background-image: none;
 }
 .btn--wide {
   width: 100%;
 }
 .btn--quiet {
-  border-color: transparent;
+  border-color: var(--edge);
   color: var(--ink-dim);
-  background-image: none;
+  background: rgba(65, 75, 88, 0.26);
+  box-shadow: none;
+}
+/*
+ * A destructive action does not get the primary's treatment. `CLEAR ALL` sat in
+ * the full-width primary position with COMMIT's own styling, which is the one
+ * place a mis-tap costs the player their whole ticket.
+ */
+.btn--danger {
+  border-color: rgba(255, 107, 107, 0.55);
+  color: var(--alert);
+  background: linear-gradient(180deg, rgba(255, 107, 107, 0.16), rgba(20, 26, 38, 0.9));
+  box-shadow: none;
 }
 .btn[aria-pressed='true'] {
   border-color: var(--ink);
@@ -1529,13 +1945,27 @@ button {
   border-radius: 12px 12px 0 0;
   display: flex;
   flex-direction: column;
-  animation: sheet-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: sheet-slide 240ms cubic-bezier(0.16, 1, 0.3, 1);
   padding-bottom: env(safe-area-inset-bottom);
 }
 .sheet--full {
   height: 100dvh;
   max-height: 100dvh;
   border-radius: 0;
+}
+/*
+ * The sheet slides; it does not cross-fade.
+ *
+ * Round 1 animated `opacity` from 0 as well, so for about 100 ms two sets of text
+ * were legible on top of each other — the picker's `FIRST` / `FORM · one colour`
+ * over the deck's `0 lines · 0.00` and the chip rail. The sheet's own background
+ * is opaque, so sliding an opaque panel over the deck is the whole fix; the scrim
+ * behind it still fades.
+ */
+@keyframes sheet-slide {
+  from {
+    transform: translateY(28px);
+  }
 }
 @keyframes sheet-in {
   from {
@@ -1624,7 +2054,10 @@ button {
   justify-content: center;
   gap: 3px;
   padding: 6px 2px;
-  background: var(--lift);
+  background:
+    linear-gradient(180deg, rgba(195, 206, 218, 0.18), rgba(195, 206, 218, 0.03) 46%),
+    linear-gradient(180deg, rgba(23, 64, 92, 0.36), rgba(10, 18, 32, 0.88));
+  box-shadow: inset 0 1px 0 rgba(234, 243, 250, 0.2);
   transition:
     transform 60ms cubic-bezier(0.2, 0.8, 0.2, 1),
     border-color 140ms linear,
@@ -1709,13 +2142,29 @@ button {
   width: fit-content;
   min-width: 9em;
   align-self: center;
-  border: 1px solid var(--chrome-dark);
-  border-radius: 10px;
+  border: 1px solid rgba(127, 166, 196, 0.5);
+  border-radius: 12px;
   padding: 6px 5px;
+  /*
+   * The same lit liquid column the chamber's tube is, because §5 S2 B calls this
+   * "a picture of the tube" and "the single most important affordance in the game
+   * … every other picker inherits from it". A dark empty box with numbers in it is
+   * a number list wearing a border.
+   */
   background:
-    linear-gradient(90deg, rgba(5, 7, 12, 0.72), rgba(5, 7, 12, 0.28) 42%, rgba(5, 7, 12, 0.66)),
-    var(--abyss);
-  box-shadow: inset 0 0 0 1px rgba(127, 166, 196, 0.14);
+    linear-gradient(
+      90deg,
+      rgba(5, 7, 12, 0.78),
+      rgba(5, 7, 12, 0.2) 22%,
+      rgba(234, 243, 250, 0.07) 40%,
+      rgba(5, 7, 12, 0.24) 74%,
+      rgba(5, 7, 12, 0.72)
+    ),
+    linear-gradient(180deg, var(--brine-lit), var(--brine) 34%, var(--brine-deep));
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.4),
+    inset 0 0 0 1px rgba(127, 166, 196, 0.16),
+    0 6px 20px rgba(5, 7, 12, 0.6);
 }
 .slot-cell {
   position: relative;
@@ -1731,7 +2180,18 @@ button {
     background-color 140ms linear,
     color 140ms linear;
 }
-.slot-cell:first-child {
+/*
+ * `:last-child`, not `:first-child`.
+ *
+ * The strip is `column-reverse` (it fills bottom-up, like the real tube), so the
+ * DOM-first cell renders at the visual BOTTOM. Suppressing the divider on
+ * `:first-child` therefore took the line off slot 1 — leaving no division between
+ * slots 2 and 1 — while slot 5, DOM-last and visually topmost, kept a `border-top`
+ * that carved an empty ~30 px sliver inside the rounded frame above its numeral.
+ * Five cells, four lines, every one of them in the wrong place, on the picker for
+ * the headline 115.20× bet.
+ */
+.slot-cell:last-child {
   border-top: 0;
 }
 .slot-cell small {
@@ -1845,11 +2305,18 @@ button {
 }
 .kv {
   display: grid;
-  /* `minmax(0, …)` on both tracks: a 116 px fixed label column is 130 px of text
-     at 200% scaling, and a grid item that cannot shrink runs straight into its
-     value — `REMAINING900`, found in the 200% pass. */
-  grid-template-columns: minmax(0, 116px) minmax(0, 1fr);
-  gap: 5px 10px;
+  /*
+   * `minmax(0, …)` on both tracks: a fixed label column is wider than its box at
+   * 200% scaling, and a grid item that cannot shrink runs straight into its value
+   * — `REMAINING900`, found in the 200% pass.
+   *
+   * The label track is `em` rather than px and wide enough for the longest label
+   * the fairness sheet actually has. At 116 px `SEED COMMITMENT` and `SETTLEMENT
+   * DIGEST` wrapped to two lines while `RECEIPT DIGEST` did not, so the rows had
+   * ragged heights and the values no longer shared a baseline with their labels.
+   */
+  grid-template-columns: minmax(0, 10.4em) minmax(0, 1fr);
+  gap: 6px 10px;
   font-size: var(--t-xs);
 }
 .kv dt {
@@ -1942,10 +2409,25 @@ table.paytable tr[data-tier='ORDER'] td:first-child {
   color: var(--gold);
 }
 
-/* S3 — one row per line: the chip, the claim in words, stake × multiplier. */
+/*
+ * S3 — one row per line: the chip, the claim in words, stake × multiplier.
+ *
+ * The money column right-aligns to the sheet's own content edge, which is the
+ * same edge the BEST POSSIBLE OUTCOME card below it sits on. Round 1 reserved a
+ * ~106 px gutter on the right for a bare `×` button, so every stake and
+ * multiplier in the sheet stopped at x ≈ 650 while the card's edge was at 756 —
+ * figures aligned to nothing, reading as randomly indented. The remove control
+ * moved into the claim column, where it also stopped being an unlabelled glyph
+ * on a destructive action.
+ */
+.ticket-row {
+  align-items: flex-start;
+  padding: 10px 0;
+}
 .ticket-row__claim {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
   min-width: 0;
 }
@@ -1965,12 +2447,30 @@ table.paytable tr[data-tier='ORDER'] td:first-child {
 .ticket-row__hit {
   color: var(--ink-dim);
 }
+/*
+ * A control with an invisible hit area is the defect this sheet was already
+ * carrying twice, so the labelled remove does not repeat it: it has a box, it is
+ * `--tap` tall, and it is self-aligned so the box is only as wide as its label.
+ */
 .ticket-row__remove {
-  flex: none;
-  width: var(--tap);
-  min-width: var(--tap);
-  height: var(--tap);
-  padding: 0;
+  min-height: var(--tap);
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: rgba(65, 75, 88, 0.22);
+  color: var(--ink-dim);
+  font-size: var(--t-xxs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: border-color 140ms linear;
+}
+.ticket-row__remove:active {
+  color: var(--alert);
+  border-color: rgba(255, 107, 107, 0.55);
 }
 /* The tier travels with the line into S3, on the same cool-to-hot scale. */
 .history-row[data-tier='FLOW'],
@@ -2143,8 +2643,17 @@ table.paytable td.pays {
     display: none;
   }
   .tube--flex,
-  .pulse--on {
-    animation: none;
+  .pulse--on,
+  .burst__ring,
+  .stamp--on .stamp__shine,
+  .tube--won .orb--seated .orb__bleed,
+  .cta::before,
+  .tube-caustic,
+  .caustic-churn,
+  .chamber[data-beat='charge'] .caustic-churn,
+  .chamber[data-beat='agitate'] .caustic-churn,
+  .bubbles--tube circle {
+    animation: none !important;
   }
   .tube-rim {
     transform: scaleY(1);
@@ -2152,8 +2661,48 @@ table.paytable td.pays {
   .tube-rim--lit {
     transition: opacity 260ms linear;
   }
+  /*
+   * The frame lift keeps its calm variant rather than being removed: it is one
+   * `opacity` ramp with no travel and no flicker — 10% in, out over 900 ms — and
+   * it is the only channel left telling a reduced-motion player, in the picture,
+   * that the round won.
+   */
+  .cham-flash--on {
+    animation: flash-calm 900ms ease-out;
+  }
+  @keyframes flash-calm {
+    0% {
+      opacity: 0;
+    }
+    30% {
+      opacity: 0.4;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  /*
+   * The chamber's growth is a 320 ms transform on four groups. `prefers-reduced-
+   * motion` is a vestibular preference, and a large object gliding across most of
+   * the viewport is exactly what it exists to suppress — so the groups jump to
+   * their new place instead, which is the calm variant of the beat rather than the
+   * absence of it.
+   */
+  .cham-fit,
+  .cham-stretch,
+  .cham-bottom,
+  .column,
+  .column-bg {
+    transition: none;
+  }
+  /*
+   * The press feedback stays. 2.5% of scale on the element under the finger is not
+   * vestibular motion, and round 1 removed it — which left reduced-motion players
+   * with the only press feedback in the app switched off, on a game whose whole
+   * feel claim is that every tap answers.
+   */
   button:active:not(:disabled) {
-    transform: none;
+    transform: scale(0.975);
   }
 }
 

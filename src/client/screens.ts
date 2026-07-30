@@ -61,16 +61,25 @@ export function openTicketReview(options: {
       const returnIfHit =
         (line.stakeChips * BigInt((bet?.multiplier ?? '0/1').split('/')[0] ?? '0')) /
         BigInt((bet?.multiplier ?? '0/1').split('/')[1] ?? '1');
-      return `<div class="history-row" data-tier="${esc(bet?.tier ?? '')}">
+      /*
+       * The remove control sits in the claim column, not in a right-hand gutter.
+       *
+       * Round 1 reserved ~106 px on the right for a bare `×`, so every figure in
+       * the money column stopped 106 px short of the sheet's own content edge —
+       * the edge the BEST POSSIBLE OUTCOME card below sits on — and the stakes and
+       * multipliers read as randomly indented rather than as a column. It is also
+       * a destructive action, and a labelled control is the right shape for one.
+       */
+      return `<div class="history-row ticket-row" data-tier="${esc(bet?.tier ?? '')}">
         <div class="ticket-row__claim">
           <b>${esc(bet?.name ?? line.code)}</b>
           <span>${esc(claimSummary(variant, line.code, line.params))}</span>
+          <button class="ticket-row__remove" data-remove="${index}" aria-label="Remove this line">× REMOVE</button>
         </div>
         <div class="net ticket-row__money">
           <div>${esc(credits(line.stakeChips))} × ${esc(multiplier)}</div>
           <div class="ticket-row__hit">returns ${esc(credits(returnIfHit))}</div>
         </div>
-        <button class="btn btn--quiet ticket-row__remove" data-remove="${index}" aria-label="Remove this line">×</button>
       </div>`;
     })
     .join('');
@@ -90,7 +99,13 @@ export function openTicketReview(options: {
             : ' Some of these lines cannot hit together, so their sum is an amount the game cannot pay.'
         }</p>
       </div>`,
-    foot: '<button class="btn btn--wide" data-clear-all>CLEAR ALL</button>',
+    /*
+     * A destructive action does not wear the primary CTA's clothes. Round 1 put
+     * `CLEAR ALL` full-width in the position and the styling COMMIT and ADD use,
+     * which is the one control in the sheet where a mis-tap costs the whole
+     * ticket. It keeps its second confirm and takes the danger treatment.
+     */
+    foot: '<button class="btn btn--danger btn--wide" data-clear-all>CLEAR ALL</button>',
     onMount(root, close) {
       on(root, '[data-remove]', 'click', (_event, node) => {
         options.onRemove(Number(node.dataset.remove));

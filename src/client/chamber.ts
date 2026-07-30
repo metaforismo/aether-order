@@ -17,10 +17,10 @@
  *
  * | §7 asks for | Here |
  * | --- | --- |
- * | fluid shader with a domain-warped caustic | two counter-drifting layers of soft elliptical gradients, `transform`-animated |
- * | refraction resample of the sphere layer | the tube's front glass — wall bands, a lens gradient at each inner wall, and a broad sheen that crosses every seated sphere (§6.2's glass read is "a 6 px inner edge gradient plus one thin highlight", never a full glass shader) |
+ * | fluid shader with a domain-warped caustic | two counter-drifting layers of soft elliptical gradients plus a caustic band stack inside the tube, all `transform`-animated |
+ * | refraction resample of the sphere layer | the tube's front glass — wall bands, a cylinder shading pass, a meniscus at each end and a broad sheen that crosses every seated sphere (§6.2's glass read is "a 6 px inner edge gradient plus one thin highlight", never a full glass shader) |
  * | bloom via bright-pass + blur | an emissive bleed baked into each sphere's own gradient stack (`sphere.ts`), which is where §6.3 says bloom is allowed to touch and nowhere else |
- * | 256 point sprites | 22 closed-form bubbles, CSS-keyframed, alive only through CHARGE and AGITATE |
+ * | 256 point sprites | 22 closed-form bubbles in the chamber plus 10 inside the tube, CSS-keyframed, alive only through CHARGE and AGITATE |
  * | `pulses[8]` displacement | one expanding ring of light per lock plus §6.4's 2 px chamber flex, both `transform` and `opacity` |
  *
  * **No SVG filter appears anywhere in this file.** Every soft edge is a gradient
@@ -29,6 +29,31 @@
  * layers, because anything that invalidates raster is re-uploaded every frame. A
  * `feGaussianBlur` over the chamber rect would break that rule the first time
  * something moved underneath it.
+ *
+ * ## The chamber is drawn once, and every mode change is a transform
+ *
+ * Round 1 of the art pass redrew the whole instrument whenever the layout gave
+ * the stage a different height — which is every mode change, twice a round. The
+ * drawing snapped from about 470 to 625 CSS px inside one frame on the largest
+ * element on screen, the multiplier stamp visibly slid as the result deck
+ * mounted, and the measured layout shift was 0.176 per round against a 0.1
+ * threshold. That is exactly the layout animation the frame budget forbids.
+ *
+ * So the geometry is now split into four groups by *how they must respond* when
+ * the visible band changes, and the response is a `transform` on a pre-promoted
+ * group in every case:
+ *
+ * | Group | Responds by | Why |
+ * | --- | --- | --- |
+ * | `.cham-stretch` | `scaleY` about the viewBox origin | the glass body, the liquid and the caustics are low-frequency fields; stretching them is what a taller vessel looks like |
+ * | `.cham-top` | nothing | the top collar is machined steel at a fixed distance from the housing's top edge |
+ * | `.cham-bottom` | `translateY` | so is the bottom collar, and the base plate's caustic sits on it |
+ * | `.column` | `translateY` | the tube, the spheres, the rings and the stamp keep their published pitch and diameter at every height, and stay centred in whatever band is visible |
+ *
+ * `render()` therefore runs once per (variant, viewport) and `fit()` runs on
+ * every layout change, writing three custom properties. Nothing is re-parsed,
+ * no state is restored, the stamp never moves relative to the tube, and the
+ * growth from S1 to S4 is one 320 ms transform.
  *
  * ## Three rules this file exists to keep
  *
@@ -57,7 +82,7 @@
  * "fixed": §6.9 gives SEVEN a 390-tall chamber and a tube of `n × 58 + 24` = 430,
  * which does not fit inside it. This renderer keeps the pitch and the sphere
  * diameter — the two numbers readability depends on — and lets the chamber be at
- * least as tall as its tube.
+ * least as tall as its tube plus both collars.
  */
 
 import type { WinVoicing } from './audio.js';
@@ -73,40 +98,56 @@ const COLLAR = 28;
 const WIDTH = 390;
 const CENTRE_X = 195;
 const IMPELLER_RADIUS = 48;
-
 /**
- * §6.9 puts the impellers at (72, 88) and (318, 342) in a 390 × 430 chamber.
- * Held as fractions of the chamber height so the pair stays diagonally opposed
- * and symmetric when the chamber grows to fill S4's full-bleed stage.
+ * The headroom the shortest chamber keeps above and below the tube.
+ *
+ * 12 rather than a full collar's 28: on the 390 × 844 reference device the home
+ * screen's stage is 442 CSS px and the tube plus both collars is 470, so demanding
+ * clearance for the collars would put S1 permanently in the scale-down regime. The
+ * bands overlap the tube's rim instead — which is what a tube passing *through* a
+ * machined collar looks like, and the column is drawn over them.
  */
-const IMPELLER_Y = [88 / 430, 342 / 430] as const;
+const COLLAR_CLEAR = 12;
 
 /** One revolution per 1.6 s at full speed, in radians per second. */
 const IMPELLER_OMEGA = (Math.PI * 2) / 1.6;
 
 /** How long the prismatic burst runs. Mirrors `burst-open` in styles.css. */
-const BURST_MS = 1100;
+const BURST_MS = 1400;
 
 /**
  * Where the spheres drift while the tube is empty: a lane (x) and a fraction of
- * the chamber height. The left lane sits below the top-left impeller and the
- * right lane above the bottom-right one, so no sphere is ever parked on top of
- * the machinery in either variant or at any chamber height (§6.9).
+ * the **tube's** vertical extent.
  *
- * The fractions are spaced by one sphere diameter within a lane and start low
- * enough that the topmost sphere clears the 28 px collar. Round 1's first
- * fraction was 0.16, which put a 64 px sphere's top edge exactly on the collar's
- * bottom line — fine while the only motion was a 8 px CSS drift, and a sphere
- * sliding over the machined steel the moment there was real turbulence.
+ * The fractions are relative to the tube rather than to the chamber because the
+ * tube is the one band guaranteed to be visible at every layout: `.column` is
+ * centred in whatever the deck leaves, so a sphere parked at a fraction of the
+ * *drawing* height would be clipped on the home screen and visible during the
+ * round. Two lanes, inset far enough from the walls that turbulence has room to
+ * swing both ways, and clear of both impellers in x.
  */
 const DRIFT: readonly (readonly [number, number])[] = [
-  [308, 0.19],
-  [82, 0.44],
-  [308, 0.34],
-  [82, 0.61],
-  [308, 0.49],
-  [82, 0.78],
-  [308, 0.64],
+  [285, 0.14],
+  [105, 0.56],
+  [285, 0.32],
+  [105, 0.74],
+  [285, 0.5],
+  [105, 0.86],
+  [285, 0.66],
+];
+
+/**
+ * The impellers, as fractions of the tube's extent (§6.9: diagonally opposed, off
+ * the tube's axis, "so neither ever sits behind a sphere at rest").
+ *
+ * Top-left and bottom-right, which is what puts the resting spheres on the
+ * opposite diagonal: the right lane holds the upper ones and the left lane the
+ * lower ones, and the closest sphere-to-impeller centre distance is 98 units
+ * against a 80-unit sum of radii in CLASSIC.
+ */
+const IMPELLER_AT: readonly (readonly [number, number])[] = [
+  [72, 0.16],
+  [318, 0.84],
 ];
 
 export type Beat = 'idle' | 'charge' | 'agitate' | 'settle' | 'close' | 'done';
@@ -118,6 +159,29 @@ export type Beat = 'idle' | 'charge' | 'agitate' | 'settle' | 'close' | 'done';
  * must be voiced by the same thing — §8 and §9 describe one ladder, not two.
  */
 export type Voicing = WinVoicing;
+
+/**
+ * Keep a displacement inside a sphere's room, **without ever pinning it there**.
+ *
+ * A hard `min`/`max` is the obvious version and it is wrong for a fluid: the
+ * amplitude §6.4's envelope asks for is larger than the headroom the sphere
+ * nearest the top collar actually has, so a frame dump of the agitation caught
+ * that sphere resting at exactly `-38.00 px` for consecutive frames — a body in
+ * turbulent liquid stopped dead against an invisible ceiling, twice a beat.
+ *
+ * `tanh` is the same bound applied smoothly. Its slope at zero is 1, so the
+ * published motion is untouched anywhere near the middle of the room; it bends
+ * as it approaches the wall and asymptotes to it, so the sphere decelerates into
+ * the boundary and turns around instead of sticking to it. Each side is scaled
+ * by its own limit, because the room is asymmetric — the sphere with 38 px above
+ * it has 250 px below.
+ */
+function bounded(value: number, low: number, high: number): number {
+  if (value === 0) return 0;
+  const limit = value > 0 ? high : -low;
+  if (limit <= 0) return 0;
+  return Math.sign(value) * limit * Math.tanh(Math.abs(value) / limit);
+}
 
 /** Deterministic 0..1 stream, so the bubble field is stable across renders. */
 function stream(seed: number): () => number {
@@ -135,7 +199,12 @@ function stream(seed: number): () => number {
 export class Chamber {
   readonly #root: HTMLElement;
   #variant: VariantInfo | null = null;
-  #height = 430;
+  /** The drawing's height in viewBox units — the reference box, not the crop. */
+  #height = 486;
+  /** The reference box in CSS pixels the drawing was sized for. */
+  #box = 486;
+  #tubeTop = 0;
+  #tubeHeight = 0;
   #slots: number[] = [];
   #orbs = new Map<number, SVGGElement>();
   #orbY = new Map<number, SVGGElement>();
@@ -147,8 +216,9 @@ export class Chamber {
   #numerals = new Map<number, SVGTextElement>();
   #impellers: SVGGElement[] = [];
   #tube: SVGGElement | null = null;
-  #rim: SVGRectElement | null = null;
+  #rim: SVGGElement | null = null;
   #burst: SVGGElement | null = null;
+  #flash: SVGRectElement | null = null;
   #stamp: SVGGElement | null = null;
   #motes: HTMLElement | null = null;
   #svg: SVGSVGElement | null = null;
@@ -178,13 +248,12 @@ export class Chamber {
    * `motesHost` lives in the stage rather than inside the chamber's own markup,
    * and that is a bug fix rather than a preference.
    *
-   * The chamber is redrawn whenever the space the layout gives it changes, and
-   * one of those moments is the switch from S4 to S5 — about 220 ms after the
-   * celebration starts, because the deck grows from one pinned row to a headline
-   * plus buttons. A shower owned by the chamber's `innerHTML` was therefore
-   * deleted a fifth of a second into a three-second fall, every single time. The
-   * frame dump is how that was found; the container outliving the redraw is the
-   * fix.
+   * The chamber used to be redrawn whenever the space the layout gave it changed,
+   * and one of those moments was the switch from S4 to S5 — about 220 ms after
+   * the celebration starts. A shower owned by the chamber's `innerHTML` was
+   * therefore deleted a fifth of a second into a three-second fall, every single
+   * time. The redraw is gone now (see the header), and the container still
+   * outlives it: the variant toggle and a rotation both still redraw.
    */
   constructor(root: HTMLElement, motesHost?: HTMLElement | null) {
     this.#root = root;
@@ -200,9 +269,14 @@ export class Chamber {
     return this.#height;
   }
 
-  /** The shortest chamber that still holds this variant's tube. */
+  /** The reference box, in CSS pixels, this drawing was built for. */
+  get box(): number {
+    return this.#box;
+  }
+
+  /** The shortest chamber that still holds this variant's tube and both collars. */
   minHeight(variant: VariantInfo): number {
-    return variant.n * variant.geometry.slotPitch + TUBE_RIM * 2 + 16;
+    return variant.n * variant.geometry.slotPitch + TUBE_RIM * 2 + COLLAR_CLEAR * 2;
   }
 
   /** Centre y of slot `k`, 1-indexed from the bottom of the tube. */
@@ -213,108 +287,165 @@ export class Chamber {
   /* ----------------------------------------------------------------- draw -- */
 
   /**
-   * Draw the chamber at `height` viewBox units tall.
+   * Draw the chamber for a reference box `box` CSS pixels tall.
    *
-   * S4 asks the chamber to go full-bleed, and an SVG with a fixed viewBox in a
-   * taller box letterboxes instead — two bands of dead page background that read
-   * as a layout bug rather than as a crop. So the *chamber* grows with the space
-   * the layout gives it while the tube keeps its slot pitch and its sphere
-   * diameter, which are the two numbers readability depends on.
+   * The drawing is sized so its aspect ratio matches the holder exactly — the
+   * holder is `box` tall and the full app width — which means the SVG scale is
+   * `width / 390` with no letterbox in either axis, and one viewBox unit is one
+   * device-independent pixel at the reference 390 px width.
+   *
+   * Called once per (variant, viewport). Everything the layout does after that
+   * goes through `fit`.
    */
-  render(variant: VariantInfo, height?: number): void {
+  render(variant: VariantInfo, box?: number): void {
     this.#variant = variant;
     mountOrbDefs(variant.elements);
     const { n } = variant;
     const pitch = variant.geometry.slotPitch;
     const diameter = variant.geometry.sphereDiameter;
     const tubeHeight = n * pitch + TUBE_RIM * 2;
-    const floor = tubeHeight + 16;
-    // Enough headroom to fill S4's stage on the 390 x 844 reference device
-    // without the chamber turning into an arbitrarily tall column on a desktop
-    // window the game is not designed for (§5: portrait only).
-    const ceiling = Math.round(floor * 1.8);
-    const chamberHeight = Math.round(Math.min(ceiling, Math.max(floor, height ?? floor)));
-    this.#height = chamberHeight;
+    const floor = this.minHeight(variant);
+    const scale = (this.#root.clientWidth || WIDTH) / WIDTH;
+    const wanted = box === undefined ? floor : box / (scale || 1);
+    // A ceiling as well as a floor: the game is portrait-only (§5) and a desktop
+    // window it was not designed for should not turn the instrument into an
+    // arbitrarily tall column.
+    const height = Math.round(Math.min(floor * 1.95, Math.max(floor, wanted)));
+    this.#height = height;
+    this.#box = box === undefined ? Math.round(height * scale) : box;
+    this.#tubeHeight = tubeHeight;
+    // The holder is given the drawing's exact aspect so the SVG's `meet` fit has
+    // no letterbox in either axis and one viewBox unit is one CSS pixel at the
+    // reference 390 px width. The stage's `overflow: hidden` supplies the crop.
+    this.#root.style.height = `${(height * (scale || 1)).toFixed(2)}px`;
 
     const glassTop = 8;
-    const glassHeight = chamberHeight - 16;
-    const tubeTop = Math.round((chamberHeight - tubeHeight) / 2);
+    const glassHeight = height - 16;
+    const tubeTop = Math.round((height - tubeHeight) / 2);
     const tubeBottom = tubeTop + tubeHeight;
+    this.#tubeTop = tubeTop;
     this.#slots = Array.from(
       { length: n },
       (_unused, index) => tubeBottom - TUBE_RIM - (index + 0.5) * pitch,
     );
 
     this.#root.innerHTML = `
-      <svg class="chamber" viewBox="0 0 ${WIDTH} ${chamberHeight}" preserveAspectRatio="xMidYMid meet" data-beat="idle" role="img" aria-label="Chamber with ${n} spheres and a ${n}-slot tube">
-        <defs>${this.#defs(chamberHeight, glassTop, glassHeight, tubeTop, tubeHeight)}</defs>
-        <rect x="0" y="0" width="${WIDTH}" height="${chamberHeight}" fill="var(--void)"/>
-        <!-- The back plate: --abyss, so the liquid has something behind it. -->
-        <rect x="16" y="${glassTop}" width="${WIDTH - 32}" height="${glassHeight}" rx="24" fill="var(--abyss)"/>
-        <g clip-path="url(#glass-clip)">
-          <rect class="liquid" x="16" y="${glassTop}" width="${
-            WIDTH - 32
-          }" height="${glassHeight}" fill="url(#brine)"/>
-          ${this.#lightShaft(chamberHeight)}
-          ${this.#impeller(72, Math.round(chamberHeight * IMPELLER_Y[0]))}
-          ${this.#impeller(318, Math.round(chamberHeight * IMPELLER_Y[1]))}
-          ${this.#caustics(chamberHeight)}
-          ${this.#bubbles(chamberHeight)}
-          <!-- CHARGE deepens the liquid tint 8% (§6.4). Opacity, nothing else. -->
-          <rect class="tint" x="16" y="${glassTop}" width="${
-            WIDTH - 32
-          }" height="${glassHeight}" fill="var(--brine-deep)"/>
-          ${this.#collars(chamberHeight, glassTop, glassHeight)}
-          <!--
-            §6.9's one specular line: 1 px --specular at x = 135, from the top
-            collar to 60% depth. §6.6 reference 1 calls this the whole glass
-            read; everything else in the chamber is gradient. §6.6 reference 2
-            adds the constraint that keeps it that way: if the composition has
-            two shiny things competing, delete one. So the tube's own highlight
-            below is a soft sheen and never a second hard line.
-          -->
-          <line x1="135" y1="${glassTop + COLLAR}" x2="135" y2="${
-            glassTop + glassHeight * 0.6
-          }" stroke="var(--specular)" stroke-width="1" opacity="0.42"/>
-          <g class="tube" data-tube>
-            ${this.#tubeBack(tubeTop, tubeHeight, pitch)}
-            ${this.#lockRings(pitch)}
-            ${this.#spheres(variant, chamberHeight, diameter)}
-            ${this.#tubeGlass(tubeTop, tubeHeight)}
-            <rect class="tube-rim" x="${TUBE_X - 2}" y="${tubeTop - 2}" width="${
-              TUBE_WIDTH + 4
-            }" height="${tubeHeight + 4}" rx="10" fill="none" stroke="url(#rim-gold)" stroke-width="2"/>
-            ${this.#lockPulses(pitch)}
-          </g>
-          ${this.#burstMarkup(chamberHeight)}
-        </g>
-        <!--
-          The cylinder read, and the last thing over the liquid: a 1 px edge
-          tint plus §6.2's 6 px inner edge gradient, bright at both walls and
-          empty in the middle. That gradient is what makes 358 px of flat
-          rectangle read as borosilicate rather than as a box.
-        -->
-        <rect x="16" y="${glassTop}" width="${
-          WIDTH - 32
-        }" height="${glassHeight}" rx="24" fill="none" stroke="var(--glass-edge)" stroke-opacity="0.5" stroke-width="1"/>
-        <rect x="19" y="${glassTop + 3}" width="${WIDTH - 38}" height="${
-          glassHeight - 6
-        }" rx="21" fill="none" stroke="url(#glass-wall)" stroke-width="6"/>
-        <g class="stamp-at" transform="translate(${CENTRE_X},${Math.round(chamberHeight / 2)})">
-          <g class="stamp">
-            <rect class="stamp__glow" x="-118" y="-46" width="236" height="92" rx="46" fill="url(#stamp-glow)"/>
+      <svg class="chamber" viewBox="0 0 ${WIDTH} ${height}" preserveAspectRatio="xMidYMid meet" data-beat="idle" role="img" aria-label="Chamber with ${n} spheres and a ${n}-slot tube">
+        <defs>${this.#defs(height, glassTop, glassHeight, tubeTop, tubeHeight, pitch)}</defs>
+        <rect x="0" y="0" width="${WIDTH}" height="${height}" fill="var(--void)"/>
+        <g class="cham-fit">
+          <g class="cham-stretch">
+            <g clip-path="url(#glass-clip)">
+              <!-- The back plate: --abyss, so the liquid has something behind it. -->
+              <rect x="16" y="${glassTop}" width="${WIDTH - 32}" height="${glassHeight}" fill="var(--abyss)"/>
+              <rect class="liquid" x="16" y="${glassTop}" width="${
+                WIDTH - 32
+              }" height="${glassHeight}" fill="url(#brine)"/>
+              ${this.#lightShaft(height)}
+              ${this.#caustics(height)}
+              ${this.#bubbles(height)}
+              <!-- CHARGE deepens the liquid tint 8% (§6.4). Opacity, nothing else. -->
+              <rect class="tint" x="16" y="${glassTop}" width="${
+                WIDTH - 32
+              }" height="${glassHeight}" fill="var(--brine-deep)"/>
+              <!--
+                The vignette, and it is §6.1's first sentence rather than a mood:
+                "the whole world is neutral so the spheres are the only colour",
+                with one faint volumetric key from above. Without it 358 px of
+                mid-brine reads as a flat lit box and the objects inside it stop
+                being the brightest thing in the frame.
+              -->
+              <rect class="vignette" x="16" y="${glassTop}" width="${
+                WIDTH - 32
+              }" height="${glassHeight}" fill="url(#vignette)"/>
+            </g>
             <!--
-              The plate is translucent on purpose. §9 step 5 stamps the figure
-              "over the tube", and in CLASSIC the tube's centre is a slot — so an
-              opaque plate hides one sphere of the settled column on the screen
-              whose whole job is to be the record of the round (§5 S5). At 0.84 the
-              sphere behind reads through as a glow and the numerals still clear
-              their contrast floor against it.
+              The cylinder read, and the last thing over the liquid: a 1 px edge
+              tint plus §6.2's 6 px inner edge gradient, bright at both walls and
+              empty in the middle. That gradient is what makes 358 px of flat
+              rectangle read as borosilicate rather than as a box.
             -->
-            <rect class="stamp__plate" x="-72" y="-25" width="144" height="50" rx="5" fill="rgba(5,7,12,0.84)" stroke="var(--gold)" stroke-width="1.5"/>
-            <rect class="stamp__inner" x="-68" y="-21" width="136" height="42" rx="3" fill="none" stroke="var(--gold-hot)" stroke-width="0.75" stroke-opacity="0.45"/>
-            <text class="stamp__value" text-anchor="middle" y="9" fill="var(--gold-hot)"></text>
+            <rect x="16" y="${glassTop}" width="${
+              WIDTH - 32
+            }" height="${glassHeight}" rx="24" fill="none" stroke="var(--glass-edge)" stroke-opacity="0.55" stroke-width="1"/>
+            <rect x="19" y="${glassTop + 3}" width="${WIDTH - 38}" height="${
+              glassHeight - 6
+            }" rx="21" fill="none" stroke="url(#glass-wall)" stroke-width="6"/>
           </g>
+          <!--
+            The machinery. It rides the column's translate and NOT the body's
+            scaleY — an impeller inside .cham-stretch is a circle squashed to
+            an ellipse at every layout but the tallest, which is what the first
+            frame dump of this rebuild showed. It sits over the liquid and under
+            the collars and the tube, so the collar lip still crosses in front of
+            it and it still reads as silhouette and motion (§6.9).
+          -->
+          <g class="column-bg">
+            <g clip-path="url(#glass-clip)">
+              ${IMPELLER_AT.map(([cx, fraction]) =>
+                this.#impeller(cx, Math.round(tubeTop + fraction * tubeHeight)),
+              ).join('')}
+            </g>
+          </g>
+          <g class="cham-top">${this.#collar(glassTop, 'top')}</g>
+          <g class="cham-bottom">
+            ${this.#collar(height - glassTop - COLLAR, 'bottom')}
+            <g class="floor-caustic-at" transform="translate(${CENTRE_X},${
+              height - glassTop - COLLAR - 12
+            })">
+              <ellipse class="floor-caustic" rx="152" ry="30" fill="url(#floor-caustic)"/>
+            </g>
+          </g>
+          <g class="column">
+            <!--
+              §6.9's one specular line: 1 px --specular at x = 135, from the top
+              collar to 60% depth. §6.6 reference 1 calls this the whole glass
+              read; everything else in the chamber is gradient. The stroke is a
+              gradient that fades to zero at its lower end — at a flat 0.42 it
+              terminated hard in mid-air over the back plate and read as a
+              leftover guide rather than as glass.
+            -->
+            <line x1="135" y1="${tubeTop - 24}" x2="135" y2="${
+              tubeTop + tubeHeight * 0.62
+            }" stroke="url(#specular-fade)" stroke-width="1"/>
+            <!--
+              The burst is BEHIND the tube, and that is the same argument the
+              stamp's placement makes.
+
+              Drawn over the column it threw eighteen wedges at 95% and a 142-unit
+              core straight across the settled spheres, and a frame dump of the
+              hero moment of a win showed slots 3 and 4 washed to pale discs with
+              their etched glyphs gone. §11 is unconditional that the glyph *is*
+              the colour-blind channel — "a build that drops a glyph has dropped
+              the channel, not a decoration" — and the celebration is the one
+              moment that may not take the record of the round away (§5 S5).
+              Behind the column the same light reads as light thrown *through*
+              the chamber, which is what §9 asks for and what a prism actually
+              does; the tube is 96 units of 390, so the wedges lose nothing.
+            -->
+            ${this.#burstMarkup(tubeTop, tubeHeight)}
+            <g class="tube" data-tube>
+              ${this.#tubeBack(tubeTop, tubeHeight, pitch)}
+              ${this.#lockRings(pitch)}
+              ${this.#spheres(variant, tubeTop, tubeHeight, diameter)}
+              ${this.#tubeGlass(tubeTop, tubeHeight)}
+              <g class="tube-rim">
+                <rect class="tube-rim__bloom" x="${TUBE_X - 14}" y="${tubeTop - 14}" width="${
+                  TUBE_WIDTH + 28
+                }" height="${tubeHeight + 28}" rx="20" fill="url(#rim-bloom)"/>
+                <rect class="tube-rim__line" x="${TUBE_X - 2}" y="${tubeTop - 2}" width="${
+                  TUBE_WIDTH + 4
+                }" height="${tubeHeight + 4}" rx="10" fill="none" stroke="url(#rim-gold)" stroke-width="3"/>
+              </g>
+              ${this.#lockPulses(pitch)}
+            </g>
+            ${this.#stampMarkup(pitch, diameter)}
+          </g>
+          <!--
+            The celebrated close's full-frame lift. One rect, one opacity
+            keyframe, behind "celebrate" like everything else in §9.
+          -->
+          <rect class="cham-flash" x="0" y="0" width="${WIDTH}" height="${height}" fill="url(#flash)" opacity="0"/>
         </g>
       </svg>`;
 
@@ -327,18 +458,28 @@ export class Chamber {
     this.#pulses = new Map();
     this.#numerals = new Map();
     const radius = diameter / 2;
-    const safeTop = glassTop + COLLAR + radius + 4;
-    const safeBottom = glassTop + glassHeight - COLLAR - radius - 4;
+    /*
+     * The travel window, in column-local units.
+     *
+     * `.column` is translated so the tube is centred in whatever band the deck
+     * leaves, and the narrowest band the layout can produce is the tube plus
+     * `COLLAR_CLEAR` at each end. So a sphere that stays inside that window is
+     * on screen at every mode — which is the property round 1's chamber-fraction
+     * positions did not have, because they were expressed against a drawing
+     * height that changed underneath them.
+     */
+    const safeTop = tubeTop - COLLAR_CLEAR + radius;
+    const safeBottom = tubeTop + tubeHeight + COLLAR_CLEAR - radius;
     for (const node of this.#root.querySelectorAll<SVGGElement>('.orb')) {
       const index = Number(node.dataset.element);
       this.#orbs.set(index, node);
       this.#orbY.set(index, node.querySelector('.orb__y') as SVGGElement);
       this.#orbMotion.set(index, node.querySelector('.orb__m') as SVGGElement);
       const [baseX, fraction] = DRIFT[index] ?? [CENTRE_X, 0.5];
-      const baseY = Math.round(chamberHeight * fraction);
+      const baseY = Math.round(tubeTop + fraction * tubeHeight);
       this.#bounds.set(index, [
-        16 + radius + 4 - baseX,
-        WIDTH - 16 - radius - 4 - baseX,
+        18 + radius - baseX,
+        WIDTH - 18 - radius - baseX,
         Math.min(0, safeTop - baseY),
         Math.max(0, safeBottom - baseY),
       ]);
@@ -353,67 +494,169 @@ export class Chamber {
     this.#tube = this.#root.querySelector('[data-tube]');
     this.#rim = this.#root.querySelector('.tube-rim');
     this.#burst = this.#root.querySelector('.burst');
+    this.#flash = this.#root.querySelector('.cham-flash');
     this.#stamp = this.#root.querySelector('.stamp');
 
     this.#restore();
+    this.fit(this.#visibleCss);
+  }
+
+  /* ------------------------------------------------------------------ fit -- */
+
+  #visibleCss = 0;
+
+  /**
+   * Tell the chamber how much of it the layout is actually showing.
+   *
+   * `visible` is the stage's height in CSS pixels. Everything this method does is
+   * three custom properties consumed by `transform`s in styles.css, so a mode
+   * change costs no parse, no raster and no layout — which is the whole point
+   * (see the header). It is safe to call on every frame of a resize.
+   */
+  fit(visible: number): void {
+    const svg = this.#svg;
+    if (!svg || visible <= 0) return;
+    this.#visibleCss = visible;
+    const scale = (this.#root.clientWidth || WIDTH) / WIDTH;
+    const units = visible / (scale || 1);
+    // The body may never be shorter than the tube plus both collars, so below
+    // that the whole drawing scales down instead — the one regime where the
+    // instrument becomes a thumbnail, and it is only reachable at very large
+    // text scales on a short screen.
+    const need = this.#tubeHeight + COLLAR_CLEAR * 2;
+    const band = Math.max(need, Math.min(this.#height, units));
+    const fit = Math.min(1, units / band);
+    svg.style.setProperty('--k', (band / this.#height).toFixed(4));
+    svg.style.setProperty('--dy-bot', `${(band - this.#height).toFixed(1)}px`);
+    svg.style.setProperty('--dy-col', `${((band - this.#height) / 2).toFixed(1)}px`);
+    svg.style.setProperty('--fit', fit.toFixed(4));
   }
 
   /* --------------------------------------------------------------- pieces -- */
 
   #defs(
-    chamberHeight: number,
+    height: number,
     glassTop: number,
     glassHeight: number,
     tubeTop: number,
     tubeHeight: number,
+    pitch: number,
   ): string {
+    const wedges = (this.#variant?.elements ?? [])
+      .map(
+        (element) => `
+      <!--
+        A beam, not a spike: offset 0 is the wide base at the centre of the
+        burst and offset 1 is the tip, so the wedge is quiet where it crosses
+        the tube, swells just outside it, and fades to nothing at its point. A
+        flat 0.95 at the base is what made the burst a solid star sitting on the
+        settled column.
+      -->
+      <linearGradient id="wedge-${element.id}" x1="0" y1="1" x2="0" y2="0">
+        <stop offset="0" stop-color="${element.hex}" stop-opacity="0.34"/>
+        <stop offset="0.17" stop-color="${element.hex}" stop-opacity="0.9"/>
+        <stop offset="0.46" stop-color="${element.hex}" stop-opacity="0.42"/>
+        <stop offset="0.78" stop-color="${element.hex}" stop-opacity="0.12"/>
+        <stop offset="1" stop-color="${element.hex}" stop-opacity="0"/>
+      </linearGradient>`,
+      )
+      .join('');
     return `
+      <!--
+        The liquid, weighted rather than evenly ramped. §6.1 scopes --brine-lit to
+        "liquid where the key light PASSES", which is a band near the top collar and
+        not half the vessel: a linear brine-deep → brine → brine-lit ramp over 700
+        units made the whole chamber a flat mid-blue box with the spheres no longer
+        the brightest things in it (§6.1's first sentence, §6.6 reference 3).
+      -->
       <linearGradient id="brine" x1="0" y1="1" x2="0" y2="0">
         <stop offset="0" stop-color="var(--brine-deep)"/>
-        <stop offset="0.5" stop-color="var(--brine)"/>
+        <stop offset="0.58" stop-color="var(--brine-deep)"/>
+        <stop offset="0.87" stop-color="var(--brine)"/>
         <stop offset="1" stop-color="var(--brine-lit)"/>
       </linearGradient>
       <!-- §6.2: brushed 316 steel, anisotropic highlight running horizontally. -->
       <linearGradient id="collar" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="var(--chrome-dark)"/>
-        <stop offset="0.3" stop-color="var(--chrome)"/>
-        <stop offset="0.52" stop-color="var(--chrome-mid)"/>
-        <stop offset="1" stop-color="var(--chrome-dark)"/>
+        <stop offset="0.28" stop-color="var(--chrome)"/>
+        <stop offset="0.5" stop-color="var(--chrome-mid)"/>
+        <stop offset="0.78" stop-color="var(--chrome-dark)"/>
+        <stop offset="1" stop-color="var(--void)"/>
       </linearGradient>
       <linearGradient id="collar-grain" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="var(--void)" stop-opacity="0.5"/>
-        <stop offset="0.22" stop-color="var(--specular)" stop-opacity="0.16"/>
+        <stop offset="0.22" stop-color="var(--specular)" stop-opacity="0.18"/>
         <stop offset="0.5" stop-color="var(--void)" stop-opacity="0.3"/>
-        <stop offset="0.78" stop-color="var(--specular)" stop-opacity="0.12"/>
+        <stop offset="0.78" stop-color="var(--specular)" stop-opacity="0.13"/>
         <stop offset="1" stop-color="var(--void)" stop-opacity="0.5"/>
       </linearGradient>
       <!-- The cylinder: bright at both walls, nothing in the middle (§6.2). -->
       <linearGradient id="glass-wall" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.75"/>
-        <stop offset="0.13" stop-color="var(--glass-edge)" stop-opacity="0.04"/>
-        <stop offset="0.87" stop-color="var(--glass-edge)" stop-opacity="0.04"/>
-        <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0.6"/>
+        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.8"/>
+        <stop offset="0.13" stop-color="var(--glass-edge)" stop-opacity="0.05"/>
+        <stop offset="0.87" stop-color="var(--glass-edge)" stop-opacity="0.05"/>
+        <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0.66"/>
+      </linearGradient>
+      <!--
+        §6.9's specular line, as a stroke that fades out rather than stopping.
+        The coordinates are the spec's; the flat opacity was what made it read as
+        a stray guide terminating in mid-air over the back plate.
+      -->
+      <linearGradient id="specular-fade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="var(--specular)" stop-opacity="0"/>
+        <stop offset="0.12" stop-color="var(--specular)" stop-opacity="0.55"/>
+        <stop offset="0.6" stop-color="var(--specular)" stop-opacity="0.22"/>
+        <stop offset="1" stop-color="var(--specular)" stop-opacity="0"/>
       </linearGradient>
       <!-- Volumetric key from above, so the chamber is the only bright object. -->
       <radialGradient id="shaft">
-        <stop offset="0" stop-color="var(--specular)" stop-opacity="0.16"/>
-        <stop offset="0.4" stop-color="var(--glass-edge)" stop-opacity="0.07"/>
+        <stop offset="0" stop-color="var(--specular)" stop-opacity="0.2"/>
+        <stop offset="0.4" stop-color="var(--glass-edge)" stop-opacity="0.09"/>
         <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0"/>
       </radialGradient>
       <radialGradient id="caustic">
-        <stop offset="0" stop-color="var(--brine-lit)" stop-opacity="0.85"/>
-        <stop offset="0.55" stop-color="var(--brine-lit)" stop-opacity="0.3"/>
+        <stop offset="0" stop-color="var(--brine-lit)" stop-opacity="0.95"/>
+        <stop offset="0.55" stop-color="var(--brine-lit)" stop-opacity="0.38"/>
         <stop offset="1" stop-color="var(--brine-lit)" stop-opacity="0"/>
       </radialGradient>
+      <!-- Corners fall to the void, so the light reads as one source from above. -->
+      <radialGradient id="vignette" cx="0.5" cy="0.26" r="0.82">
+        <stop offset="0" stop-color="var(--void)" stop-opacity="0"/>
+        <stop offset="0.4" stop-color="var(--void)" stop-opacity="0.2"/>
+        <stop offset="0.72" stop-color="var(--void)" stop-opacity="0.62"/>
+        <stop offset="1" stop-color="var(--void)" stop-opacity="0.9"/>
+      </radialGradient>
       <radialGradient id="floor-caustic">
-        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.3"/>
-        <stop offset="0.6" stop-color="var(--glass-edge)" stop-opacity="0.09"/>
+        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.34"/>
+        <stop offset="0.6" stop-color="var(--glass-edge)" stop-opacity="0.1"/>
         <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0"/>
       </radialGradient>
-      <linearGradient id="tube-well" x1="0" y1="0" x2="1" y2="0">
+      <!--
+        The liquid column inside the tube, which round 1 drew as --void at 30
+        to 72% over the brine — a back plate that measured a constant
+        rgb(14,29,44) with no surface, no bubbles and no caustic in it. It is a
+        lit column of brine now: the same three published liquid tokens, bottom
+        to top, at full strength, because the tube is where the key light is
+        channelled and it is the one part of the frame the player reads.
+      -->
+      <linearGradient id="tube-column" x1="0" y1="1" x2="0" y2="0">
+        <stop offset="0" stop-color="var(--brine-deep)"/>
+        <stop offset="0.34" stop-color="var(--brine)"/>
+        <stop offset="0.82" stop-color="var(--brine-lit)"/>
+        <stop offset="1" stop-color="var(--brine-lit)"/>
+      </linearGradient>
+      <!-- Cylinder shading: the column is round, so it darkens at both walls. -->
+      <linearGradient id="tube-round" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="var(--void)" stop-opacity="0.72"/>
-        <stop offset="0.42" stop-color="var(--void)" stop-opacity="0.3"/>
+        <stop offset="0.18" stop-color="var(--void)" stop-opacity="0.24"/>
+        <stop offset="0.4" stop-color="var(--specular)" stop-opacity="0.07"/>
+        <stop offset="0.7" stop-color="var(--void)" stop-opacity="0.16"/>
         <stop offset="1" stop-color="var(--void)" stop-opacity="0.66"/>
+      </linearGradient>
+      <linearGradient id="tube-caustic" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0"/>
+        <stop offset="0.5" stop-color="var(--glass-edge)" stop-opacity="0.5"/>
+        <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0"/>
       </linearGradient>
       <!--
         The tube's front glass, and the DOM lane's stand-in for §7 technique 2's
@@ -422,18 +665,18 @@ export class Chamber {
         the eye reads as thickness.
       -->
       <linearGradient id="tube-wall-l" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.5"/>
+        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.6"/>
         <stop offset="0.55" stop-color="var(--void)" stop-opacity="0.45"/>
         <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0.14"/>
       </linearGradient>
       <linearGradient id="tube-wall-r" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.1"/>
         <stop offset="0.4" stop-color="var(--void)" stop-opacity="0.45"/>
-        <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0.6"/>
+        <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0.7"/>
       </linearGradient>
       <linearGradient id="tube-sheen" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--specular)" stop-opacity="0.16"/>
-        <stop offset="0.6" stop-color="var(--specular)" stop-opacity="0.03"/>
+        <stop offset="0" stop-color="var(--specular)" stop-opacity="0.2"/>
+        <stop offset="0.6" stop-color="var(--specular)" stop-opacity="0.04"/>
         <stop offset="1" stop-color="var(--specular)" stop-opacity="0"/>
       </linearGradient>
       <linearGradient id="rim-gold" x1="0" y1="1" x2="0" y2="0">
@@ -441,9 +684,55 @@ export class Chamber {
         <stop offset="0.5" stop-color="var(--gold)"/>
         <stop offset="1" stop-color="var(--gold-hot)"/>
       </linearGradient>
+      <linearGradient id="rim-bloom" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="var(--gold)" stop-opacity="0"/>
+        <stop offset="0.14" stop-color="var(--gold)" stop-opacity="0.3"/>
+        <stop offset="0.5" stop-color="var(--gold-hot)" stop-opacity="0.1"/>
+        <stop offset="0.86" stop-color="var(--gold)" stop-opacity="0.3"/>
+        <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
+      </linearGradient>
+      <!-- Brushed machinery: light from above-left, shadow below-right (§6.3). -->
+      <linearGradient id="impeller-metal" x1="0.1" y1="0" x2="0.9" y2="1">
+        <stop offset="0" stop-color="var(--chrome)"/>
+        <stop offset="0.42" stop-color="var(--chrome-mid)"/>
+        <stop offset="1" stop-color="var(--chrome-dark)"/>
+      </linearGradient>
+      <linearGradient id="impeller-vane" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="var(--chrome)"/>
+        <stop offset="0.5" stop-color="var(--chrome-mid)"/>
+        <stop offset="1" stop-color="var(--chrome-dark)"/>
+      </linearGradient>
+      <radialGradient id="impeller-hub" cx="0.36" cy="0.3" r="0.72">
+        <stop offset="0" stop-color="var(--chrome)"/>
+        <stop offset="0.6" stop-color="var(--chrome-mid)"/>
+        <stop offset="1" stop-color="var(--chrome-dark)"/>
+      </radialGradient>
+      <!-- The stamp: PVD gold, warm, low roughness, one thin specular (§6.2). -->
+      <linearGradient id="stamp-face" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="var(--gold-hot)"/>
+        <stop offset="0.4" stop-color="var(--gold)"/>
+        <stop offset="0.62" stop-color="#8f7133"/>
+        <stop offset="1" stop-color="var(--gold)"/>
+      </linearGradient>
+      <linearGradient id="stamp-well" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#0b0f18"/>
+        <stop offset="0.55" stop-color="#181f2e"/>
+        <stop offset="1" stop-color="#0b0f18"/>
+      </linearGradient>
+      <linearGradient id="stamp-shine" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="var(--specular)" stop-opacity="0"/>
+        <stop offset="0.45" stop-color="var(--specular)" stop-opacity="0.5"/>
+        <stop offset="0.55" stop-color="var(--specular)" stop-opacity="0.5"/>
+        <stop offset="1" stop-color="var(--specular)" stop-opacity="0"/>
+      </linearGradient>
       <radialGradient id="stamp-glow">
-        <stop offset="0" stop-color="var(--gold-hot)" stop-opacity="0.3"/>
-        <stop offset="0.62" stop-color="var(--gold)" stop-opacity="0.09"/>
+        <stop offset="0" stop-color="var(--gold-hot)" stop-opacity="0.42"/>
+        <stop offset="0.45" stop-color="var(--gold)" stop-opacity="0.16"/>
+        <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="flash">
+        <stop offset="0" stop-color="var(--gold-hot)" stop-opacity="0.5"/>
+        <stop offset="0.55" stop-color="var(--gold)" stop-opacity="0.16"/>
         <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
       </radialGradient>
       <!--
@@ -453,15 +742,19 @@ export class Chamber {
         and the one thing a celebration may not take away.
       -->
       <radialGradient id="burst-core">
-        <stop offset="0" stop-color="var(--specular)" stop-opacity="0.6"/>
-        <stop offset="0.3" stop-color="var(--gold-hot)" stop-opacity="0.26"/>
+        <stop offset="0" stop-color="var(--specular)" stop-opacity="0.66"/>
+        <stop offset="0.28" stop-color="var(--gold-hot)" stop-opacity="0.3"/>
         <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
       </radialGradient>
+      ${wedges}
       <clipPath id="glass-clip">
         <rect x="16" y="${glassTop}" width="${WIDTH - 32}" height="${glassHeight}" rx="24"/>
       </clipPath>
       <clipPath id="tube-clip">
         <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" rx="8"/>
+      </clipPath>
+      <clipPath id="stamp-clip">
+        <rect x="-150" y="${-Math.round(pitch / 2)}" width="300" height="${pitch}" rx="8"/>
       </clipPath>
 `;
   }
@@ -476,10 +769,10 @@ export class Chamber {
    * the chamber, a seam where there should have been a haze. A radial fill has no
    * edge in any direction.
    */
-  #lightShaft(chamberHeight: number): string {
+  #lightShaft(height: number): string {
     return `<ellipse class="shaft" cx="${CENTRE_X - 18}" cy="${
       8 + COLLAR
-    }" rx="188" ry="${Math.round(chamberHeight * 0.62)}" fill="url(#shaft)"/>`;
+    }" rx="188" ry="${Math.round(height * 0.62)}" fill="url(#shaft)"/>`;
   }
 
   /**
@@ -491,24 +784,31 @@ export class Chamber {
    * same field as the liquid so the two never desync — here they share one
    * keyframe pair, which is the strongest form of that guarantee.
    */
-  #caustics(chamberHeight: number): string {
+  #caustics(height: number): string {
     const next = stream(0x9e3779b9);
     const blob = (layer: number): string => {
       const cx = 30 + next() * 330;
-      const cy = next() * chamberHeight;
+      const cy = next() * height;
       const rx = 44 + next() * 74;
       const ry = 16 + next() * 30;
       return `<ellipse cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" rx="${rx.toFixed(
         0,
-      )}" ry="${ry.toFixed(0)}" fill="url(#caustic)" opacity="${(0.1 + layer * 0.04).toFixed(2)}"/>`;
+      )}" ry="${ry.toFixed(0)}" fill="url(#caustic)" opacity="${(0.16 + layer * 0.06).toFixed(2)}"/>`;
     };
-    const layerA = Array.from({ length: 5 }, () => blob(0)).join('');
-    const layerB = Array.from({ length: 4 }, () => blob(1)).join('');
+    const layerA = Array.from({ length: 6 }, () => blob(0)).join('');
+    const layerB = Array.from({ length: 5 }, () => blob(1)).join('');
+    /*
+     * The churn wrapper is why the beat named "THE CHAMBER AGITATES" now looks
+     * like something is happening to the *liquid* and not only to the spheres.
+     * It is a second element carrying a second, faster keyframe, so the 19 s
+     * ambient drift underneath it never has to change duration mid-flight — an
+     * `animation-duration` swap on a running animation jumps, which is the one
+     * thing a fluid may not do.
+     */
     return `
-      <g class="caustic caustic--a">${layerA}</g>
-      <g class="caustic caustic--b">${layerB}</g>
-      <g class="floor-caustic-at" transform="translate(${CENTRE_X},${chamberHeight - COLLAR - 14})">
-        <ellipse class="floor-caustic" rx="152" ry="30" fill="url(#floor-caustic)"/>
+      <g class="caustic-churn">
+        <g class="caustic caustic--a">${layerA}</g>
+        <g class="caustic caustic--b">${layerB}</g>
       </g>`;
   }
 
@@ -517,15 +817,15 @@ export class Chamber {
    * alive only through CHARGE and AGITATE. 22 rather than 256 because each one
    * here is a composited node instead of a point sprite.
    */
-  #bubbles(chamberHeight: number): string {
+  #bubbles(height: number): string {
     const next = stream(0x85ebca6b);
     const cells = Array.from({ length: 22 }, () => {
       const x = 26 + next() * 338;
-      const size = 1.4 + next() * 2.6;
+      const size = 1.4 + next() * 2.8;
       const delay = next() * 1.1;
       const duration = 1.5 + next() * 1.6;
-      const rise = chamberHeight * (0.45 + next() * 0.5);
-      return `<circle cx="${x.toFixed(0)}" cy="${(chamberHeight - COLLAR - 12).toFixed(
+      const rise = height * (0.45 + next() * 0.5);
+      return `<circle cx="${x.toFixed(0)}" cy="${(height - COLLAR - 12).toFixed(
         0,
       )}" r="${size.toFixed(1)}" fill="var(--glass-edge)" style="--rise:${-rise.toFixed(
         0,
@@ -534,23 +834,41 @@ export class Chamber {
     return `<g class="bubbles">${cells}</g>`;
   }
 
-  /** §6.2: brushed 316 steel, grain horizontal, at 6% over the collar body. */
-  #collars(chamberHeight: number, glassTop: number, glassHeight: number): string {
-    const band = (y: number): string => `
-      <g>
-        <rect x="16" y="${y}" width="${WIDTH - 32}" height="${COLLAR}" fill="url(#collar)" opacity="0.9"/>
-        <rect x="16" y="${y}" width="${WIDTH - 32}" height="${COLLAR}" fill="url(#collar-grain)" opacity="0.4"/>
-        <line x1="16" y1="${y + 0.5}" x2="${WIDTH - 16}" y2="${
-          y + 0.5
-        }" stroke="var(--specular)" stroke-width="1" opacity="0.28"/>
-        <line x1="16" y1="${y + COLLAR - 0.5}" x2="${WIDTH - 16}" y2="${
-          y + COLLAR - 0.5
-        }" stroke="var(--void)" stroke-width="1" opacity="0.55"/>
+  /**
+   * One collar band, as a path so only the two corners that meet the housing's
+   * shell are rounded.
+   *
+   * It is a path rather than a rect inside the glass clip because the collars sit
+   * *outside* `.cham-stretch`: machined steel does not change height when the
+   * vessel does, so the bands translate while the body scales (see the header).
+   */
+  #collar(y: number, side: 'top' | 'bottom'): string {
+    const left = 16;
+    const right = WIDTH - 16;
+    const r = 24;
+    const body =
+      side === 'top'
+        ? `M${left + r} ${y} H${right - r} A${r} ${r} 0 0 1 ${right} ${y + r} V${y + COLLAR} H${left} V${
+            y + r
+          } A${r} ${r} 0 0 1 ${left + r} ${y} Z`
+        : `M${left} ${y} H${right} V${y + COLLAR - r} A${r} ${r} 0 0 1 ${right - r} ${
+            y + COLLAR
+          } H${left + r} A${r} ${r} 0 0 1 ${left} ${y + COLLAR - r} Z`;
+    const lip = side === 'top' ? y + COLLAR - 0.5 : y + 0.5;
+    const sheen = side === 'top' ? y + 0.5 : y + COLLAR - 0.5;
+    return `
+      <g class="collar">
+        <path d="${body}" fill="url(#collar)" opacity="0.95"/>
+        <path d="${body}" fill="url(#collar-grain)" opacity="0.4"/>
+        <line x1="${left}" y1="${sheen}" x2="${right}" y2="${sheen}" stroke="var(--specular)" stroke-width="1" opacity="0.3"/>
+        <line x1="${left}" y1="${lip}" x2="${right}" y2="${lip}" stroke="var(--void)" stroke-width="1" opacity="0.6"/>
       </g>`;
-    return `${band(glassTop)}${band(glassTop + glassHeight - COLLAR)}`;
   }
 
-  /** The tube behind the spheres: the well, the slot divisions, the numerals. */
+  /**
+   * The tube behind the spheres: a lit liquid column, the slot divisions, the
+   * caustic bands, the rising bubbles and the numerals.
+   */
   #tubeBack(tubeTop: number, tubeHeight: number, pitch: number): string {
     const engraved = this.#slots
       .map((y, index) => {
@@ -562,7 +880,7 @@ export class Chamber {
           }" y2="${line}" stroke="var(--void)" stroke-opacity="0.7" stroke-width="1"/>
           <line x1="${TUBE_X + TUBE_WALL}" y1="${line + 1}" x2="${
             TUBE_X + TUBE_WIDTH - TUBE_WALL
-          }" y2="${line + 1}" stroke="var(--glass-edge)" stroke-opacity="0.42" stroke-width="1"/>`;
+          }" y2="${line + 1}" stroke="var(--glass-edge)" stroke-opacity="0.5" stroke-width="1"/>`;
       })
       .join('');
     // §11: a boundary the player needs to perceive clears 3:1 against the
@@ -572,14 +890,59 @@ export class Chamber {
     const numerals = this.#slots
       .map(
         (y, index) =>
-          `<text class="slot-no" data-slot="${index + 1}" x="${TUBE_X + 13}" y="${
+          // x = TUBE_X + 8, not + 13: a 64 px sphere centred at 195 spans
+          // 163..227, so a numeral set at 160 had its digit clipped by the
+          // sphere's left edge the moment its slot filled.
+          `<text class="slot-no" data-slot="${index + 1}" x="${TUBE_X + 8}" y="${
             y + 4
-          }" fill="var(--ink-dim)">${index + 1}</text>`,
+          }" fill="var(--ink)">${index + 1}</text>`,
       )
       .join('');
+    // Three caustic bands drifting up the column, on the same 19 s period as the
+    // chamber's own field so the two never desync (§6.3).
+    const bands = [0.22, 0.54, 0.83]
+      .map(
+        (fraction, index) =>
+          `<rect class="tube-caustic tube-caustic--${index}" x="${TUBE_X + TUBE_WALL}" y="${(
+            tubeTop +
+            tubeHeight * fraction
+          ).toFixed(0)}" width="${TUBE_WIDTH - TUBE_WALL * 2}" height="${
+            14 + index * 5
+          }" fill="url(#tube-caustic)"/>`,
+      )
+      .join('');
+    const next = stream(0x27d4eb2f);
+    const fizz = Array.from({ length: 10 }, () => {
+      const x = TUBE_X + TUBE_WALL + 4 + next() * (TUBE_WIDTH - TUBE_WALL * 2 - 8);
+      const size = 1 + next() * 1.8;
+      const delay = next() * 1.4;
+      const duration = 1.7 + next() * 1.5;
+      const rise = tubeHeight * (0.5 + next() * 0.5);
+      return `<circle cx="${x.toFixed(0)}" cy="${(tubeTop + tubeHeight - 14).toFixed(
+        0,
+      )}" r="${size.toFixed(1)}" fill="var(--specular)" style="--rise:${-rise.toFixed(
+        0,
+      )}px;animation-delay:${delay.toFixed(2)}s;animation-duration:${duration.toFixed(2)}s"/>`;
+    }).join('');
     return `
-      <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" rx="8" fill="url(#tube-well)"/>
-      <g clip-path="url(#tube-clip)">${engraved}</g>
+      <g class="tube-well" clip-path="url(#tube-clip)">
+        <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" fill="url(#tube-column)"/>
+        <g class="tube-bands">${bands}</g>
+        ${engraved}
+        <g class="bubbles bubbles--tube">${fizz}</g>
+        <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" fill="url(#tube-round)"/>
+        <!--
+          The liquid surface. §6.6 reference 1: the meniscus bends the far edge of
+          the column into a single thin bright line, and that line is the whole
+          glass read.
+        -->
+        <path d="M${TUBE_X} ${tubeTop + 15} Q${CENTRE_X} ${tubeTop + 3} ${
+          TUBE_X + TUBE_WIDTH
+        } ${tubeTop + 15}" fill="none" stroke="var(--specular)" stroke-opacity="0.5" stroke-width="1.5"/>
+        <path d="M${TUBE_X} ${tubeTop + 19} Q${CENTRE_X} ${tubeTop + 8} ${
+          TUBE_X + TUBE_WIDTH
+        } ${tubeTop + 19}" fill="none" stroke="var(--glass-edge)" stroke-opacity="0.28" stroke-width="3"/>
+      </g>
       ${numerals}`;
   }
 
@@ -589,7 +952,7 @@ export class Chamber {
    * A seated sphere seen through a wall band and a sheen is a sphere inside a
    * tube; the same sphere drawn on top of the glass is a sticker. This is the
    * cheapest honest version of §6.2's glass: a 6 px inner edge gradient at each
-   * wall, one broad soft sheen, and a meniscus arc at each end, which §6.6
+   * wall, one broad soft sheen, and a meniscus arc at the foot, which §6.6
    * reference 1 identifies as the one line that carries the whole glass read.
    */
   #tubeGlass(tubeTop: number, tubeHeight: number): string {
@@ -599,14 +962,11 @@ export class Chamber {
         <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WALL}" height="${tubeHeight}" fill="url(#tube-wall-l)"/>
         <rect x="${TUBE_X + TUBE_WIDTH - TUBE_WALL}" y="${tubeTop}" width="${TUBE_WALL}" height="${tubeHeight}" fill="url(#tube-wall-r)"/>
         <rect x="${TUBE_X + TUBE_WALL}" y="${tubeTop}" width="26" height="${tubeHeight}" fill="url(#tube-sheen)"/>
-        <path d="M${TUBE_X + 2} ${tubeTop + 9} Q${CENTRE_X} ${tubeTop + 20} ${
-          TUBE_X + TUBE_WIDTH - 2
-        } ${tubeTop + 9}" fill="none" stroke="var(--glass-edge)" stroke-opacity="0.4" stroke-width="1"/>
         <path d="M${TUBE_X + 2} ${bottom - 9} Q${CENTRE_X} ${bottom - 20} ${
           TUBE_X + TUBE_WIDTH - 2
-        } ${bottom - 9}" fill="none" stroke="var(--glass-edge)" stroke-opacity="0.3" stroke-width="1"/>
+        } ${bottom - 9}" fill="none" stroke="var(--glass-edge)" stroke-opacity="0.34" stroke-width="1"/>
       </g>
-      <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" rx="8" fill="none" stroke="var(--glass-edge)" stroke-opacity="0.45" stroke-width="1"/>`;
+      <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" rx="8" fill="none" stroke="var(--glass-edge)" stroke-opacity="0.5" stroke-width="1"/>`;
   }
 
   /** Two stacked rings per slot: the gold flash, and the seated state. */
@@ -643,6 +1003,9 @@ export class Chamber {
             <ellipse rx="${TUBE_WIDTH / 2 - 4}" ry="${(pitch / 2 - 3).toFixed(
               1,
             )}" fill="none" stroke="var(--gold-hot)" stroke-width="1.5"/>
+            <ellipse class="pulse__wide" rx="${TUBE_WIDTH / 2 + 22}" ry="${(pitch / 2 + 10).toFixed(
+              1,
+            )}" fill="none" stroke="var(--gold)" stroke-width="6" stroke-opacity="0.28"/>
           </g>
         </g>`,
       )
@@ -660,11 +1023,16 @@ export class Chamber {
    * them buys the arc — across, then down — inside the beat's published duration,
    * with the vertical curve exactly as published.
    */
-  #spheres(variant: VariantInfo, chamberHeight: number, diameter: number): string {
+  #spheres(
+    variant: VariantInfo,
+    tubeTop: number,
+    tubeHeight: number,
+    diameter: number,
+  ): string {
     return variant.elements
       .map((element: ElementInfo, index: number) => {
         const [x, fraction] = DRIFT[index] ?? [CENTRE_X, 0.5];
-        const y = Math.round(chamberHeight * fraction);
+        const y = Math.round(tubeTop + fraction * tubeHeight);
         return `<g class="orb" data-element="${index}" style="transform:translateX(${x}px)">
           <g class="orb__y" style="transform:translateY(${y}px)">
             <g class="orb__m" style="animation-delay:${(index * -1.7).toFixed(1)}s">
@@ -677,29 +1045,48 @@ export class Chamber {
   }
 
   /**
-   * Five 18 px vanes at 72°. Five, not seven, in both variants: it is machinery,
-   * not a counter, and a five-vane wheel at 3.2 Hz never appears to stand still
-   * under the settle cadence the way a seven-vane one does at 360 ms (§6.9).
+   * Five 18 px vanes at 72°, tapering from 6 px at the hub to 2 px at the rim.
+   * Five, not seven, in both variants: it is machinery, not a counter, and a
+   * five-vane wheel at 3.2 Hz never appears to stand still under the settle
+   * cadence the way a seven-vane one does at 360 ms (§6.9).
+   *
+   * Round 1 drew the vanes as uniform-width rounded bars floating in the annulus
+   * with a gap between the hub and each vane's inner end, all of it at 26 to 42%
+   * opacity on 3 px strokes — so the pair read as Illustrator guides or a loading
+   * spinner rather than as machinery. They are shaded quads bolted to the hub
+   * now, the ring has a lit face and a shadow side, and §6.9 was amended to
+   * describe the object rather than the wireframe.
    *
    * The rotation lives on an INNER group so the per-frame transform cannot
    * overwrite the placement (see the file header).
    */
   #impeller(cx: number, cy: number): string {
+    const hub = 11;
+    const rim = IMPELLER_RADIUS - 6;
     const vanes = Array.from({ length: 5 }, (_unused, index) => {
       const angle = (index * 72 * Math.PI) / 180;
-      const inner = IMPELLER_RADIUS * 0.54;
-      const outer = IMPELLER_RADIUS * 0.92;
-      return `<line x1="${(Math.cos(angle) * inner).toFixed(2)}" y1="${(
-        Math.sin(angle) * inner
-      ).toFixed(2)}" x2="${(Math.cos(angle) * outer).toFixed(2)}" y2="${(
-        Math.sin(angle) * outer
-      ).toFixed(2)}" stroke="var(--chrome-mid)" stroke-width="4" stroke-linecap="round"/>`;
+      const nx = Math.cos(angle);
+      const ny = Math.sin(angle);
+      // Perpendicular, for the taper: 6 px across at the hub, 2 px at the rim.
+      const px = -ny;
+      const py = nx;
+      const point = (r: number, half: number, sign: number): string =>
+        `${(nx * r + px * half * sign).toFixed(2)} ${(ny * r + py * half * sign).toFixed(2)}`;
+      return `<path d="M${point(hub - 1, 3, 1)} L${point(rim, 1, 1)} L${point(
+        rim,
+        1,
+        -1,
+      )} L${point(hub - 1, 3, -1)} Z" fill="url(#impeller-vane)"/>`;
     }).join('');
     return `<g class="impeller-at" transform="translate(${cx},${cy})">
       <g class="impeller">
-        <circle r="${IMPELLER_RADIUS}" fill="none" stroke="var(--chrome-mid)" stroke-width="3"/>
-        <circle r="${IMPELLER_RADIUS - 7}" fill="none" stroke="var(--chrome-dark)" stroke-width="1"/>
-        <circle r="6" fill="var(--chrome-mid)"/>${vanes}
+        <circle r="${IMPELLER_RADIUS}" fill="none" stroke="url(#impeller-metal)" stroke-width="5"/>
+        <circle r="${IMPELLER_RADIUS - 2.5}" fill="none" stroke="var(--void)" stroke-width="1" stroke-opacity="0.6"/>
+        <circle r="${IMPELLER_RADIUS - 9}" fill="none" stroke="var(--chrome-dark)" stroke-width="1.5"/>
+        ${vanes}
+        <circle r="${hub}" fill="url(#impeller-hub)"/>
+        <circle r="${hub}" fill="none" stroke="var(--void)" stroke-width="1" stroke-opacity="0.5"/>
+        <circle r="3.4" fill="var(--chrome-dark)"/>
       </g>
     </g>`;
   }
@@ -707,26 +1094,86 @@ export class Chamber {
   /**
    * The prismatic burst — light thrown through the chamber when the round won.
    *
-   * The spokes are tinted from the sphere palette rather than from a new set of
+   * The wedges are tinted from the sphere palette rather than from a new set of
    * hues: §6.1 keeps the environment neutral so the spheres are the only colour
    * in the world, and glass splitting the light of the objects already in it is
    * the only prism this art direction has. Behind `celebrate`, always.
+   *
+   * Round 1 drew them as 2.6 and 6 px flat triangles, which photograph as a
+   * lens-flare sketch. They are wide gradient wedges now, each fading to zero at
+   * its tip, so the beat reads as light rather than as line work.
    */
-  #burstMarkup(chamberHeight: number): string {
-    const hues = (this.#variant?.elements ?? []).map((element) => element.hex);
-    const length = Math.max(200, chamberHeight * 0.62);
-    const spokes = Array.from({ length: 16 }, (_unused, index) => {
-      const angle = (index / 16) * 360 + 11;
-      const hex = hues[index % Math.max(1, hues.length)] ?? '#EAF3FA';
-      const width = index % 2 === 0 ? 6 : 2.6;
+  #burstMarkup(tubeTop: number, tubeHeight: number): string {
+    const elements = this.#variant?.elements ?? [];
+    const length = Math.max(300, tubeHeight * 0.86);
+    const spokes = Array.from({ length: 18 }, (_unused, index) => {
+      const angle = (index / 18) * 360 + 10;
+      const element = elements[index % Math.max(1, elements.length)];
+      const fill = element ? `url(#wedge-${element.id})` : 'var(--specular)';
+      const width = index % 2 === 0 ? 26 : 11;
       return `<path transform="rotate(${angle.toFixed(1)})" d="M${-width / 2} 0 L${
         width / 2
-      } 0 L0 ${-length.toFixed(0)} Z" fill="${hex}" opacity="${index % 2 === 0 ? 0.8 : 0.45}"/>`;
+      } 0 L0 ${-length.toFixed(0)} Z" fill="${fill}"/>`;
     }).join('');
-    return `<g class="burst-at" transform="translate(${CENTRE_X},${Math.round(chamberHeight / 2)})">
+    return `<g class="burst-at" transform="translate(${CENTRE_X},${Math.round(
+      tubeTop + tubeHeight / 2,
+    )})">
       <g class="burst">
         <g class="burst__spokes">${spokes}</g>
-        <circle class="burst__core" r="${(length * 0.34).toFixed(0)}" fill="url(#burst-core)"/>
+        <circle class="burst__core" r="${(length * 0.4).toFixed(0)}" fill="url(#burst-core)"/>
+        <g class="burst__ring">
+          <circle r="${(length * 0.32).toFixed(
+            0,
+          )}" fill="none" stroke="var(--gold-hot)" stroke-width="3" stroke-opacity="0.7"/>
+        </g>
+      </g>
+    </g>`;
+  }
+
+  /**
+   * The multiplier stamp — a machined plate, not a tooltip.
+   *
+   * Two things were wrong with round 1's version and both are geometry rather
+   * than taste. It sat at the tube's exact centre, which in CLASSIC is slot 3, so
+   * a 144 × 50 plate at 84% black **erased the settled sphere's etched glyph** —
+   * and §11 is unconditional that the glyph is the colour-blind channel, not a
+   * decoration on top of one. And four gold or chrome edges crossed within 8 px
+   * of each other, so the hero frame of a win read as clutter.
+   *
+   * So it is seated on a **slot division** instead: the plate spans the chamber,
+   * its half-height is bounded by `gap/2 + radius − glyphHalf − 3` so both
+   * neighbouring glyphs stay clear of it by construction, and the numerals sit in
+   * a recessed well with one gold bevel and one specular sweep. Nothing is
+   * occluded that carries information, and the object has material.
+   */
+  #stampMarkup(pitch: number, diameter: number): string {
+    const middle = Math.ceil((this.#variant?.n ?? 5) / 2);
+    const y = Math.round(this.slotY(middle) - pitch / 2);
+    const radius = diameter / 2;
+    const gap = pitch - diameter;
+    const half = Math.max(15, Math.min(23, Math.round(gap / 2 + radius - radius * 0.46 - 3)));
+    const width = 302;
+    const inner = half - 6;
+    return `<g class="stamp-at" transform="translate(${CENTRE_X},${y})" data-half="${half}">
+      <g class="stamp">
+        <ellipse class="stamp__glow" rx="${width * 0.62}" ry="${half * 3.4}" fill="url(#stamp-glow)"/>
+        <rect class="stamp__plate" x="${-width / 2}" y="${-half}" width="${width}" height="${
+          half * 2
+        }" rx="${half}" fill="url(#stamp-face)"/>
+        <rect x="${-width / 2 + 1.5}" y="${-half + 1.5}" width="${width - 3}" height="${
+          half * 2 - 3
+        }" rx="${half - 1.5}" fill="none" stroke="var(--gold-hot)" stroke-width="1" stroke-opacity="0.6"/>
+        <rect class="stamp__well" x="${-width / 2 + 5}" y="${-inner}" width="${
+          width - 10
+        }" height="${inner * 2}" rx="${inner}" fill="url(#stamp-well)"/>
+        <text class="stamp__value" text-anchor="middle" y="${Math.round(
+          half * 0.34,
+        )}" fill="var(--gold-hot)"></text>
+        <g clip-path="url(#stamp-clip)">
+          <rect class="stamp__shine" x="${-width / 2}" y="${-half}" width="76" height="${
+            half * 2
+          }" fill="url(#stamp-shine)" opacity="0.55"/>
+        </g>
       </g>
     </g>`;
   }
@@ -736,9 +1183,10 @@ export class Chamber {
   /**
    * Re-apply the round so far, without transitions.
    *
-   * A re-layout (a mode change, a rotation, a resize) must not erase a settled
-   * tube: the result screen is the record of the round (§5 S5) and a chamber
-   * that forgot where the spheres landed is not a record.
+   * A redraw — a variant switch or a viewport change — must not erase a settled
+   * tube: the result screen is the record of the round (§5 S5) and a chamber that
+   * forgot where the spheres landed is not a record. Mode changes no longer
+   * redraw at all, so this runs far less often than it used to.
    */
   #restore(): void {
     const svg = this.#svg;
@@ -793,6 +1241,8 @@ export class Chamber {
     this.desaturate(false);
     this.#burstAt = 0;
     this.#burst?.classList.remove('burst--on', 'burst--calm');
+    this.#flash?.classList.remove('cham-flash--on');
+    this.#tube?.classList.remove('tube--won');
     if (this.#motes) this.#motes.innerHTML = '';
     for (const [index, orb] of this.#orbs) {
       const [x, fraction] = DRIFT[index] ?? [CENTRE_X, 0.5];
@@ -805,7 +1255,9 @@ export class Chamber {
       orb.classList.remove('orb--seated');
       if (orbY) {
         orbY.style.transition = 'none';
-        orbY.style.transform = `translateY(${Math.round(this.#height * fraction)}px)`;
+        orbY.style.transform = `translateY(${Math.round(
+          this.#tubeTop + fraction * this.#tubeHeight,
+        )}px)`;
       }
       if (motion) motion.style.transform = '';
       void orb.getBoundingClientRect();
@@ -828,7 +1280,18 @@ export class Chamber {
     // and decelerates to a stop across the first two locks. It never reverses,
     // never pulses, and never reacts to the outcome.
     if (beat === 'charge' || beat === 'agitate') {
-      this.#targetOmega = IMPELLER_OMEGA;
+      /*
+       * …and it does not turn at all under `prefers-reduced-motion`.
+       *
+       * §6.4 swaps the agitation for a cross-dissolve and the falls for fades; it
+       * does not mention the impeller, and the stylesheet's reduced-motion block
+       * lists `.impeller` alongside the caustics and the bubbles — but the
+       * rotation is a per-frame write from the ticker rather than a keyframe, so
+       * that rule was a no-op and the one continuously rotating element on screen
+       * kept turning for exactly the players the preference exists for. The
+       * stylesheet's intent is the correct one; this is where it has to be kept.
+       */
+      this.#targetOmega = this.#reduced ? 0 : IMPELLER_OMEGA;
       this.#omegaTau = 0.14;
     } else if (beat === 'settle') {
       this.#targetOmega = 0;
@@ -894,12 +1357,12 @@ export class Chamber {
       for (const [index, motion] of this.#orbMotion) {
         if (this.#seatedElement(index)) continue;
         const [x, y] = track.at(index, seconds);
-        // Clamped rather than trusted: the track is a closed form that knows
+        // Bounded rather than trusted: the track is a closed form that knows
         // nothing about the collar rings, and a sphere sliding over machined
         // steel is the one artefact that would give the whole illusion away.
         const limits = this.#bounds.get(index) ?? [-30, 30, -30, 30];
-        const dx = Math.max(limits[0], Math.min(limits[1], x));
-        const dy = Math.max(limits[2], Math.min(limits[3], y));
+        const dx = bounded(x, limits[0], limits[1]);
+        const dy = bounded(y, limits[2], limits[3]);
         motion.style.transform = `translate(${dx.toFixed(2)}px,${dy.toFixed(2)}px)`;
       }
     }
@@ -1019,7 +1482,7 @@ export class Chamber {
   }
 
   /**
-   * The prismatic burst and the mote fall.
+   * The prismatic burst, the frame lift, the seated bloom and the mote fall.
    *
    * §6.1 lists six places gold may appear and the sixth is "the tube's
    * full-height rim during a celebrated close". The motes are that same beat and
@@ -1030,8 +1493,8 @@ export class Chamber {
    *
    * `voicing` is the tier of the best line that won, and it scales the *shape* of
    * the burst rather than its brightness, exactly as §8 scales the chord: an
-   * ORDER win throws the full sixteen spokes and a shower, a FLOW win at 1.92×
-   * gets a quiet flare. Both are celebrated, because both won.
+   * ORDER win throws the full eighteen wedges and a long shower, a FLOW win at
+   * 1.92× gets a quiet flare. Both are celebrated, because both won.
    */
   celebrate(voicing: Voicing): void {
     this.#voicing = voicing;
@@ -1044,6 +1507,22 @@ export class Chamber {
       void burst.getBoundingClientRect();
       if (!this.#reduced) burst.classList.add('burst--on');
       else burst.classList.add('burst--calm');
+    }
+    const flash = this.#flash;
+    if (flash) {
+      flash.classList.remove('cham-flash--on');
+      void flash.getBoundingClientRect();
+      flash.dataset.voicing = voicing;
+      flash.classList.add('cham-flash--on');
+    }
+    // The settled column blooms once, on `opacity` alone: the spheres are the
+    // only light sources in the world (§6.6 reference 3), so the honest way to
+    // say the round won is to turn them up.
+    const tube = this.#tube;
+    if (tube) {
+      tube.classList.remove('tube--won');
+      void tube.getBoundingClientRect();
+      tube.classList.add('tube--won');
     }
     this.#dropMotes(voicing);
   }
@@ -1059,14 +1538,14 @@ export class Chamber {
   #dropMotes(voicing: Voicing): void {
     const host = this.#motes;
     if (!host || this.#reduced) return;
-    const count = voicing === 'ORDER' ? 26 : voicing === 'FORM' ? 16 : 9;
+    const count = voicing === 'ORDER' ? 44 : voicing === 'FORM' ? 28 : 16;
     const next = stream(0xc2b2ae35 + count);
     host.innerHTML = Array.from({ length: count }, () => {
       const x = next() * 100;
-      const delay = next() * 0.9;
-      const duration = 2.4 + next() * 1.9;
-      const size = 2 + next() * 3.4;
-      const drift = (next() * 2 - 1) * 26;
+      const delay = next() * 1.1;
+      const duration = 2.4 + next() * 2.1;
+      const size = 2.4 + next() * 4.2;
+      const drift = (next() * 2 - 1) * 30;
       return `<i style="left:${x.toFixed(1)}%;--size:${size.toFixed(1)}px;--drift:${drift.toFixed(
         0,
       )}px;animation-delay:${delay.toFixed(2)}s;animation-duration:${duration.toFixed(2)}s"></i>`;
@@ -1080,21 +1559,7 @@ export class Chamber {
     this.#stampOn = on;
     if (!this.#stamp) return;
     const label = this.#stamp.querySelector('text');
-    const plate = this.#stamp.querySelector<SVGRectElement>('.stamp__plate');
-    const inner = this.#stamp.querySelector<SVGRectElement>('.stamp__inner');
     if (label) label.textContent = text;
-    // The plate is sized to its content so SEVEN's four-figure multiple does not
-    // spill out of a box drawn for three.
-    const width = Math.max(144, text.length * 19 + 46);
-    if (plate) {
-      plate.setAttribute('x', String(-width / 2));
-      plate.setAttribute('width', String(width));
-    }
-    if (inner) {
-      inner.setAttribute('x', String(-width / 2 + 4));
-      inner.setAttribute('width', String(width - 8));
-    }
     this.#stamp.classList.toggle('stamp--on', on);
   }
-
 }
