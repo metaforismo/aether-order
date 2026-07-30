@@ -774,3 +774,32 @@ describe('development-only seams', () => {
     }
   });
 });
+
+describe('AO-04 parseLines snapshots the caller array', () => {
+  it('cannot be grown past the cap by a Proxy that lies about its length', () => {
+    const line = { code: 'first', params: { c: 0 }, stake: 25n };
+    const backing = Array.from({ length: 4000 }, () => line);
+    let lengthReads = 0;
+    const hostile = new Proxy(backing, {
+      get(target, prop, receiver) {
+        if (prop === 'length') {
+          lengthReads += 1;
+          return lengthReads === 1 ? 1 : target.length;
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    // Reading length once for the cap and again while iterating let a Proxy
+    // report 1 to pass the cap and 4000 to deliver the elements. The snapshot
+    // fixes the array before the cap is applied, so the ticket can only ever
+    // carry what was counted.
+    const parsed = parseLines(hostile);
+    expect(parsed.length).toBeLessThanOrEqual(32);
+  });
+
+  it('still refuses an honestly oversized array', () => {
+    const line = { code: 'first', params: { c: 0 }, stake: 25n };
+    expect(() => parseLines(Array.from({ length: 33 }, () => line))).toThrowError(/Too many lines/);
+  });
+});

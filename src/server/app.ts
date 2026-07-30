@@ -113,9 +113,14 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 export function parseLines(value: unknown): RawLine[] {
   if (!Array.isArray(value))
     throw new ServiceError('INVALID_TICKET', 'lines must be an array', '$.lines');
-  if (value.length > 32)
+  // Snapshot the array once before the cap is checked. Reading `length` for the
+  // cap and then again while iterating lets a Proxy report a short length to
+  // pass the cap and a long one to deliver the elements; the same copy-once
+  // discipline every other boundary in this server follows.
+  const raws = Array.prototype.slice.call(value) as unknown[];
+  if (raws.length > 32)
     throw new ServiceError('INVALID_TICKET', 'Too many lines', '$.lines');
-  return value.map((raw, index): RawLine => {
+  return raws.map((raw, index): RawLine => {
     const path = `$.lines[${index}]`;
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
       throw new ServiceError('INVALID_TICKET', 'Line must be an object', path);
