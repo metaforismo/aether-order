@@ -540,6 +540,27 @@ export class SessionStore {
   }
 
   /**
+   * Look up an already-recorded commit without applying pacing or round-state
+   * gates. Shared-chamber retries consult this before checking whether the draw
+   * is still live: a lost success response must remain recoverable after close.
+   */
+  replayedTicket(
+    session: Session,
+    roundId: string,
+    lines: readonly RawLine[],
+  ): RoundRecord | null {
+    const round = session.roundsById.get(roundId);
+    if (!round) return null;
+    const game = gameFor(round.variantId);
+    const ticket = openTicket(
+      game,
+      { variantId: round.variantId, roundId: round.roundId, nonce: round.nonce },
+      { lines },
+    );
+    return session.commitsByIdempotencyKey.get(ticket.idempotencyKey) ?? null;
+  }
+
+  /**
    * Settle a staged ticket against the round's transcript, and credit.
    *
    * The phase guard is the second half of the idempotency rule: `stageTicket`

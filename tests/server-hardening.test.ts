@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   makePermutationTranscript,
 } from '@axiom-games/reveal-engine/modules/permutation/aether';
 import { GAMES } from '../src/server/engine.js';
+import { SharedChamber } from '../src/server/lobby.js';
 import { SessionStore, type SessionStoreTestFaults } from '../src/server/session.js';
 
 const LINE = Object.freeze({ code: 'first', params: Object.freeze({ c: 0 }), stake: 25n });
@@ -59,5 +60,36 @@ describe('AO-01 wallet patches are exception-atomic', () => {
 
     expect(() => store.finishRound(session, round, transcript)).toThrow('injected finish crash');
     expect(bytes(session)).toBe(before);
+  });
+});
+
+describe('AO-02 shared-chamber idempotency', () => {
+  it('returns the settled original round when an exact retry arrives after the draw closed', () => {
+    vi.useFakeTimers();
+    let now = 1_800_000_000_000;
+    const store = new SessionStore({ now: () => now });
+    const chamber = new SharedChamber(store, 4_000);
+    try {
+      const session = store.create();
+      chamber.start();
+      const opened = chamber.draw;
+      expect(opened).not.toBeNull();
+      const first = chamber.commit(session, { roundId: opened!.roundId, lines: [LINE] });
+      const balanceAfterCommit = session.balanceChips;
+
+      now += 4_000;
+      vi.advanceTimersByTime(4_000);
+      expect(first.round.phase).toBe('SETTLED');
+      expect(chamber.draw?.roundId).not.toBe(opened!.roundId);
+
+      const retry = chamber.commit(session, { roundId: opened!.roundId, lines: [LINE] });
+      expect(retry.replayed).toBe(true);
+      expect(retry.round).toBe(first.round);
+      expect(retry.round.receipt).toBe(first.round.receipt);
+      expect(session.balanceChips).toBeGreaterThanOrEqual(balanceAfterCommit);
+    } finally {
+      chamber.stop();
+      vi.useRealTimers();
+    }
   });
 });

@@ -193,9 +193,16 @@ export class SharedChamber {
   commit(
     session: Session,
     input: { roundId: string; lines: readonly RawLine[] },
-  ): { round: RoundRecord; draw: LobbyDraw; replayed: boolean } {
+  ): { round: RoundRecord; replayed: boolean } {
+    // Snapshot caller-owned request fields once. In particular, the same
+    // `lines` object must determine both replay identity and a new staged bet.
+    const roundId = input.roundId;
+    const lines = input.lines;
+    const replayed = this.#store.replayedTicket(session, roundId, lines);
+    if (replayed) return { round: replayed, replayed: true };
+
     const draw = this.#draw;
-    if (!draw || draw.roundId !== input.roundId || draw.settled)
+    if (!draw || draw.roundId !== roundId || draw.settled)
       throw new ServiceError(
         'BETTING_CLOSED',
         'That draw closed — your ticket is still here.',
@@ -216,8 +223,8 @@ export class SharedChamber {
       );
 
     const round = this.#store.attachRound(session, draw);
-    const staged = this.#store.stageTicket(session, round, input.lines);
-    if (staged.replayed) return { round: staged.replayed, draw, replayed: true };
+    const staged = this.#store.stageTicket(session, round, lines);
+    if (staged.replayed) return { round: staged.replayed, replayed: true };
     const first = staged.ticket.lines[0];
     draw.entries.set(session.id, {
       session,
@@ -225,7 +232,7 @@ export class SharedChamber {
       label: first ? `${first.code} x${staged.ticket.lines.length}` : 'ticket',
     });
     this.#emit({ type: 'presence', draw });
-    return { round, draw, replayed: false };
+    return { round, replayed: false };
   }
 
   /**
