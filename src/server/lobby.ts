@@ -18,7 +18,8 @@
  *
  * There is one client seed per draw and it is empty, because there is one draw
  * for everyone: a per-player seed cannot enter a transcript that many players
- * share. The client says so on the screen rather than implying otherwise.
+ * share. This is the server-side protocol guarantee only: the current fairness
+ * explainer is not mode-scoped and may still show solo-oriented seed wording.
  */
 
 import { randomBytes } from 'node:crypto';

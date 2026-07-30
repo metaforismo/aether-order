@@ -128,9 +128,12 @@ generation and custody still sit with the operator — see the boundary below.)
   your ticket exists. Every input to the draw except your own client seed is
   frozen by that hash, so an operator that has seen your ticket has nothing
   left to search.
-- **You contribute entropy.** Your client seed enters every draw, so the
-  operator cannot grind seeds against a known ticket. It changes *which* order
-  comes up and never your odds — every seed gives the same uniform draw.
+- **Solo play adds your entropy; shared play does not.** In solo play your
+  client seed enters every draw. In the shared chamber there is one transcript
+  for every player, seeded by the operator alone: `clientSeed` is fixed to the
+  empty string, so shared-chamber players contribute no seed entropy to that
+  round's outcome. A solo client seed changes *which* order comes up and never
+  the odds — every seed gives the same uniform draw.
 - **Unbiased by construction.** The shuffle is Fisher–Yates driven by a
   rejection sampler over a 256-bit range, so there is no modulo bias. The
   enumerator proves the shuffle is a bijection from draw vectors onto all `n!`
