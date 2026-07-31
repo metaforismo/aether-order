@@ -12,7 +12,7 @@
 
 import { sound } from './audio.js';
 import { claimSentence, paramsFor, type Params } from './claims.js';
-import { credits } from './money.js';
+import { credits, money } from './money.js';
 import { orbSvg } from './sphere.js';
 import type { BetInfo, VariantInfo } from './types.js';
 import { esc, html, on, openSheet } from './ui.js';
@@ -196,7 +196,7 @@ export function openPicker(options: PickerOptions): void {
         <b>${credits(stake)}</b>
         <button data-stake="up" aria-label="Raise stake">+</button>
       </div>
-      <button class="cta" data-add ${ready ? '' : 'disabled'}>ADD ${credits(stake)}</button>`;
+      <button class="cta" data-add ${ready ? '' : 'disabled'}>ADD ${money(stake)}</button>`;
   };
 
   openSheet({

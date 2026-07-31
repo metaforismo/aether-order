@@ -3,8 +3,8 @@
  *
  * Geometry is docs/DESIGN.md §6.9 to the pixel: tube 96 wide centred at x = 195,
  * slot pitch 78 (CLASSIC) / 58 (SEVEN), sphere diameter pitch − 14, collar rings
- * 28 tall, two five-vane impellers diagonally opposed and off the tube's axis,
- * one 1 px `--specular` line at x = 135 running from the top collar to 60% depth.
+ * 28 tall, one 1 px `--specular` line at x = 135 running from the top collar to
+ * 60% depth.
  * Materials are §6.2, lighting is §6.3, motion is §6.4.
  *
  * ## What this lane is, and what it is not
@@ -60,8 +60,8 @@
  * **Every animated transform is applied to an element whose position is set by an
  * ancestor.** A CSS `transform` on an SVG element *replaces* the element's
  * `transform` presentation attribute rather than composing with it, so an
- * animated `.impeller` or `.stamp` that also carries `transform="translate(…)"`
- * silently teleports to the viewBox origin the moment the animation applies.
+ * animated `.stamp` that also carries `transform="translate(…)"` silently
+ * teleports to the viewBox origin the moment the animation applies.
  * Every animated node here is an inner group inside a positioning one.
  *
  * **The lock ring's gold is transient.** §6.1 use 1 is "the slot ring *at the
@@ -87,6 +87,7 @@
 
 import type { WinVoicing } from './audio.js';
 import { ticker, type Turbulence } from './choreo.js';
+import { UNIT } from './money.js';
 import { mountOrbDefs, orbArt } from './sphere.js';
 import type { ElementInfo, VariantInfo } from './types.js';
 
@@ -97,7 +98,6 @@ const TUBE_WALL = 6;
 const COLLAR = 28;
 const WIDTH = 390;
 const CENTRE_X = 195;
-const IMPELLER_RADIUS = 48;
 /**
  * The headroom the shortest chamber keeps above and below the tube.
  *
@@ -109,11 +109,44 @@ const IMPELLER_RADIUS = 48;
  */
 const COLLAR_CLEAR = 12;
 
-/** One revolution per 1.6 s at full speed, in radians per second. */
-const IMPELLER_OMEGA = (Math.PI * 2) / 1.6;
-
 /** How long the prismatic burst runs. Mirrors `burst-open` in styles.css. */
 const BURST_MS = 1400;
+
+/**
+ * The celebrated close's presentation, and it is the fix for one named defect:
+ * the payout plate used to be driven straight through the middle of the tube.
+ *
+ * Round 1 seated a 374-unit full-bleed bar on the division above the middle
+ * slot, so on a five-sphere win it occluded slot 4 and clipped slot 3 — and it
+ * persisted, which left the settled order, the entire record of the round, half
+ * covered on the result screen. Every reference payoff either *clears* the hero
+ * object (Plinko's win banner sits below the chip row) or *replaces* it (Space
+ * XY's centred disc). A bar across the object does neither and reads as a
+ * component dropped onto a scene.
+ *
+ * The geometry forbids the easy fix. The tube is `n · pitch + 24` units tall and
+ * centred in whatever band the deck leaves, so *any* surface placed at the
+ * frame's optical centre lands on a sphere; and the gap between two adjacent
+ * spheres is `pitch − diameter` = 14 units, which no legible numeral fits in.
+ * The only way to have a centred payout surface that covers nothing is to move
+ * the spheres, so that is what happens: on a celebrated close the settled column
+ * **presents itself** — it rises and draws back a little, as if the mechanism
+ * were lifting the result into the light — and the plaque lands in the space it
+ * vacated. All five spheres stay visible, at 76% of their size, which is still
+ * three times the diameter the result strip prints them at.
+ *
+ * It is one `transform` on one already-promoted group, it happens only when
+ * `celebrate` is true, and a losing round therefore does not move at all — which
+ * is a second pre-attentive channel separating the two outcomes (§9).
+ */
+const LIFT_SCALE = 0.76;
+/** How far the presented column rises, as a fraction of the tube's height. */
+const LIFT_RISE = 0.15;
+/** Half-height of the payout plaque, in viewBox units. */
+const PLATE_HALF = 40;
+/** The plaque's width — inset from the glass, so it reads as an object on the
+ *  instrument rather than as a bar across the screen. */
+const PLATE_WIDTH = 300;
 
 /**
  * The interval between one sphere's celebration pop and the next one's.
@@ -135,7 +168,7 @@ const POP_STAGGER_MS = 68;
  * centred in whatever the deck leaves, so a sphere parked at a fraction of the
  * *drawing* height would be clipped on the home screen and visible during the
  * round. Two lanes, inset far enough from the walls that turbulence has room to
- * swing both ways, and clear of both impellers in x.
+ * swing both ways.
  */
 const DRIFT: readonly (readonly [number, number])[] = [
   [285, 0.14],
@@ -145,20 +178,6 @@ const DRIFT: readonly (readonly [number, number])[] = [
   [285, 0.5],
   [105, 0.86],
   [285, 0.66],
-];
-
-/**
- * The impellers, as fractions of the tube's extent (§6.9: diagonally opposed, off
- * the tube's axis, "so neither ever sits behind a sphere at rest").
- *
- * Top-left and bottom-right, which is what puts the resting spheres on the
- * opposite diagonal: the right lane holds the upper ones and the left lane the
- * lower ones, and the closest sphere-to-impeller centre distance is 98 units
- * against a 80-unit sum of radii in CLASSIC.
- */
-const IMPELLER_AT: readonly (readonly [number, number])[] = [
-  [72, 0.16],
-  [318, 0.84],
 ];
 
 export type Beat = 'idle' | 'charge' | 'agitate' | 'settle' | 'close' | 'done';
@@ -226,6 +245,8 @@ export class Chamber {
   #box = 486;
   #tubeTop = 0;
   #tubeHeight = 0;
+  /** The pivot the presented column contracts about on a celebrated close. */
+  #tubeCentre = 0;
   #slots: number[] = [];
   #orbs = new Map<number, SVGGElement>();
   #orbY = new Map<number, SVGGElement>();
@@ -237,7 +258,6 @@ export class Chamber {
   #numerals = new Map<number, SVGTextElement>();
   /** One rect per slot, filled at `celebrate` with the settled sphere's light. */
   #floods = new Map<number, SVGRectElement>();
-  #impellers: SVGGElement[] = [];
   #tube: SVGGElement | null = null;
   #rim: SVGGElement | null = null;
   #burst: SVGGElement | null = null;
@@ -264,10 +284,6 @@ export class Chamber {
   /* The motion driver: one registration on the shared ticker. */
   #detach: (() => void) | null = null;
   #lastMs = 0;
-  #angle = 0;
-  #omega = 0;
-  #targetOmega = 0;
-  #omegaTau = 0.12;
   #turbulence: Turbulence | null = null;
   #turbulenceStart = 0;
   #reduced = false;
@@ -356,13 +372,20 @@ export class Chamber {
       { length: n },
       (_unused, index) => tubeBottom - TUBE_RIM - (index + 0.5) * pitch,
     );
-    // The plate is seated on a slot division (see `#stampMarkup`); the bloom it
-    // throws is drawn behind the glass, so it needs the same figure out here.
-    const stampY = Math.round(this.slotY(Math.ceil(n / 2)) - pitch / 2);
+    /*
+     * Where the plaque lands, and where the bloom behind the glass is centred on
+     * it. Both are derived from the *presented* column rather than from a slot
+     * division: the tube contracts about its own centre and rises, and the
+     * plaque is seated 18 units under the bottom rim it leaves behind.
+     */
+    const tubeCentre = tubeTop + tubeHeight / 2;
+    this.#tubeCentre = tubeCentre;
+    const liftedBottom = tubeCentre + (LIFT_SCALE * tubeHeight) / 2 - LIFT_RISE * tubeHeight;
+    const stampY = Math.round(liftedBottom + PLATE_HALF + 18);
 
     this.#root.innerHTML = `
       <svg class="chamber" viewBox="0 0 ${WIDTH} ${height}" preserveAspectRatio="xMidYMid meet" data-beat="idle" role="img" aria-label="Chamber with ${n} spheres and a ${n}-slot tube">
-        <defs>${this.#defs(height, glassTop, glassHeight, tubeTop, tubeHeight, pitch)}</defs>
+        <defs>${this.#defs(height, glassTop, glassHeight, tubeTop, tubeHeight, pitch, stampY)}</defs>
         <!--
           The drawing's own backdrop, and it is a gradient so the instrument sits
           on the page rather than in a hole cut out of it. At 200% text the
@@ -382,6 +405,8 @@ export class Chamber {
               }" height="${glassHeight}" fill="url(#brine)"/>
               ${this.#lightShaft(height)}
               ${this.#caustics(height)}
+              ${this.#mottle(glassTop, glassHeight)}
+              ${this.#particulate(height)}
               ${this.#bubbles(height)}
               <!-- CHARGE deepens the liquid tint 8% (§6.4). Opacity, nothing else. -->
               <rect class="tint" x="16" y="${glassTop}" width="${
@@ -408,6 +433,16 @@ export class Chamber {
                 is painted over it at full saturation.
               -->
               <ellipse class="stamp-halo" cx="${CENTRE_X}" cy="${stampY}" rx="264" ry="146" fill="url(#stamp-glow)"/>
+              <!--
+                The celebrated close's held key light (see won-lift in the defs
+                above). Inside the glass clip and under the column, so the
+                collars stay steel — §6.3 is explicit that if bloom touches the
+                chrome the value is wrong — and every sphere is painted over it
+                at full saturation.
+              -->
+              <rect class="won-lift" x="16" y="${glassTop}" width="${
+                WIDTH - 32
+              }" height="${glassHeight}" fill="url(#won-lift)" opacity="0"/>
             </g>
             <!--
               The cylinder read, and the last thing over the liquid: a 1 px edge
@@ -422,21 +457,6 @@ export class Chamber {
               glassHeight - 6
             }" rx="21" fill="none" stroke="url(#glass-wall)" stroke-width="6"/>
           </g>
-          <!--
-            The machinery. It rides the column's translate and NOT the body's
-            scaleY — an impeller inside .cham-stretch is a circle squashed to
-            an ellipse at every layout but the tallest, which is what the first
-            frame dump of this rebuild showed. It sits over the liquid and under
-            the collars and the tube, so the collar lip still crosses in front of
-            it and it still reads as silhouette and motion (§6.9).
-          -->
-          <g class="column-bg">
-            <g clip-path="url(#glass-clip)">
-              ${IMPELLER_AT.map(([cx, fraction]) =>
-                this.#impeller(cx, Math.round(tubeTop + fraction * tubeHeight)),
-              ).join('')}
-            </g>
-          </g>
           <g class="cham-top">${this.#collar(glassTop, 'top')}</g>
           <g class="cham-bottom">
             ${this.#collar(height - glassTop - COLLAR, 'bottom')}
@@ -447,6 +467,18 @@ export class Chamber {
             </g>
           </g>
           <g class="column">
+            <!--
+              The presented column (see LIFT_SCALE). Everything the plaque has to
+              clear lives inside this group, and nothing else does: on a
+              celebrated close it contracts about the tube's centre and rises,
+              and the plaque — a sibling, below — lands in the space it leaves.
+              One transform, one promoted layer, and it is inert on every other
+              outcome.
+            -->
+            ${this.#burstMarkup(tubeTop, tubeHeight)}
+            <g class="result-lift" style="--pivot:${Math.round(
+              tubeCentre,
+            )}px;--lift-rise:${Math.round(LIFT_RISE * tubeHeight)}px;--lift-scale:${LIFT_SCALE}">
             <!--
               §6.9's one specular line: 1 px --specular at x = 135, from the top
               collar to 60% depth. §6.6 reference 1 calls this the whole glass
@@ -473,7 +505,6 @@ export class Chamber {
               the chamber, which is what §9 asks for and what a prism actually
               does; the tube is 96 units of 390, so the wedges lose nothing.
             -->
-            ${this.#burstMarkup(tubeTop, tubeHeight)}
             <g class="tube" data-tube>
               ${this.#tubeBack(tubeTop, tubeHeight, pitch)}
               ${this.#lockRings(pitch)}
@@ -497,7 +528,8 @@ export class Chamber {
               </g>
               ${this.#lockPulses(pitch)}
             </g>
-            ${this.#stampMarkup(pitch, diameter)}
+            </g>
+            ${this.#stampMarkup(stampY)}
           </g>
           <!--
             The celebrated close's full-frame lift. One rect, one opacity
@@ -551,7 +583,6 @@ export class Chamber {
       this.#numerals.set(Number(node.dataset.slot), node);
     for (const node of this.#root.querySelectorAll<SVGRectElement>('.cell-flood'))
       this.#floods.set(Number(node.dataset.slot), node);
-    this.#impellers = [...this.#root.querySelectorAll<SVGGElement>('.impeller')];
     this.#tube = this.#root.querySelector('[data-tube]');
     this.#rim = this.#root.querySelector('.tube-rim');
     this.#burst = this.#root.querySelector('.burst');
@@ -604,6 +635,7 @@ export class Chamber {
     tubeTop: number,
     tubeHeight: number,
     pitch: number,
+    stampY: number,
   ): string {
     const wedges = (this.#variant?.elements ?? [])
       .map(
@@ -646,11 +678,25 @@ export class Chamber {
         <stop offset="0.76" stop-color="#0a1d33"/>
         <stop offset="1" stop-color="var(--deep)"/>
       </linearGradient>
+      <!--
+        Eight stops, travelling in hue as well as in value.
+        A four-stop ramp between two colours 6° apart quantises to a handful of
+        distinct values however smooth it looks, and the liquid is the largest
+        single surface in the product: the frame measured 1,599 distinct colours
+        against the rubric's floor of 2,500 and a reference band of 2,956–7,444,
+        and this is where most of the shortfall lived. The ramp now runs indigo
+        at the floor through teal at the key's entry, which is what a
+        cyan-absorbing liquid lit from above actually does.
+      -->
       <linearGradient id="brine" x1="0" y1="1" x2="0" y2="0">
         <stop offset="0" stop-color="var(--brine-deep)"/>
-        <stop offset="0.44" stop-color="var(--brine)"/>
-        <stop offset="0.86" stop-color="#1a5c85"/>
-        <stop offset="1" stop-color="#1c6491"/>
+        <stop offset="0.18" stop-color="#0f2a41"/>
+        <stop offset="0.34" stop-color="#123651"/>
+        <stop offset="0.5" stop-color="var(--brine)"/>
+        <stop offset="0.64" stop-color="#164a6d"/>
+        <stop offset="0.78" stop-color="#1a5c85"/>
+        <stop offset="0.9" stop-color="#1d6a95"/>
+        <stop offset="1" stop-color="#2176a2"/>
       </linearGradient>
       <!-- §6.2: brushed 316 steel, anisotropic highlight running horizontally. -->
       <linearGradient id="collar" x1="0" y1="0" x2="0" y2="1">
@@ -775,10 +821,21 @@ export class Chamber {
         <stop offset="0.6" stop-color="var(--key-hot)" stop-opacity="0.05"/>
         <stop offset="1" stop-color="var(--specular)" stop-opacity="0"/>
       </linearGradient>
+      <!--
+        The ignited rim runs hot at both ends and steps down through the middle,
+        and its hot stops are the plaque's own lit gold rather than --gold-hot —
+        L = 0.86, so
+        the band actually lands in the highlight bucket the payoff is measured
+        on, at S = 0.69 so it costs the frame no saturation to do it. It is the
+        second-largest gold object in the win frame after the plaque, and it was
+        contributing nothing to the celebration lift.
+      -->
       <linearGradient id="rim-gold" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0" stop-color="var(--gold-hot)"/>
+        <stop offset="0" stop-color="#ffe04f"/>
+        <stop offset="0.28" stop-color="var(--gold-hot)"/>
         <stop offset="0.5" stop-color="var(--gold)"/>
-        <stop offset="1" stop-color="var(--gold-hot)"/>
+        <stop offset="0.72" stop-color="var(--gold-hot)"/>
+        <stop offset="1" stop-color="#ffe04f"/>
       </linearGradient>
       <linearGradient id="rim-bloom" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="var(--gold)" stop-opacity="0"/>
@@ -787,22 +844,6 @@ export class Chamber {
         <stop offset="0.86" stop-color="var(--gold)" stop-opacity="0.3"/>
         <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
       </linearGradient>
-      <!-- Brushed machinery: light from above-left, shadow below-right (§6.3). -->
-      <linearGradient id="impeller-metal" x1="0.1" y1="0" x2="0.9" y2="1">
-        <stop offset="0" stop-color="var(--chrome)"/>
-        <stop offset="0.42" stop-color="var(--chrome-mid)"/>
-        <stop offset="1" stop-color="var(--chrome-dark)"/>
-      </linearGradient>
-      <linearGradient id="impeller-vane" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="var(--chrome)"/>
-        <stop offset="0.5" stop-color="var(--chrome-mid)"/>
-        <stop offset="1" stop-color="var(--chrome-dark)"/>
-      </linearGradient>
-      <radialGradient id="impeller-hub" cx="0.36" cy="0.3" r="0.72">
-        <stop offset="0" stop-color="var(--chrome)"/>
-        <stop offset="0.6" stop-color="var(--chrome-mid)"/>
-        <stop offset="1" stop-color="var(--chrome-dark)"/>
-      </radialGradient>
       <!--
         The stamp: PVD gold, warm, low roughness, one thin specular (§6.2) — and
         a face that is *lit all the way across*.
@@ -823,11 +864,26 @@ export class Chamber {
           plate from the tube's ignited rim, which is the other half of the same
           payout surface.
         -->
-        <stop offset="0" stop-color="#ffe08a"/>
-        <stop offset="0.12" stop-color="var(--gold-hot)"/>
-        <stop offset="0.52" stop-color="#e2bd71"/>
-        <stop offset="0.86" stop-color="var(--gold)"/>
-        <stop offset="1" stop-color="#a37c33"/>
+        <!--
+          Every stop clears S > 0.6, and the top two clear L > 0.75 as well.
+          This is where the last of the celebration's desaturation was hiding.
+          The plaque is ~11% of the win frame, and its face ran through two pale
+          cream stops at S = 0.46 and S = 0.50 — both under the
+          threshold the rubric counts a saturated pixel at, spread across the
+          largest new surface in the frame. So the payoff kept measuring *less*
+          colourful than the wait (×0.81) even after the liquid stopped being
+          blamed for it.
+          A gold can be bright and saturated at once — the constraint is simply
+          that blue stays under about 40% of red, which is what separates lit
+          gold from cream. The new top stop is L = 0.86 with S = 0.69: it lifts the
+          highlight share *and* the saturated share, where the cream it replaces
+          lifted neither.
+        -->
+        <stop offset="0" stop-color="#ffe04f"/>
+        <stop offset="0.34" stop-color="#ffd24d"/>
+        <stop offset="0.64" stop-color="#f0b32e"/>
+        <stop offset="0.84" stop-color="var(--gold)"/>
+        <stop offset="1" stop-color="#9a6f1e"/>
       </linearGradient>
       <linearGradient id="stamp-bevel" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="var(--gold-hot)" stop-opacity="0.95"/>
@@ -854,9 +910,9 @@ export class Chamber {
         than from a disc laid over the objects.
       -->
       <radialGradient id="stamp-glow">
-        <stop offset="0" stop-color="var(--gold-hot)" stop-opacity="0.6"/>
-        <stop offset="0.3" stop-color="var(--gold-hot)" stop-opacity="0.34"/>
-        <stop offset="0.6" stop-color="var(--gold)" stop-opacity="0.11"/>
+        <stop offset="0" stop-color="var(--gold-hot)" stop-opacity="0.42"/>
+        <stop offset="0.3" stop-color="var(--gold-hot)" stop-opacity="0.24"/>
+        <stop offset="0.6" stop-color="var(--gold)" stop-opacity="0.08"/>
         <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
       </radialGradient>
       <!--
@@ -887,6 +943,45 @@ export class Chamber {
         <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
       </radialGradient>
       ${wedges}
+      <!--
+        The mottle — the material the "empty" liquid was missing.
+
+        Criterion 8 is a floor of 2,500 distinct quantised colours, and it is not
+        a colour preference: it is how flat fill is detected. Ours measured 1,514
+        at cold start against a reference band of 2,956–7,444, because two thirds
+        of the chamber was an unbroken vertical ramp. Plinko solves the same
+        problem with a damask filigree in its background plate.
+
+        The first attempt at this was a fine speckle, and it did nothing —
+        measured 1,602 against 1,599 before it. The reason is worth writing down:
+        the rubric's analyzer downsamples to 900 px on the long edge, so detail
+        under about two device pixels is averaged away before it is counted, and
+        a dither finer than the measurement is invisible to it *and* to the eye
+        at arm's length. Material has to be low-frequency to be material.
+
+        So this is a field of large, soft, very low-contrast lobes — clouding in
+        a glycerol-like liquid, which is what the fluid §6.2 specifies would
+        actually look like. Each is 30–96 units across at 3–9% alpha, drifting in
+        tint across the cool half of the palette, and the whole field is
+        deterministic and **completely still**: the idle budget is the one this
+        pass exists to give back, not spend.
+      -->
+      ${(() => {
+        const next = stream(0x2545f491);
+        return Array.from({ length: 34 }, (_unused, index) => {
+          const tint = ['#1F6E9E', '#2E9FD8', '#123651', '#1a5c85', '#7FA6C4'][index % 5];
+          return `<radialGradient id="mottle-${index}">
+            <stop offset="0" stop-color="${tint}" stop-opacity="${(
+              0.05 +
+              next() * 0.06
+            ).toFixed(3)}"/>
+            <stop offset="0.55" stop-color="${tint}" stop-opacity="${(0.02 + next() * 0.03).toFixed(
+              3,
+            )}"/>
+            <stop offset="1" stop-color="${tint}" stop-opacity="0"/>
+          </radialGradient>`;
+        }).join('');
+      })()}
       <clipPath id="glass-clip">
         <rect x="16" y="${glassTop}" width="${WIDTH - 32}" height="${glassHeight}" rx="24"/>
       </clipPath>
@@ -894,8 +989,61 @@ export class Chamber {
         <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" rx="8"/>
       </clipPath>
       <clipPath id="stamp-clip">
-        <rect x="-187" y="${-Math.round(pitch / 2)}" width="374" height="${pitch}" rx="9"/>
+        <rect x="${-PLATE_WIDTH / 2}" y="${-PLATE_HALF}" width="${PLATE_WIDTH}" height="${
+          PLATE_HALF * 2
+        }" rx="12"/>
       </clipPath>
+      <!-- The plaque's contact shadow: tight, under it, and warm-black. -->
+      <radialGradient id="stamp-cast">
+        <stop offset="0" stop-color="#02040A" stop-opacity="0.62"/>
+        <stop offset="0.7" stop-color="#02040A" stop-opacity="0.3"/>
+        <stop offset="1" stop-color="#02040A" stop-opacity="0"/>
+      </radialGradient>
+      <!--
+        The celebrated close's held light, and it is COOL — which is the
+        counter-intuitive half of this whole pass.
+
+        Round 4 spent the entire payoff on transients: a 900 ms frame flash
+        peaking at 10% and returning to zero, a 1,400 ms burst, a mote fall.
+        Measured on the settled frame — the one a player screenshots — mean
+        luminance had risen 5.7% over the idle state against a reference lift of
+        +84%, because by the time the picture stopped moving every light in it
+        had gone out. A payoff that leaves no light behind did not happen.
+
+        The obvious fix is a broad warm wash, and this build measured it twice.
+        A full-strength amber wash took the saturated share of the win frame from
+        84.2% to 43.6% (×0.52). Splitting the light by hue — a cool lift plus a
+        small warm pool at the plaque — recovered most of it but not all: ×0.85,
+        with the loss concentrated exactly in the band where the two overlapped,
+        which read as a washed olive-grey.
+
+        The reason is not tuneable. Amber over cyan are opposed hues, so any
+        alpha of one over the other mixes toward neutral, and "neutral" is what
+        the rubric's saturation measure reads as *desaturated*. There is no
+        opacity at
+        which a warm overlay leaves a cool field's saturation intact.
+
+        So the warm pool is gone and the warmth belongs entirely to warm
+        OBJECTS — the plaque, the ignited rim, the burst — which are opaque and
+        saturated and mix with nothing. This is exactly what the closest
+        reference does: it holds its blue field at 88% saturation and lands a
+        saturated gold banner *on* it, and its frame-wide saturation between base
+        and payoff moves by 0.3 of a percentage point.
+
+        What is left is the instrument's own ≈6200 K key (§6.3) coming up.
+        Saturated cyan over a saturated cyan field raises luminance without
+        touching hue or saturation, so all of the frame's brightness gain is free
+        of the cost above. It is drawn behind the column, so every sphere is
+        painted over it at full saturation, and it HOLDS for as long as the
+        result is on screen — which is what §4 of the rubric means by "the payoff
+        surface persists".
+      -->
+      <linearGradient id="won-lift" x1="0" y1="1" x2="0" y2="0">
+        <stop offset="0" stop-color="#1E6E9E" stop-opacity="0.5"/>
+        <stop offset="0.42" stop-color="#2394CE" stop-opacity="0.66"/>
+        <stop offset="0.78" stop-color="#33A9DE" stop-opacity="0.6"/>
+        <stop offset="1" stop-color="#4FC4EE" stop-opacity="0.4"/>
+      </linearGradient>
 `;
   }
 
@@ -959,6 +1107,66 @@ export class Chamber {
    * alive only through CHARGE and AGITATE. 22 rather than 256 because each one
    * here is a composited node instead of a point sprite.
    */
+  /** The clouding in the liquid — see the mottle gradients in the defs. */
+  #mottle(glassTop: number, glassHeight: number): string {
+    const next = stream(0x6c078965);
+    const lobes = Array.from({ length: 34 }, (_unused, index) => {
+      const cx = 10 + next() * 370;
+      const cy = glassTop + next() * glassHeight;
+      const rx = 15 + next() * 33;
+      const ry = rx * (0.62 + next() * 0.7);
+      return `<ellipse cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" rx="${rx.toFixed(
+        0,
+      )}" ry="${ry.toFixed(0)}" fill="url(#mottle-${index})"/>`;
+    }).join('');
+    return `<g class="mottle" aria-hidden="true">${lobes}</g>`;
+  }
+
+  /**
+   * Suspended particulate — the still material the empty liquid was missing.
+   *
+   * Criterion 8 of the rubric is a floor of 2,500 distinct quantised colours,
+   * which is not a colour-preference: it is how you detect flat fill. The
+   * references run 2,956 (Plinko) to 7,444 (Balloon Mania) because nothing in
+   * them is inert — Plinko's "empty" background carries a whole damask filigree.
+   * Ours measured 2,086 at cold start and 2,208 armed, and the shortfall traced
+   * to two places, both of them the same defect: the upper and lower thirds of
+   * the chamber were unbroken mid-brine.
+   *
+   * This is that filigree, in fiction rather than in ornament. A glycerol-like
+   * liquid in a laboratory vessel has particulate in it; drawn small, dim and
+   * sized in a range, it fills the empty bands with hundreds of intermediate
+   * values and costs nothing anywhere else:
+   *
+   * - it is **completely still** — the rubric's strongest single finding is that
+   *   a premium instant game animates *nothing* while the player decides, and
+   *   the idle budget is the one this pass is trying to give back, not spend;
+   * - it adds **no hard edge** — every dot is under 2.4 units across and under
+   *   18% opacity, so criterion 9's gradient-magnitude test never sees it;
+   * - it is **deterministic**, from the same PRNG as the bubble field, so it is
+   *   identical across every redraw and every session.
+   */
+  #particulate(height: number): string {
+    const next = stream(0x27d4eb2f);
+    const dots = Array.from({ length: 190 }, () => {
+      const x = 22 + next() * 346;
+      const y = 14 + next() * (height - 28);
+      const r = 0.5 + next() ** 2 * 1.9;
+      // Dimmer with depth, so the field reads as volume rather than as a screen
+      // of dots: the key comes from above (§6.3) and particulate low in the
+      // vessel is lit by less of it.
+      const lit = 1 - y / Math.max(1, height);
+      const opacity = 0.05 + lit * 0.13 + next() * 0.03;
+      const roll = next();
+      const tint =
+        roll > 0.84 ? 'var(--key-hot)' : roll > 0.62 ? 'var(--brine-lit)' : 'var(--glass-edge)';
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(
+        2,
+      )}" fill="${tint}" opacity="${opacity.toFixed(3)}"/>`;
+    }).join('');
+    return `<g class="motes-still" aria-hidden="true">${dots}</g>`;
+  }
+
   #bubbles(height: number): string {
     const next = stream(0x85ebca6b);
     const cells = Array.from({ length: 22 }, () => {
@@ -1236,53 +1444,6 @@ export class Chamber {
   }
 
   /**
-   * Five 18 px vanes at 72°, tapering from 6 px at the hub to 2 px at the rim.
-   * Five, not seven, in both variants: it is machinery, not a counter, and a
-   * five-vane wheel at 3.2 Hz never appears to stand still under the settle
-   * cadence the way a seven-vane one does at 360 ms (§6.9).
-   *
-   * Round 1 drew the vanes as uniform-width rounded bars floating in the annulus
-   * with a gap between the hub and each vane's inner end, all of it at 26 to 42%
-   * opacity on 3 px strokes — so the pair read as Illustrator guides or a loading
-   * spinner rather than as machinery. They are shaded quads bolted to the hub
-   * now, the ring has a lit face and a shadow side, and §6.9 was amended to
-   * describe the object rather than the wireframe.
-   *
-   * The rotation lives on an INNER group so the per-frame transform cannot
-   * overwrite the placement (see the file header).
-   */
-  #impeller(cx: number, cy: number): string {
-    const hub = 11;
-    const rim = IMPELLER_RADIUS - 6;
-    const vanes = Array.from({ length: 5 }, (_unused, index) => {
-      const angle = (index * 72 * Math.PI) / 180;
-      const nx = Math.cos(angle);
-      const ny = Math.sin(angle);
-      // Perpendicular, for the taper: 6 px across at the hub, 2 px at the rim.
-      const px = -ny;
-      const py = nx;
-      const point = (r: number, half: number, sign: number): string =>
-        `${(nx * r + px * half * sign).toFixed(2)} ${(ny * r + py * half * sign).toFixed(2)}`;
-      return `<path d="M${point(hub - 1, 3, 1)} L${point(rim, 1, 1)} L${point(
-        rim,
-        1,
-        -1,
-      )} L${point(hub - 1, 3, -1)} Z" fill="url(#impeller-vane)"/>`;
-    }).join('');
-    return `<g class="impeller-at" transform="translate(${cx},${cy})">
-      <g class="impeller">
-        <circle r="${IMPELLER_RADIUS}" fill="none" stroke="url(#impeller-metal)" stroke-width="5"/>
-        <circle r="${IMPELLER_RADIUS - 2.5}" fill="none" stroke="var(--deep)" stroke-width="1" stroke-opacity="0.6"/>
-        <circle r="${IMPELLER_RADIUS - 9}" fill="none" stroke="var(--chrome-dark)" stroke-width="1.5"/>
-        ${vanes}
-        <circle r="${hub}" fill="url(#impeller-hub)"/>
-        <circle r="${hub}" fill="none" stroke="var(--deep)" stroke-width="1" stroke-opacity="0.5"/>
-        <circle r="3.4" fill="var(--chrome-dark)"/>
-      </g>
-    </g>`;
-  }
-
-  /**
    * The prismatic burst — light thrown through the chamber when the round won.
    *
    * The wedges are tinted from the sphere palette rather than from a new set of
@@ -1343,49 +1504,31 @@ export class Chamber {
   }
 
   /**
-   * The multiplier stamp — a machined plate, not a tooltip.
+   * The payout plaque — a machined object, seated, not a bar drawn over a scene.
    *
-   * Two things were wrong with round 1's version and both are geometry rather
-   * than taste. It sat at the tube's exact centre, which in CLASSIC is slot 3, so
-   * a 144 × 50 plate at 84% black **erased the settled sphere's etched glyph** —
-   * and §11 is unconditional that the glyph is the colour-blind channel, not a
-   * decoration on top of one. And four gold or chrome edges crossed within 8 px
-   * of each other, so the hero frame of a win read as clutter.
+   * Four things changed from round 1, and each answers a measured defect.
    *
-   * So it is seated on a **slot division** instead: the plate spans the chamber,
-   * its half-height is bounded by `gap/2 + radius − glyphHalf − 3` so both
-   * neighbouring glyphs stay clear of it by construction, and the numerals sit in
-   * a recessed well with one gold bevel and one specular sweep. Nothing is
-   * occluded that carries information, and the object has material.
+   * **It is inset.** 300 units of 390 rather than a 374-unit full bleed, so it
+   * has an edge, a shadow and a silhouette. A surface that runs wall to wall has
+   * no boundary and cannot read as a thing; it reads as a component.
+   *
+   * **It clears the tube.** It is seated under the presented column (see
+   * LIFT_SCALE) instead of on a slot division, so it covers no sphere and the
+   * settled order — the record of the round — survives its own celebration.
+   *
+   * **It is taller.** 64 units against 46, which is what lets §6.5's 48 px
+   * payout step sit on it with the unit attached and a caption underneath. The
+   * old height was bounded by the 14-unit gap between two spheres; nothing is
+   * threading a gap any more, so the bound is gone.
+   *
+   * **It carries the unit.** `WON 114.20 CR`, not `WON 114.20`. Every Tier-1
+   * reference attaches its unit to every figure, and a number with no unit does
+   * not read as money — which was the one thing criterion 17 failed on.
    */
-  #stampMarkup(pitch: number, diameter: number): string {
-    const middle = Math.ceil((this.#variant?.n ?? 5) / 2);
-    const y = Math.round(this.slotY(middle) - pitch / 2);
-    const radius = diameter / 2;
-    const gap = pitch - diameter;
-    const half = Math.max(15, Math.min(23, Math.round(gap / 2 + radius - radius * 0.46 - 3)));
-    /*
-     * Full-bleed across the instrument, 8 px inside each glass wall. Round 3 ran
-     * it to 302 and left 44 px of liquid either side, so the object the round
-     * exists to produce was smaller than the tube it sat on. The height is
-     * unchanged and still bounded by the glyph rule above — the plate grows
-     * along the only axis that costs nothing.
-     */
-    const width = 374;
-    /*
-     * The numeral has to fit the plate, and the plate's height is the variant's.
-     *
-     * §6.5's 48 px payout step assumes CLASSIC's 78-unit pitch, which bounds the
-     * plate at 23 units of half-height. SEVEN packs seven spheres into the same
-     * chamber — 58-unit pitch, 44-unit spheres — so the same rule gives a
-     * 16-unit half and a 48 px numeral overflowed the plate above and below it,
-     * caught on a frame dump of a SEVEN win. Two published steps, chosen by the
-     * geometry rather than by the variant name, so a future pitch picks the right
-     * one on its own.
-     */
-    const tight = half < 21;
-    const baseline = tight ? 10 : Math.round(half * 0.76);
-    return `<g class="stamp-at" transform="translate(${CENTRE_X},${y})" data-half="${half}">
+  #stampMarkup(y: number): string {
+    const width = PLATE_WIDTH;
+    const half = PLATE_HALF;
+    return `<g class="stamp-at" transform="translate(${CENTRE_X},${y})">
       <!--
         The landing shock: one stroked ellipse, scaled and faded, thrown outward
         from the plate at the instant it lands. It is the impact the round-1
@@ -1393,30 +1536,70 @@ export class Chamber {
         a tooltip appearing rather than as a machined plate arriving.
       -->
       <g class="stamp-shock">
-        <ellipse rx="${width * 0.4}" ry="${half * 1.9}" fill="none" stroke="var(--gold-hot)" stroke-width="2" stroke-opacity="0.8"/>
+        <ellipse rx="${width * 0.4}" ry="${half * 1.5}" fill="none" stroke="var(--gold-hot)" stroke-width="2" stroke-opacity="0.8"/>
       </g>
-      <g class="stamp" data-fit="${tight ? 'tight' : 'wide'}">
+      <g class="stamp">
         <!-- The pop's origin anchor; see the sphere markup. The shine translates
              300 px inside a clip, which would otherwise drag the box with it. -->
         <circle class="stamp__anchor" r="${(width * 0.8).toFixed(0)}" fill="none"/>
+        <!--
+          The contact shadow. §1 of the rubric puts "a layered drop shadow
+          grounding each element" among the load-bearing depth cues, and a plate
+          that lands with a bang and casts nothing is a sticker.
+        -->
+        <rect class="stamp__cast" x="${-width / 2 + 6}" y="${-half + 10}" width="${
+          width - 12
+        }" height="${half * 2}" rx="12" fill="url(#stamp-cast)"/>
         <rect class="stamp__plate" x="${-width / 2}" y="${-half}" width="${width}" height="${
           half * 2
-        }" rx="9" fill="url(#stamp-face)"/>
+        }" rx="12" fill="url(#stamp-face)"/>
         <!-- One bevel: a hot lip on top, a machined shade under the bottom. -->
-        <rect x="${-width / 2 + 1}" y="${-half + 1}" width="${width - 2}" height="${
-          half * 2 - 2
-        }" rx="8" fill="none" stroke="url(#stamp-bevel)" stroke-width="2"/>
+        <rect x="${-width / 2 + 1.5}" y="${-half + 1.5}" width="${width - 3}" height="${
+          half * 2 - 3
+        }" rx="10.5" fill="none" stroke="url(#stamp-bevel)" stroke-width="3"/>
         <!--
           The money, inside the surface, dark on light — and it is the round's
           own credit rather than a ratio, because §8's brief is that a win must
           read as a win with the sound off and a multiple is a thing you have to
-          convert. The multiple keeps its place at the right, which is §9 step
-          5's stamp; it is now the caption on the money instead of the headline.
+          convert. The label sits above the figure and the multiple below it,
+          which is §4 of the rubric's published order for a payout surface:
+          label smaller and above, amount larger and below.
         -->
-        <text class="stamp__value" text-anchor="middle" y="${baseline}" fill="var(--void)"><tspan class="stamp__cap" data-cap>WON </tspan><tspan class="stamp__num" data-num></tspan></text>
+        <!--
+          Three figures on two rows, and the rows do not fight.
+          The first draft stacked label, amount and multiple on three baselines
+          inside a 64-unit plate: at §6.5's 48 px payout step the numeral's own
+          cap height is 34 units, so it ran through the label above it and
+          pushed the multiple past the plate's bottom edge — both caught on the
+          first frame dump of the rebuilt plaque. Label and multiple now share
+          the upper row, at opposite ends, where they read as the caption pair
+          they are; the money owns the row below it alone.
+        -->
+        <text class="stamp__cap" text-anchor="start" x="${
+          -width / 2 + 18
+        }" y="${-half + 22}" fill="#5A4310" data-cap>WON</text>
         <text class="stamp__mult" text-anchor="end" x="${
-          width / 2 - 16
-        }" y="${Math.round(half * 0.3)}" fill="#4a3812" data-mult></text>
+          width / 2 - 18
+        }" y="${-half + 22}" fill="#5A4310" data-mult></text>
+        <!--
+          The numeral is BUILT, not styled — §5 of the rubric's "display type is
+          built, not styled; flat system-font text reads as placeholder".
+          Two passes: a light warm copy one and a half units below the dark one,
+          so the figure reads as *punched into* the plate rather than printed on
+          it. That is the treatment the material asks for — a struck metal plaque
+          catches light on the lower lip of every stroke — and it is what the
+          product can honestly build, because §6.5's display face is not bundled
+          and on most devices this numeral renders in the platform system font. A
+          built treatment survives that substitution; a font dependency does not.
+          Both passes carry the same string from the same node write (see
+          setStamp below), so they can never disagree.
+        -->
+        <text class="stamp__emboss" text-anchor="middle" y="${
+          half - 13.5
+        }" aria-hidden="true"><tspan data-num></tspan><tspan class="stamp__unit"> ${UNIT}</tspan></text>
+        <text class="stamp__value" text-anchor="middle" y="${
+          half - 15
+        }" fill="var(--void)"><tspan class="stamp__num" data-num></tspan><tspan class="stamp__unit"> ${UNIT}</tspan></text>
         <g clip-path="url(#stamp-clip)">
           <rect class="stamp__shine" x="${-width / 2}" y="${-half}" width="76" height="${
             half * 2
@@ -1425,9 +1608,6 @@ export class Chamber {
       </g>
     </g>`;
   }
-
-  /* -------------------------------------------------------------- restore -- */
-
   /**
    * Re-apply the round so far, without transitions.
    *
@@ -1446,6 +1626,9 @@ export class Chamber {
     this.igniteRim(this.#rimLit);
     this.setStamp(this.#stampFace, this.#stampOn);
     this.desaturate(this.#mono);
+    // The held key light and the presented column are part of the record, so a
+    // redraw restores them like every other end state (see `celebrate`).
+    svg?.classList.toggle('chamber--won', this.#won);
     for (const [slot, element] of this.#seated) {
       const orb = this.#orbs.get(element);
       const orbY = this.#orbY.get(element);
@@ -1506,6 +1689,10 @@ export class Chamber {
     this.desaturate(false);
     this.#burstAt = 0;
     this.#won = false;
+    // The held key light and the presented column go with everything else. Both
+    // are declarations rather than animation fills, so `chamber--restoring`
+    // cannot clear them and they have to be named here (see `#restore`).
+    this.#svg?.classList.remove('chamber--won');
     this.#burst?.classList.remove('burst--on', 'burst--calm');
     this.#flash?.classList.remove('cham-flash--on');
     this.#tube?.classList.remove('tube--won');
@@ -1555,36 +1742,7 @@ export class Chamber {
   setBeat(beat: Beat): void {
     this.#beat = beat;
     this.#svg?.setAttribute('data-beat', beat);
-    // §6.9: the impeller spins up over the 260 ms CHARGE, holds through AGITATE,
-    // and decelerates to a stop across the first two locks. It never reverses,
-    // never pulses, and never reacts to the outcome.
-    if (beat === 'charge' || beat === 'agitate') {
-      /*
-       * …and it does not turn at all under `prefers-reduced-motion`.
-       *
-       * §6.4 swaps the agitation for a cross-dissolve and the falls for fades; it
-       * does not mention the impeller, and the stylesheet's reduced-motion block
-       * lists `.impeller` alongside the caustics and the bubbles — but the
-       * rotation is a per-frame write from the ticker rather than a keyframe, so
-       * that rule was a no-op and the one continuously rotating element on screen
-       * kept turning for exactly the players the preference exists for. The
-       * stylesheet's intent is the correct one; this is where it has to be kept.
-       */
-      this.#targetOmega = this.#reduced ? 0 : IMPELLER_OMEGA;
-      this.#omegaTau = 0.14;
-    } else if (beat === 'settle') {
-      this.#targetOmega = 0;
-      this.#omegaTau = 0.3;
-    } else {
-      this.#targetOmega = 0;
-      this.#omegaTau = beat === 'idle' ? 0.05 : 0.3;
-    }
     if (beat === 'settle' || beat === 'close' || beat === 'done') this.#turbulence = null;
-    if (beat === 'idle') {
-      this.#omega = 0;
-      this.#angle = 0;
-      for (const impeller of this.#impellers) impeller.style.transform = '';
-    }
     this.#drive();
   }
 
@@ -1604,8 +1762,7 @@ export class Chamber {
 
   /** Register on the shared ticker only while something actually moves. */
   #drive(): void {
-    const wanted = this.#turbulence !== null || this.#targetOmega > 0 || this.#omega > 0.01;
-    if (!wanted) {
+    if (this.#turbulence === null) {
       this.#detach?.();
       this.#detach = null;
       return;
@@ -1619,16 +1776,6 @@ export class Chamber {
     const now = performance.now();
     const dt = Math.min(0.05, Math.max(0, (now - this.#lastMs) / 1000));
     this.#lastMs = now;
-
-    // Exponential approach to the target rate: a spin-up and a spin-down with no
-    // keyframe to fight and no discontinuity when the target changes mid-beat.
-    const alpha = 1 - Math.exp(-dt / this.#omegaTau);
-    this.#omega += (this.#targetOmega - this.#omega) * alpha;
-    if (this.#omega > 0.0005) {
-      this.#angle = (this.#angle + this.#omega * dt) % (Math.PI * 2);
-      const degrees = ((this.#angle * 180) / Math.PI).toFixed(2);
-      for (const impeller of this.#impellers) impeller.style.transform = `rotate(${degrees}deg)`;
-    }
 
     const track = this.#turbulence;
     if (track) {
@@ -1646,8 +1793,7 @@ export class Chamber {
       }
     }
 
-    if (this.#turbulence === null && this.#omega <= 0.0005) {
-      this.#omega = 0;
+    if (this.#turbulence === null) {
       this.#detach?.();
       this.#detach = null;
     }
@@ -1875,6 +2021,13 @@ export class Chamber {
     void this.#svg?.getBoundingClientRect();
 
     if (burst) burst.classList.add(this.#reduced ? 'burst--calm' : 'burst--on');
+    /*
+     * The held light. Everything else in this beat is a transient that returns
+     * the frame to where it started; this one stays up for as long as the
+     * result is on screen, and it is what makes the *settled* win frame read as
+     * a win rather than only the moving one.
+     */
+    this.#svg?.classList.add('chamber--won');
     flash?.classList.add('cham-flash--on');
     tube?.classList.add('tube--won');
     for (const orb of popped) orb.classList.add('orb--won');
@@ -1910,13 +2063,30 @@ export class Chamber {
    * shower costs the main thread nothing after it is mounted. Removed on the next
    * `reset`, i.e. at the start of the next round.
    */
+  /**
+   * The mote fall — and it is a third of the size it was, for a measured reason.
+   *
+   * 44 motes scattered across the full width of the screen made the *win* state
+   * the busiest thing in the product by moving-region count: measured on two
+   * consecutive frames of the celebration, 17 independently moving regions with
+   * no single region owning more than a few percent of the motion, against a
+   * reference ceiling of 7 and a rule that one region should own 50–80%. The
+   * total pixel change was negligible — 0.4% — which is the tell: this was not a
+   * big effect, it was a *scattered* one, and the rubric's ceiling on a payoff is
+   * "one big thing plus a handful of supporting details, not a screen full of
+   * independent effects".
+   *
+   * So the count drops and the fall is confined to the middle 62% of the frame,
+   * over the instrument, where it reads as light coming off the plaque rather
+   * than as weather. It stays voiced by tier rather than scaled by amount (§8).
+   */
   #dropMotes(voicing: Voicing): void {
     const host = this.#motes;
     if (!host || this.#reduced) return;
-    const count = voicing === 'ORDER' ? 44 : voicing === 'FORM' ? 28 : 16;
+    const count = voicing === 'ORDER' ? 18 : voicing === 'FORM' ? 12 : 8;
     const next = stream(0xc2b2ae35 + count);
     host.innerHTML = Array.from({ length: count }, () => {
-      const x = next() * 100;
+      const x = 19 + next() * 62;
       const delay = next() * 1.1;
       const duration = 2.4 + next() * 2.1;
       const size = 2.4 + next() * 4.2;
@@ -1942,8 +2112,24 @@ export class Chamber {
     this.#stampFace = face;
     this.#stampOn = on;
     if (!this.#stamp) return;
-    const amount = this.#stamp.querySelector('[data-num]');
-    if (amount) amount.textContent = face.amount;
+    /*
+     * The numeral takes the published step that fits the plaque.
+     *
+     * §6.5's 48 px payout step assumes a figure the width of `114.20 CR`, which
+     * is 192 of the plaque's 264 units of inner width. SEVEN's top multiple is
+     * 4838.40x, and a large stake on it produces a figure half as wide again —
+     * so the step is chosen from the string's own length rather than assumed,
+     * and the two steps below it are both on §6.5's scale. §11 forbids clipping
+     * without exception, and a payout that overhangs its own plate is the one
+     * place in the product where that would be least forgivable.
+     */
+    this.#stamp.dataset.len =
+      face.amount.length > 8 ? 'xl' : face.amount.length > 6 ? 'long' : 'normal';
+    // querySelectorAll, not querySelector: the figure is set twice — the struck
+    // pass and the ink pass (see `#stampMarkup`) — and writing only the first
+    // would leave the plaque reading a hot-gold number with no ink on it.
+    for (const amount of this.#stamp.querySelectorAll('[data-num]'))
+      amount.textContent = face.amount;
     const multiple = this.#stamp.querySelector('[data-mult]');
     if (multiple) multiple.textContent = face.multiple;
     this.#stamp.classList.toggle('stamp--on', on);

@@ -24,7 +24,7 @@ import { haptics, sound, type WinVoicing } from './audio.js';
 import { Chamber } from './chamber.js';
 import { turbulence } from './choreo.js';
 import { claimKey, claimSummary, elementName, type Params } from './claims.js';
-import { balanceDuringRound, credits, signedCredits } from './money.js';
+import { UNIT, balanceDuringRound, credits, money, signedCredits } from './money.js';
 import { openPicker, stakeLadder } from './picker.js';
 import { draftRows, roundRows } from './rows.js';
 import { mountOrbDefs, orbSvg } from './sphere.js';
@@ -149,6 +149,30 @@ async function boot(): Promise<void> {
     <div data-cadence></div>
     <main class="stage" id="stage">
       <div class="chamber-holder" id="chamber"></div>
+      <!--
+        The round's own caption, and it answers two of the rubric's four
+        three-second questions inside the play area rather than at the foot of
+        the screen.
+
+        During the round the only figures on the frame were a 13 px stake and
+        multiplier pinned to the extreme bottom edge, and the play area
+        itself carried no number at all — so "what state is this?" was inferred
+        from the spheres and "what is at stake?" was answered by squinting at the
+        last 3% of the frame. Every reference states the round's state in words
+        at the centre of the play area and keeps the stake on screen with its
+        unit attached.
+
+        It is deliberately QUIET. The rubric's in-round rule is that the brightest
+        object is the thing the round is about, and here that is the settling
+        column — so this is dim, small and tracked, and it must never compete
+        with it. It changes only on a lock, which is a beat that already exists.
+
+        It leaks nothing: the settled count is the number of spheres visibly in
+        the tube, and the stake is what the player committed. Neither is a
+        function of the outcome, and the caption is byte-identical on a round
+        that will win and a round that will not.
+      -->
+      <div class="round-cap" data-round-cap hidden></div>
       <button class="skip" data-skip aria-label="Skip the animation">SKIP</button>
       <!--
         §9's mote fall lives here rather than inside the chamber, so it outlives a
@@ -308,14 +332,14 @@ function addLine(code: string, params: Params, stakeChips: bigint): void {
     if (line.code !== code) notes.push('same bet — stake combined');
     if (next > maxLine) {
       next = maxLine;
-      notes.push(`this line is at the ${credits(maxLine)} maximum`);
+      notes.push(`this line is at the ${money(maxLine)} maximum`);
     }
     if (others + next > maxTicket) {
       next = maxTicket - others;
-      notes.push(`ticket is at the ${credits(maxTicket)} maximum`);
+      notes.push(`ticket is at the ${money(maxTicket)} maximum`);
     }
     line.stakeChips = next;
-    toast(notes.length > 0 ? notes.join(' · ') : `${credits(next)} on this line`);
+    toast(notes.length > 0 ? notes.join(' · ') : `${money(next)} on this line`);
   } else {
     if (state.lines.length >= info.limits.maxLinesPerTicket) {
       toast(`${info.limits.maxLinesPerTicket} lines maximum`);
@@ -325,10 +349,10 @@ function addLine(code: string, params: Params, stakeChips: bigint): void {
     const others = totalStake();
     if (others + stake > maxTicket) stake = maxTicket - others;
     if (stake < minLine) {
-      toast(`ticket is at the ${credits(maxTicket)} maximum`);
+      toast(`ticket is at the ${money(maxTicket)} maximum`);
       return;
     }
-    if (stake !== stakeChips) toast(`ticket is at the ${credits(maxTicket)} maximum`);
+    if (stake !== stakeChips) toast(`ticket is at the ${money(maxTicket)} maximum`);
     state.lines.push({ code, params, stakeChips: stake });
   }
   state.lastStakeChips = stakeChips;
@@ -369,9 +393,16 @@ function railMarkup(): string {
   const shown = state.displayBalanceChips ?? BigInt(session.balanceChips);
   return `
     <button class="icon-btn" data-menu aria-label="Menu">${ICON_HOME}</button>
-    <span class="rail__balance"><b data-balance>${esc(
+    <!--
+      The unit sits in its own node, NOT inside the data-balance element.
+      countBalanceUp writes textContent on that node sixty times a second, so a
+      unit inside it would be re-written with every frame of the climb — and the
+      figure is tabular precisely so that nothing moves while it counts. Outside
+      it, the unit is a fixed anchor the digits grow toward.
+    -->
+    <span class="rail__balance"><span class="rail__figure"><b data-balance>${esc(
       credits(shown),
-    )}</b><span>balance</span></span>
+    )}</b><i class="rail__unit">${UNIT}</i></span><span>balance</span></span>
     <button class="variant-toggle" data-variant>${esc(variant().label)}</button>
     <span class="badge">free play</span>
     ${fairness}`;
@@ -478,6 +509,10 @@ function render(): void {
    * is exactly the broken button §4 says a rejected tap reads as.
    */
   if (state.mode !== 'round') startFloorTicker();
+  // Belt and braces: the caption is raised and stepped by the choreography, and
+  // cleared here for every path that leaves the round without finishing it —
+  // a failed COMMIT, a reconnect, REBET, NEW TICKET.
+  if (state.mode !== 'round') setRoundCap(null);
   fitChamber();
 }
 
@@ -507,7 +542,26 @@ function pinnedLines(phase: 'live' | 'final'): string {
     ? roundRows(info, round, state.displayOrder, phase)
     : draftRows(info, state.lines);
 
-  return `<div class="lines">${rows
+  /*
+   * The round's net outcome travels with the strip, and it gates the gold.
+   *
+   * §6.1 use 5 lets a line that resolved *won* carry gold, and on a net-losing
+   * multi-line ticket that produced a panel whose dominant colour was gold: a
+   * capture of an 8-line ticket returning 7.20 of 8.00 — a loss — showed three
+   * rows reading `returned 2.40` in gold with the neutral headline the only
+   * signal of the net result. Nothing about it breaks §10 (no plate, no rim, no
+   * burst, no count-up, and the headline states the fact), but the colour
+   * weighting argued against the headline, and "a loss must be presented as one"
+   * is about what the frame *reads* as, not only about which effects fired.
+   *
+   * So on a net-losing ticket the won rows keep every other channel — the rail,
+   * the `returned` wording, the state, the announcement — and lose only the
+   * gold, stepping to `--ink`. Which lines won is still fully legible, which is
+   * §10's explicit "what is not suppressed".
+   */
+  const net =
+    phase === 'final' && round?.presentation ? round.presentation.outcome : 'pending';
+  return `<div class="lines" data-net="${esc(net)}">${rows
     .map(
       (row) =>
         `<div class="line" data-line="${row.index}" data-state="${row.state}">
@@ -543,18 +597,28 @@ function freezeDisplayOrder(round: RoundView): void {
   state.displayOrder = remaining.length === 0 ? order : null;
 }
 
+/*
+ * The tier tabs, and the sub-captions are gone.
+ *
+ * §6.1's own argument for publishing the three tier accents was that "three tabs
+ * that differ only in weight teach [volatility] in a caption where three tabs
+ * that differ in colour teach it in a glance" — so once the colours shipped, the
+ * captions were teaching the same thing twice, in body copy, on the play
+ * surface. Measured against the reference library that is the expensive half:
+ * no reference puts prose on a game screen, and the bottom 45% of our idle frame
+ * was three tabs with sub-captions, four cards of three text lines each and a
+ * two-sentence paragraph. The colour-blind channel is unaffected — the tier is
+ * still named in words on the tab, still spelled out on every chip's
+ * `aria-label`, and still glossed in full in the picker sheet.
+ */
 function tierTabs(): string {
-  const tiers: [typeof state.tier, string][] = [
-    ['FLOW', 'lands often'],
-    ['FORM', 'the core game'],
-    ['ORDER', 'rare, big'],
-  ];
+  const tiers: (typeof state.tier)[] = ['FLOW', 'FORM', 'ORDER'];
   return `<div class="tabs" role="tablist">${tiers
     .map(
-      ([tier, gloss]) =>
+      (tier) =>
         `<button class="tab" role="tab" data-tier="${tier}" aria-selected="${
           state.tier === tier
-        }"><b>${tier}</b><span>${gloss}</span></button>`,
+        }"><b>${tier}</b></button>`,
     )
     .join('')}</div>`;
 }
@@ -624,8 +688,10 @@ function ticketStrip(): string {
   const best = state.quote ? BigInt(state.quote.bestOutcomeChips) : 0n;
   return `<button class="strip" data-review>
     <b>${state.lines.length}</b> line${state.lines.length === 1 ? '' : 's'} ·
-    <b>${esc(credits(total))}</b>
-    <span class="strip__best" data-best>best <b>${esc(state.quote ? credits(best) : '—')}</b></span>
+    <b>${esc(money(total))}</b>
+    <span class="strip__best" data-best>best <b>${esc(
+      state.quote ? money(best) : '—',
+    )}</b></span>
   </button>`;
 }
 
@@ -637,13 +703,34 @@ function lobbySeconds(at: number | undefined): string {
 
 function commitLabel(): string {
   const total = totalStake();
-  if (state.place !== 'lobby') return `COMMIT ${credits(total)}`;
+  // The empty-ticket label names the action that IS available. See `commitButton`.
+  if (state.lines.length === 0) return 'PICK A BET';
+  if (state.place !== 'lobby') return `COMMIT ${money(total)}`;
   const lobby = state.lobby;
   if (lobby?.clientClosesAt !== undefined && Date.now() >= lobby.clientClosesAt)
     return `BETTING CLOSED · next draw in ${lobbySeconds(lobby.settleAtEpochMs)}`;
-  return `COMMIT ${credits(total)} (closes in ${lobbySeconds(lobby?.clientClosesAt)})`;
+  return `COMMIT ${money(total)} (closes in ${lobbySeconds(lobby?.clientClosesAt)})`;
 }
 
+/*
+ * The one control, and it is **lit on the first frame**.
+ *
+ * Round 1 shipped the cold-start screen with `COMMIT 0.00` disabled and dim, so
+ * the frame a new player opens the game on had no call to action at all: the
+ * brightest, most saturated region measured 0.7% of the frame at a centroid of
+ * y = 0.33 — a sliver of light off a sphere, in the middle of the instrument.
+ * Every reference in the category makes the round-starting button the brightest
+ * saturated object in the idle frame, sitting under the thumb at y = 0.88–0.94.
+ * Ours had one and hid it until the player had already navigated a picker they
+ * had no prompt to open.
+ *
+ * With an empty ticket the button is therefore enabled and reads `PICK A BET`,
+ * and pressing it opens the picker for the first chip of the open tier. That is
+ * a real action rather than a lit no-op, and it is not a nudge to spend: it
+ * commits nothing, names no amount, and the press that *does* spend money is the
+ * second one — which names the amount, as it always did. A dim button is not a
+ * safeguard; it is just a screen with no way in.
+ */
 function commitButton(): string {
   const session = state.session as SessionState;
   const waiting = session.commitAvailableInMs > 0;
@@ -651,12 +738,36 @@ function commitButton(): string {
     state.place === 'lobby' &&
     state.lobby?.clientClosesAt !== undefined &&
     Date.now() >= state.lobby.clientClosesAt;
-  const disabled = state.lines.length === 0 || waiting || lobbyClosed;
-  return `<button class="cta" data-commit ${disabled ? 'disabled' : ''}>
+  const empty = state.lines.length === 0;
+  const disabled = waiting || lobbyClosed;
+  return `<button class="cta" data-commit ${disabled ? 'disabled' : ''} ${
+    empty ? 'data-empty' : ''
+  }>
     <span data-commit-label>${esc(commitLabel())}</span>
     ${waiting ? '<span class="cta__sub">unlocks — it never expires</span>' : ''}
     <i class="cta__hairline" data-hairline></i>
   </button>`;
+}
+
+/** Open the stake picker for one bet code. The chip and the CTA share it. */
+function pickBet(code: string): void {
+  const info = variant();
+  const bet = info.bets.find((candidate) => candidate.code === code);
+  if (!bet) return;
+  openPicker({
+    variant: info,
+    bet,
+    // "The stepper never pre-selects a value higher than the previous round's."
+    stakeChips: state.lastStakeChips,
+    ladder: stakeLadder(info),
+    onAdd: (params, stakeChips) => addLine(bet.code, params, stakeChips),
+  });
+}
+
+/** What `PICK A BET` opens: the first chip of the tier already on screen. */
+function openFirstChip(): void {
+  const first = variant().bets.find((bet) => bet.tier === state.tier);
+  if (first) pickBet(first.code);
 }
 
 function noticeMarkup(): string {
@@ -680,11 +791,53 @@ function buildDeck(): string {
     ${tierTabs()}
     <div class="rail-block">
       ${chipRail()}
-      <p class="footnote">Every bet pays 96%. The tiers are how wild the ride is, not how good the deal is.</p>
+      <!--
+        §1 item 5, and it is one clause now rather than two sentences. The
+        second sentence — "the tiers are how wild the ride is, not how good the
+        deal is" — is exactly what the three tier colours teach at a glance
+        (§6.1), so on the play surface it was prose restating the art. The
+        honesty it carries is not reduced: the 96% is still here, still on every
+        chip in the picker sheet, still on the fairness screen and still in the
+        seed sheet. §10 requires the disclosure, not the paragraph.
+      -->
+      <p class="footnote">Every bet pays 96%.</p>
     </div>
     ${ticketStrip()}
     ${noticeMarkup()}
     ${commitButton()}`;
+}
+
+/**
+ * Write the round caption. Called at COMMIT and on every lock; cleared on exit.
+ *
+ * `settled` is how many slots are filled, which is what the tube already shows.
+ */
+function setRoundCap(settled: number | null): void {
+  const node = app().querySelector<HTMLElement>('[data-round-cap]');
+  if (!node) return;
+  if (settled === null) {
+    node.hidden = true;
+    node.textContent = '';
+    return;
+  }
+  const info = variant();
+  node.hidden = false;
+  node.innerHTML = `<b>SETTLING ${settled} OF ${info.n}</b><span>STAKE ${esc(
+    money(totalStakeCommitted()),
+  )}</span>`;
+}
+
+/**
+ * The stake the open round was committed with.
+ *
+ * Read off the round rather than off the draft ticket: `state.lines` is cleared
+ * and rebuilt by REBET and NEW TICKET, and the caption must keep naming the
+ * money that is actually at risk for as long as the round is running.
+ */
+function totalStakeCommitted(): bigint {
+  const round = state.round;
+  if (!round) return totalStake();
+  return round.lines.reduce((sum, line) => sum + BigInt(line.stakeChips), 0n);
 }
 
 /** S4: the pinned strip and nothing else. SKIP and the hairline live in the shell. */
@@ -785,17 +938,7 @@ function wireDeck(deck: HTMLElement): void {
     render();
   });
   on(deck, '[data-chip]', 'click', (_event, node) => {
-    const info = variant();
-    const bet = info.bets.find((candidate) => candidate.code === node.dataset.chip);
-    if (!bet) return;
-    openPicker({
-      variant: info,
-      bet,
-      // "The stepper never pre-selects a value higher than the previous round's."
-      stakeChips: state.lastStakeChips,
-      ladder: stakeLadder(info),
-      onAdd: (params, stakeChips) => addLine(bet.code, params, stakeChips),
-    });
+    pickBet(node.dataset.chip ?? '');
   });
   /*
    * §5 S1: the third figure is "long-pressable for the one-line explanation".
@@ -850,7 +993,15 @@ function wireDeck(deck: HTMLElement): void {
       },
     });
   });
-  on(deck, '[data-commit]', 'click', () => void commit());
+  on(deck, '[data-commit]', 'click', () => {
+    // An empty ticket has nothing to commit, so the control opens the choice
+    // instead of spending. See `commitButton`.
+    if (state.lines.length === 0) {
+      openFirstChip();
+      return;
+    }
+    void commit();
+  });
   on(deck, '[data-rebet]', 'click', () => void rebet());
   on(deck, '[data-new]', 'click', () => {
     state.lines = [];
@@ -1153,6 +1304,7 @@ async function playRound(round: RoundView): Promise<void> {
     }
   };
 
+  setRoundCap(0);
   chamber.setBeat('charge');
   sound.charge(beats.chargeMs * scale);
   await at(beats.chargeMs);
@@ -1168,6 +1320,7 @@ async function playRound(round: RoundView): Promise<void> {
     chamber.seat(lock, permutation[lock - 1] as number, fall * scale);
     await at(settleStart + (lock - 1) * stagger + fall);
     chamber.lock(lock);
+    setRoundCap(lock);
     // §8: a struck-glass tone per slot, ascending by slot index, identical in
     // every round whatever the outcome. There is deliberately no per-line cue.
     sound.lock(lock, info.n);
@@ -1199,6 +1352,7 @@ async function playRound(round: RoundView): Promise<void> {
   chamber.seat(info.n, permutation[info.n - 1] as number, (reduced ? 120 : closeFall) * scale);
   await at(closeStart + closeFall);
   chamber.lock(info.n);
+  setRoundCap(null);
   sound.lock(info.n, info.n);
   resolveLinesAt(info.n);
 
@@ -1316,7 +1470,7 @@ function openMenu(): void {
           (state.catalogue as Catalogue).adapterVersion,
         )} · ${esc(info.adapterFingerprint.slice(0, 12))}… · session ${Math.floor(
           session.elapsedMs / 60_000,
-        )} min · net ${esc(signedCredits(BigInt(session.netChips)))}</p>`,
+        )} min · net ${esc(signedCredits(BigInt(session.netChips)))} ${UNIT}</p>`,
       onMount(root, close) {
         on(root, '[data-go]', 'click', (_event, node) => {
           close();
@@ -1565,10 +1719,17 @@ function connectLobby(): void {
     if (label) label.textContent = commitLabel();
     // The CTA closes early on purpose: a button that is live when a commit
     // could not land is a button that lies (§5 S10).
+    //
+    // An EMPTY ticket is not that case, and this ticker used to re-disable it
+    // every 200 ms — which would have silently undone the cold-start entry point
+    // (see `commitButton`) on the one screen where the lobby's own cadence makes
+    // an unlabelled dead button worst. With nothing on the ticket the control
+    // reads `PICK A BET` and opens the picker; it spends nothing, so a closed
+    // betting window has nothing to protect the player from.
     const cta = app().querySelector<HTMLButtonElement>('.cta');
     const closed =
       state.lobby?.clientClosesAt !== undefined && Date.now() >= state.lobby.clientClosesAt;
-    if (cta) cta.disabled = closed || state.lines.length === 0;
+    if (cta) cta.disabled = closed && state.lines.length > 0;
   }, 200);
 }
 

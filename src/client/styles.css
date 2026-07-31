@@ -65,7 +65,22 @@
   --chrome-dark: #414b58;
   --specular: #eaf3fa;
   --gold: #c9a24a;
-  --gold-hot: #f0d089;
+  /*
+   * Gold at bloom, and it is now SATURATED gold rather than pale gold.
+   *
+   * `#f0d089` measures S = 0.43 — under the 0.6 threshold the rubric counts a
+   * "saturated pixel" at — so every surface the celebration painted with it
+   * *removed* saturation from the frame. Measured idle → full-order win, the
+   * saturated share went 76.4% → 62.5%, a factor of 0.82: the loudest moment in
+   * the product was its least colourful one, which no reference payoff does.
+   * The cause was not the liquid, which is where round 1 looked; it was that
+   * every gold object in the close was a pastel.
+   *
+   * `#ffc24d` is S = 0.70 and L = 0.60 — brighter *and* more saturated than
+   * `--gold`, which is what "at bloom" should have meant all along. `--void` on
+   * it measures 12.2:1, so §11's floor is untouched.
+   */
+  --gold-hot: #ffc24d;
   --ink: #e7eef5;
   --ink-dim: #93a3b4;
   --win: #4ce0a6;
@@ -441,10 +456,28 @@ button {
   margin-right: auto;
   min-width: 0;
 }
+/*
+ * The figure and its unit on one baseline. The unit is set smaller and dimmer
+ * than the digits so the number still leads, but it is *attached* — a balance
+ * with no unit is not money, which is the one thing criterion 3 tests for.
+ */
+.rail__figure {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
 .rail__balance b {
   font-size: var(--t-md);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.01em;
+}
+.rail__unit {
+  font-style: normal;
+  font-size: var(--t-xxs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
 }
 .rail__balance span {
   font-size: var(--t-xxs);
@@ -588,8 +621,7 @@ button {
 .cham-fit,
 .cham-stretch,
 .cham-bottom,
-.column,
-.column-bg {
+.column {
   transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
   will-change: transform;
 }
@@ -607,8 +639,7 @@ button {
   transform: translateY(var(--dy-bot, 0px));
 }
 /* The tube keeps its published pitch and diameter and stays centred in the band. */
-.column,
-.column-bg {
+.column {
   transform: translateY(var(--dy-col, 0px));
 }
 
@@ -624,12 +655,77 @@ button {
  * began and ended over the void. It was the only text in the app on the art, and
  * it collided with it.
  */
+/*
+ * §1 item 3, set as a caption rather than as body copy.
+ *
+ * The sentence stays — it is the one line that says what the game is, the
+ * reference library's own comprehension exemplar is a single imperative line
+ * ("TAP BALLOONS TO WIN") over the object, and comprehension is the part of this
+ * build that is already working. What changed is its *register*: at the 15 px
+ * step in full-strength ink it read as the first line of a paragraph, and the
+ * frame had four more paragraphs under it. Small, tracked, dim and uppercase, it
+ * reads as a label on the instrument.
+ */
 .premise {
   margin: 0;
   text-align: center;
-  font-size: var(--t-sm);
+  font-size: var(--t-xxs);
+  /* 0.06em, not 0.14: at the wider tracking the line wrapped to two rows, and a
+     two-row caption is a paragraph again. It fits on one line at 100% text on
+     the 390 px reference device and wraps gracefully above that. */
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   line-height: 1.25;
+  color: var(--ink-dim);
+}
+
+/*
+ * The round caption. Top-centre of the play area, above the tube, and quiet.
+ *
+ * It answers "what state" and "what is at stake" where the player is already
+ * looking, which is what criteria 2 and 3 ask for; it is dim and small because
+ * the rubric's in-round rule is that the brightest object is the one the round
+ * is about, and that is the settling column two hundred pixels below it.
+ */
+.round-cap {
+  position: absolute;
+  /*
+   * Below the top collar, not across it — the same 44 px datum `.skip` uses and
+   * for the same reason §5 gives there: 28 units of machined steel plus its
+   * 8 unit inset. At 12 px the caption was printed straight over the collar's
+   * brushed bevel, which is the one artefact this document already calls a
+   * rendering bug when a control does it. Over the liquid it sits on the
+   * instrument's own field, and it clears SKIP in x because it is centred and
+   * SKIP is 44 px in the right gutter.
+   */
+  top: 46px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+  z-index: 1;
+  text-align: center;
+}
+.round-cap[hidden] {
+  display: none;
+}
+.round-cap b {
+  font-size: var(--t-xxs);
+  font-weight: 700;
+  letter-spacing: 0.18em;
   color: var(--ink);
+  /* The one number on the play area during the round is the stake, and it must
+     hold its columns as the slot count steps (§6.5). */
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.round-cap span {
+  font-size: var(--t-xxs);
+  letter-spacing: 0.1em;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
 /*
@@ -646,8 +742,7 @@ button {
   position: absolute;
   /* Below the top collar, not across it: 28 units of machined steel plus its
      8 unit inset, so the pill floats over the liquid and no chrome sits on
-     chrome. Nothing else is in that corner — the tube is centred and the
-     nearest impeller is on the opposite diagonal (§6.9). */
+     chrome. Nothing else is in that corner — the tube is centred (§6.9). */
   top: 44px;
   right: 12px;
   min-width: var(--tap);
@@ -913,34 +1008,6 @@ button {
     transform: translateY(var(--rise, -200px));
     opacity: 0;
   }
-}
-
-/*
- * The impellers. §6.9: the only thing on screen that rotates, spinning up over
- * the 260 ms CHARGE, holding through AGITATE, decelerating to a stop across the
- * first two locks — driven from the shared ticker in chamber.ts so the spin-up
- * and spin-down are one continuous integration with no keyframe to fight.
- *
- * The opacity pair is §6.9's amended 0.30 → 0.62, and both halves of that pair
- * are corrections in opposite directions. Round 1's flat 26–42% on a 3 px
- * five-fold-symmetric wireframe made the rotation imperceptible in a frame dump
- * and the pair read as a loading spinner; the fix for that is the shading and
- * the hub-to-rim taper in chamber.ts, not the number. Round 2 then took the
- * number to 0.38 → 0.82, and at 0.82 two lit chrome wheels were the second
- * brightest object in the frame during AGITATE — §6.9 says the impeller is
- * "visible only as silhouette and motion" and §6.6 reference 2 says that if two
- * shiny things compete, one of them is deleted. The spheres are the light
- * sources; the machinery is what they are suspended in.
- */
-.impeller {
-  transform-box: fill-box;
-  transform-origin: center;
-  opacity: 0.3;
-  transition: opacity 260ms ease;
-}
-.chamber[data-beat='charge'] .impeller,
-.chamber[data-beat='agitate'] .impeller {
-  opacity: 0.62;
 }
 
 /* --------------------------------------------------------------- the orbs */
@@ -1235,19 +1302,34 @@ button {
  * Behind `celebrate`, like everything else in §9.
  */
 .tube--won .orb--seated .orb__bleed {
-  animation: seated-bloom 1200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: seated-bloom 1200ms cubic-bezier(0.16, 1, 0.3, 1) both;
   transform-box: fill-box;
   transform-origin: center;
 }
+/*
+ * It lifts the OPACITY as well as the scale, and it settles above where it
+ * started rather than back onto it.
+ *
+ * The contact glow is deliberately small in the resting state now (see
+ * `sphere.ts`), which is what freed the idle frame's budget — so the win has to
+ * spend some of that budget back, and a scale pulse that returns to 1.0 spends
+ * none: the *settled* win frame, the one a player screenshots, looked exactly
+ * like the idle one around each sphere. It ends at 1.3 × scale and 1.5 ×
+ * opacity, held, so the five objects the round is about are visibly turned up
+ * for as long as the result is on screen.
+ */
 @keyframes seated-bloom {
   0% {
     transform: scale(1);
+    opacity: 1;
   }
   22% {
-    transform: scale(1.55);
+    transform: scale(2.1);
+    opacity: 1.9;
   }
   100% {
-    transform: scale(1);
+    transform: scale(1.3);
+    opacity: 1.5;
   }
 }
 /*
@@ -1268,7 +1350,14 @@ button {
   opacity: 0;
 }
 .cell-flood--on {
-  opacity: 0.34;
+  /*
+   * 0.48, not 0.34. The cell flood is the settled sphere's own light in its own
+   * slot — a saturated hue on a saturated field — so unlike a gold wash it adds
+   * luminance to the win frame at no cost in saturation at all. With the warm
+   * pool removed (see chamber.ts) this and the plaque are where the payoff's
+   * brightness has to come from.
+   */
+  opacity: 0.48;
   animation: cell-flood 1300ms cubic-bezier(0.16, 1, 0.3, 1) var(--pop-delay, 0ms) both;
   will-change: opacity;
 }
@@ -1280,10 +1369,10 @@ button {
     opacity: 1;
   }
   58% {
-    opacity: 0.6;
+    opacity: 0.72;
   }
   100% {
-    opacity: 0.34;
+    opacity: 0.48;
   }
 }
 
@@ -1440,12 +1529,11 @@ button {
 }
 
 /*
- * `.stamp` and `.impeller` are INNER groups. A CSS transform on an SVG element
- * replaces its `transform` presentation attribute rather than composing with
- * it, so animating an element that is also positioned by that attribute
- * teleports it to the viewBox origin: the stamp rendered at x = -64 in a 390 px
- * viewport, half off-screen, on every celebrated round. Position lives on
- * `.stamp-at` / `.impeller-at`; only these two ever animate.
+ * `.stamp` is an INNER group. A CSS transform on an SVG element replaces its
+ * `transform` presentation attribute rather than composing with it, so animating
+ * an element that is also positioned by that attribute teleports it to the
+ * viewBox origin: the stamp rendered at x = -64 in a 390 px viewport, half
+ * off-screen, on every celebrated round. Position lives on `.stamp-at`.
  */
 /*
  * A chamber being restored after a redraw is showing END states, so nothing may
@@ -1488,23 +1576,44 @@ button {
  * above and no impact at all, which is §9's no-manufactured-near-miss rule
  * enforced at the render layer rather than in policy.
  */
+/*
+ * The landing, and two things about it are corrections caught on a 100 ms frame
+ * dump of a complete round.
+ *
+ * **It waits for the column.** The plaque and the presented column both fire on
+ * `celebrate`, and the plaque's 520 ms landing used to finish while the column's
+ * 520 ms rise was still in flight — so for about a fifth of a second the plate
+ * was sitting across a full-height tube, occluding the sphere in slot 1. That is
+ * the exact defect the presentation exists to remove, reintroduced in the one
+ * beat nobody was measuring because it is over before the frame settles. The
+ * delay is 240 ms: the mechanism lifts the result, *then* the prize arrives.
+ *
+ * **It no longer overshoots off the screen.** The entrance started at
+ * `scale(2.3)`, and 2.3 x a 300-unit plaque is 690 units in a 390-unit viewBox —
+ * so for the first few frames the payout surface was a full-bleed band with
+ * `WON` and the multiple clipped off both edges of the phone, which photographs
+ * as precisely the "bar driven across the frame" this pass set out to delete.
+ * 1.28 is the largest scale that keeps the whole plaque inside the glass, and it
+ * still reads as arriving from the viewer because the overshoot below it does
+ * the work: down past its resting size, then back up.
+ */
 .stamp--land {
-  animation: stamp-land 520ms cubic-bezier(0.2, 0.9, 0.25, 1);
+  animation: stamp-land 460ms cubic-bezier(0.2, 0.9, 0.25, 1) 240ms both;
   will-change: transform, opacity;
 }
 @keyframes stamp-land {
   0% {
     opacity: 0;
-    transform: scale(2.3);
+    transform: scale(1.28);
   }
-  16% {
+  18% {
     opacity: 1;
   }
-  46% {
-    transform: scale(0.9);
+  48% {
+    transform: scale(0.93);
   }
-  72% {
-    transform: scale(1.055);
+  74% {
+    transform: scale(1.04);
   }
   100% {
     transform: scale(1);
@@ -1518,7 +1627,7 @@ button {
   pointer-events: none;
 }
 .stamp-shock--on {
-  animation: stamp-shock 620ms cubic-bezier(0.16, 1, 0.3, 1) 120ms;
+  animation: stamp-shock 620ms cubic-bezier(0.16, 1, 0.3, 1) 360ms;
   will-change: transform, opacity;
 }
 @keyframes stamp-shock {
@@ -1549,8 +1658,10 @@ button {
  * subtree the 2 px lock flex has always used, so the cost is known to be
  * affordable, and it is also the object the stamp lands on.
  */
+/* The instrument's recoil under the plaque, so it waits with it (see
+   `stamp--land`) — a recoil that fires before the impact is a rendering fault. */
 .tube--impact {
-  animation: tube-impact 240ms cubic-bezier(0.3, 0.9, 0.4, 1);
+  animation: tube-impact 240ms cubic-bezier(0.3, 0.9, 0.4, 1) 300ms both;
   will-change: transform;
 }
 @keyframes tube-impact {
@@ -1579,6 +1690,65 @@ button {
  * number's own baseline so the pair centres as one object.
  */
 /*
+ * The presented column, and the held key light — the two halves of the fix for
+ * a payoff that used to leave no light behind.
+ *
+ * **The column presents itself.** On a celebrated close the group holding the
+ * tube, its spheres and its rings contracts to 76% about the tube's own centre
+ * and rises 15% of the tube's height, so the plaque lands in the space it
+ * vacates instead of being driven through the middle of it. Both numbers are in
+ * chamber.ts (LIFT_SCALE / LIFT_RISE) because the plaque's seat is derived from
+ * them; this rule only carries the timing. It is one transform on one promoted
+ * layer, it fires on `celebrate` alone, and a losing round therefore does not
+ * move — which is a second pre-attentive channel separating the outcomes.
+ *
+ * **The light holds.** Round 1 spent the entire payoff on transients and
+ * measured +5.7% mean luminance on the settled frame against a reference +84%,
+ * because every light in the picture had gone out by the time it stopped
+ * moving. The two won-lights fade up with the plaque and stay up while the
+ * result is on screen. It is COOL, and deliberately so: a warm overlay on a cool
+ * field cannot leave that field's saturation intact at any opacity, because the
+ * two hues are opposed and every mix of them lands nearer neutral. The warmth of
+ * the payoff comes entirely from warm objects — the plaque, the ignited rim, the
+ * burst — which are opaque and mix with nothing. See the defs in chamber.ts.
+ */
+.result-lift {
+  transform-origin: 195px var(--pivot, 50%);
+  transition: transform 520ms cubic-bezier(0.18, 0.9, 0.24, 1);
+  will-change: transform;
+}
+/*
+ * Both numbers come from chamber.ts (LIFT_SCALE / LIFT_RISE) as custom
+ * properties, and neither is written here.
+ *
+ * The plaque's seat is *derived* from them — it is placed 18 units under the rim
+ * the contracted column leaves behind — so a scale in this file and a scale in
+ * that one are two copies of one number, and the failure mode when they drift is
+ * silent: the plaque slides back over the spheres, which is the exact defect the
+ * presentation exists to remove.
+ */
+.chamber--won .result-lift {
+  transform: translateY(calc(var(--lift-rise, 62px) * -1)) scale(var(--lift-scale, 0.76));
+}
+
+.won-lift {
+  pointer-events: none;
+  transition: opacity 420ms cubic-bezier(0, 0.7, 0.2, 1);
+}
+.chamber--won .won-lift {
+  opacity: 1;
+}
+/*
+ * A restored chamber is showing END states, so the presented column and the
+ * held light must appear already there rather than animating into place — the
+ * same rule every other end state in this file follows.
+ */
+.chamber--restoring .result-lift,
+.chamber--restoring .won-lift {
+  transition: none !important;
+}
+
+/*
  * The bloom the payout throws into the liquid. It rides the plate's own timing —
  * one `opacity` ramp on a pre-promoted layer, no travel, no filter — and it is
  * painted behind the tube so nothing gold is ever washed by it (§9).
@@ -1591,6 +1761,15 @@ button {
 .stamp-halo--on {
   opacity: 1;
 }
+/*
+ * The plaque's three lines, and their order is §4 of the rubric's: the label
+ * smaller and above, the amount larger and below, the multiple as the caption.
+ * The plaque is now seated clear of the tube rather than threaded between two
+ * spheres, so it is 64 units tall instead of 46 and all three fit at their
+ * published steps in both variants — the old `data-fit` step-down existed only
+ * because SEVEN's 58-unit pitch bounded the plate at 32 units of height, and
+ * nothing is bounded by the pitch any more.
+ */
 .stamp__value {
   font-size: var(--t-hero);
   font-weight: 700;
@@ -1598,24 +1777,62 @@ button {
 }
 .stamp__cap {
   font-size: var(--t-xs);
-  font-weight: 600;
-  letter-spacing: 0.16em;
+  font-weight: 700;
+  letter-spacing: 0.2em;
 }
 .stamp__num {
   font-size: var(--t-hero);
   font-weight: 700;
 }
-/* SEVEN's slot pitch bounds the plate at 32 units; the numeral takes the step
-   that fits it. Both are published steps — nothing here leaves §6.5's scale. */
-.stamp[data-fit='tight'] .stamp__value,
-.stamp[data-fit='tight'] .stamp__num {
+/*
+ * The struck-metal pass: the same figure, one and a half units lower, in a hot
+ * gold that reads as the light caught on the lower lip of each stroke. It is
+ * behind the ink pass in document order, so the dark figure is never softened,
+ * and it is `aria-hidden` because it is the same string twice.
+ */
+/* Both numeral passes step together, so the struck copy can never drift out
+   from behind the ink one. Steps are §6.5's 48 / 40 / 28 px. */
+.stamp[data-len='long'] .stamp__num,
+.stamp[data-len='long'] .stamp__value,
+.stamp[data-len='long'] .stamp__emboss {
+  font-size: var(--t-display);
+}
+.stamp[data-len='xl'] .stamp__num,
+.stamp[data-len='xl'] .stamp__value,
+.stamp[data-len='xl'] .stamp__emboss {
   font-size: var(--t-xl);
+}
+.stamp__emboss {
+  font-size: var(--t-hero);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  fill: #fff0b8;
+  opacity: 0.55;
+}
+/*
+ * The unit, set smaller than the figure and in the same ink.
+ *
+ * It is the difference between a number and money (criterion 3 / 17), and it is
+ * *attached* rather than captioned: `114.20 CR` is one object the eye reads in
+ * one move, where a unit parked in a corner is a second thing to find.
+ */
+.stamp__unit {
+  font-size: var(--t-md);
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 /* The multiple keeps §9 step 5's place, as the caption on the money. */
 .stamp__mult {
   font-size: var(--t-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+/*
+ * The plaque's contact shadow. It rides the plate's own landing transform, so it
+ * arrives with it and never separates.
+ */
+.stamp__cast {
+  opacity: 0.85;
 }
 .stamp__shine {
   transform-box: fill-box;
@@ -1676,15 +1893,20 @@ button {
      * dominant at 40–55%, and the second hue is what stops a saturated screen
      * reading as a monochrome wash.
      */
+    /* A warm bounce where the bench meets the frame — §6.3's 3000 K fill, and
+       the second hue that stops the lower half quantising as one blue. */
+    radial-gradient(140% 26% at 50% 100%, rgba(255, 186, 120, 0.09), rgba(255, 186, 120, 0) 72%),
     linear-gradient(
       180deg,
-      #17395f 0%,
-      #133054 22%,
-      #102845 46%,
-      #0c1f36 72%,
+      #1d4670 0%,
+      #193c63 14%,
+      #143453 30%,
+      #112c48 48%,
+      #0e243c 66%,
+      #0b1c30 84%,
       var(--deep) 100%
     );
-  background-blend-mode: overlay, normal, normal;
+  background-blend-mode: overlay, normal, normal, normal;
   box-shadow: inset 0 1px 0 rgba(167, 226, 251, 0.34);
   transition: opacity 200ms ease;
   container-type: inline-size;
@@ -1720,7 +1942,6 @@ button {
 .tabs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: auto auto;
   align-items: stretch;
   /* The second half of §11's tap rule, and it is a rule about *separation*, not
      only about size: three 44 px targets 4 px apart is three targets a thumb
@@ -1744,25 +1965,15 @@ button {
   padding: 4px 2px 6px;
   border-radius: 3px 3px 0 0;
   display: grid;
-  grid-row: span 2;
-  grid-template-rows: subgrid;
   align-items: center;
   justify-items: center;
-  row-gap: 1px;
   color: var(--ink-dim);
   line-height: 1.05;
 }
 .tab b {
-  font-size: var(--t-xs);
-  letter-spacing: 0.1em;
-  font-weight: 600;
-  align-self: end;
-}
-.tab span {
-  font-size: var(--t-xxs);
-  letter-spacing: 0.02em;
-  align-self: start;
-  text-align: center;
+  font-size: var(--t-sm);
+  letter-spacing: 0.12em;
+  font-weight: 700;
 }
 .tab::after {
   content: '';
@@ -1793,9 +2004,6 @@ button {
 .tab[aria-selected='true']::after {
   opacity: 1;
   transform: scaleX(1);
-}
-.tab[aria-selected='true'] span {
-  color: var(--ink-dim);
 }
 
 /* §1 item 5 is "one line under the rail", so it is set tight to the rail. */
@@ -1897,10 +2105,28 @@ button {
 .chip {
   position: relative;
   flex: none;
-  width: 96px;
-  min-height: 92px;
+  width: 104px;
+  /*
+   * A FIXED three-row grid, not a flex column that grows.
+   *
+   * Round 1 let the description size the card. `FULL ORDER`'s "the complete
+   * order of every colour" wrapped to three lines, the card grew past its
+   * 92 px minimum, the name wrapped to two lines under the count badge, and the
+   * `115.20×` numeral collided with the last line of the description — a visible
+   * typographic collision on the game's headline bet, caught on the frame dump
+   * of its own idle state.
+   *
+   * The rows are now reserved: a two-line name box, a two-line description box,
+   * and the price on its own row at the foot. Every chip in the rail is the same
+   * size whatever the catalogue puts in it, which is what a row of cards is
+   * supposed to look like, and no future copy can push one element into another.
+   */
+  height: 118px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 3px;
   border: 1px solid var(--chrome-dark);
-  border-radius: 6px;
+  border-radius: 8px;
   /*
    * A machined glass key, not a hole in the bench. Once the deck became a lit
    * panel a card filled at 14% alpha over `--abyss` read as a cut-out: the chips
@@ -1909,21 +2135,42 @@ button {
    * else, one step below the deck's own value so the row still recedes behind
    * the CTA.
    */
-  background: linear-gradient(180deg, #1e4b6d 0%, #143a57 46%, #0e2b42 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(234, 243, 250, 0.3),
-    inset 0 -1px 0 rgba(5, 12, 20, 0.6),
-    0 2px 6px rgba(5, 12, 20, 0.45);
   /*
-   * 6 px on the inline axis, not 8: at 8 the longest label in the catalogue was
-   * 2 px wider than the box it had to sit in even at the smallest published step.
-   * The trim is invisible and it buys the chip its own longest name.
+   * Six stops over a much wider tonal span, plus a tier-tinted pool behind the
+   * price. Measured band by band against the reference, our deck — not our
+   * chamber — was where the colour depth went: the three bands holding the
+   * tabs, the chips and the controls carried 258 / 276 / 167 distinct colours
+   * against Plinko's 587 / 1,044 / 1,109. A card shaded across a 20-value span
+   * in one hue quantises to a few dozen values however carefully it is drawn,
+   * which is exactly what criterion 8 is built to catch.
+   *
+   * The tier light is a *pool*, not a fill: §6.1's constraint on the accents is
+   * that they appear "as a hairline, a numeral and a rail — never as a fill",
+   * because a tinted card reads as being about the sphere of that colour. A soft
+   * glow under the numeral is the numeral's own light.
    */
-  padding: 9px 6px 7px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 2px;
+  background:
+    radial-gradient(
+      86% 42% at 50% 96%,
+      color-mix(in srgb, var(--chip-accent, #4a6a86) 26%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(
+      180deg,
+      #3b7ba6 0%,
+      #2a6389 18%,
+      #1d4d70 42%,
+      #143b58 66%,
+      #0d2a41 86%,
+      #081d2e 100%
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.5),
+    inset 0 -2px 0 rgba(5, 12, 20, 0.68),
+    inset 0 0 0 1px rgba(234, 243, 250, 0.07),
+    0 1px 0 rgba(5, 12, 20, 0.8),
+    0 3px 9px rgba(5, 12, 20, 0.5);
+  padding: 9px 7px 8px;
   scroll-snap-align: start;
   overflow: hidden;
   transition:
@@ -1974,19 +2221,52 @@ button {
 .chip b {
   font-size: var(--t-xs);
   letter-spacing: 0.06em;
-  font-weight: 600;
+  font-weight: 700;
   overflow-wrap: anywhere;
   position: relative;
+  /* Two lines, reserved, and clear of the count badge's corner. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  min-height: 2.4em;
+  padding-right: 22px;
+  line-height: 1.2;
 }
 .chip b[data-long='yes'] {
   font-size: var(--t-xxs);
 }
+/*
+ * The description, clamped to the two lines the row reserves. It stays on the
+ * card — a first-time player reading `OPENING / 19.20×` with nothing between
+ * them has to open a sheet to learn what the bet is, and comprehension is the
+ * one thing this build is not spending to buy restraint. What it is not allowed
+ * to do is *size* the card.
+ */
 .chip em {
   font-style: normal;
   font-size: var(--t-xxs);
   color: var(--ink-dim);
-  line-height: 1.2;
+  line-height: 1.22;
   position: relative;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  /*
+   * And a hard box as well as a clamp.
+   *
+   * The description sits in the grid's `1fr` row, which on a short name is
+   * taller than two lines — so the clamp marked its ellipsis at line 2 while the
+   * box still had room to paint line 3, and `FULL ORDER` rendered "the complete
+   * / order of every… / colour" with the overflow visible under the ellipsis.
+   * Two lines of the published line-height, stated in em so it tracks the
+   * player's own type scale.
+   */
+  max-height: 2.44em;
+  align-self: start;
 }
 /*
  * Oversized odds. The price is the whole product's argument — four
@@ -1997,11 +2277,12 @@ button {
 .chip u {
   text-decoration: none;
   font-size: var(--t-lg);
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1;
   letter-spacing: -0.01em;
   color: var(--chip-accent, var(--ink));
   position: relative;
+  align-self: end;
 }
 .chip u[data-long='yes'] {
   font-size: var(--t-md);
@@ -2103,8 +2384,19 @@ button {
   border-radius: 10px;
   border: 1px solid var(--chrome);
   background:
+    /* One broad specular sweep across the cap. A moulded keycap has a highlight
+       that travels; a flat top-to-bottom ramp is a painted rectangle. */
+    radial-gradient(120% 140% at 22% -10%, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 58%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0) 36%),
-    linear-gradient(180deg, var(--key-hot) 0%, var(--key) 26%, var(--key) 62%, var(--key-deep) 100%);
+    linear-gradient(
+      180deg,
+      var(--key-hot) 0%,
+      #7ed0f5 14%,
+      var(--key) 30%,
+      #37a6dd 58%,
+      #2789c0 80%,
+      var(--key-deep) 100%
+    );
   box-shadow:
     /* The lit cap: a specular lip on top, a machined shadow under the bottom
        edge, a tight contact shadow on the bench and one wide cool bloom. */
@@ -2267,6 +2559,46 @@ button {
 }
 .line[data-state='won'] {
   color: var(--gold);
+}
+/*
+ * Gold is for a ticket that made money. On a net-losing ticket the won rows keep
+ * the rail, the wording and the state and step to `--ink` instead — see
+ * `pinnedLines` in main.ts for why. `--ink` on the deck measures well above
+ * §11's floor, so nothing is lost but the celebration colour.
+ */
+.lines[data-net='partial-return'] .line[data-state='won'],
+.lines[data-net='no-return'] .line[data-state='won'] {
+  color: var(--ink);
+}
+/*
+ * The row list scrolls; the instrument does not shrink to make room for it.
+ *
+ * A 12-line ticket used to drive the stage down to 31% of the frame (16% in
+ * round 1): the chamber collapsed, the payout plaque measured a fraction of a
+ * percent of the frame with its centroid up at y = 0.15, and three quarters of
+ * the screen was a wall of rows — on the single frame a player is most likely to
+ * screenshot, after the game's biggest win. The ticket is a record and it must
+ * stay complete and reachable, so it is capped and scrolled rather than
+ * truncated, and the hero object keeps its share of the frame at every line
+ * count.
+ *
+ * The cap is in `dvh` so it tracks the viewport rather than a guessed row count,
+ * and it only engages when the content is actually taller than it.
+ */
+.deck .lines {
+  max-height: 26dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--chrome-dark) transparent;
+  /*
+   * A soft bottom edge, so a capped list reads as continuing rather than as
+   * ending. `mask-image` fades the last few pixels of the *scroller*, which
+   * means it disappears on a short ticket (nothing is under it) and on the last
+   * scroll position, exactly like the affordance it stands in for. It is a paint
+   * on a container that never animates, so it costs nothing in any beat.
+   */
+  mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 14px), transparent 100%);
 }
 /*
  * A dead line is drawn in `--ink-dim`, and this is where §5 S5's "fade to 40%
@@ -3289,7 +3621,6 @@ table.paytable td.pays {
 @media (prefers-reduced-motion: reduce) {
   .orb__m,
   .orb__core,
-  .impeller,
   .caustic,
   .floor-caustic,
   .bubbles circle,
@@ -3327,6 +3658,40 @@ table.paytable td.pays {
   }
   .tube-rim--lit {
     transition: opacity 260ms linear;
+  }
+  /*
+   * The column still presents itself, and it still lands where it lands — the
+   * preference removes *motion*, not layout. Without the transform the plaque
+   * would be seated inside a full-height tube and cover two spheres, which is
+   * the exact defect the presentation exists to fix. So the transform applies,
+   * instantly, and the plaque cross-dissolves onto it.
+   */
+  .result-lift {
+    transition: none !important;
+  }
+  /*
+   * The held lights keep their fade. An `opacity` ramp on a stationary rect is
+   * not vestibular motion, and with the burst, the motes, the shock ring and
+   * the plaque's landing all gone, these two plus the cell floods are what tell
+   * a reduced-motion player, in the picture, that the round won.
+   */
+  .won-lift {
+    transition: opacity 420ms linear;
+  }
+  /*
+   * The seated bloom's *animation* goes and its END STATE stays.
+   *
+   * The keyframe now settles above where it started rather than back onto it —
+   * that is what makes the five objects visibly turned up on the settled frame
+   * rather than only during it — so switching the animation off would have
+   * silently taken the whole effect away from exactly the players who most need
+   * the outcome carried by something other than movement. Declared here instead.
+   */
+  .tube--won .orb--seated .orb__bleed {
+    transform: scale(1.3);
+    opacity: 1.5;
+    transform-box: fill-box;
+    transform-origin: center;
   }
   /*
    * The frame lift keeps its calm variant rather than being removed: it is one
@@ -3386,8 +3751,7 @@ table.paytable td.pays {
   .cham-fit,
   .cham-stretch,
   .cham-bottom,
-  .column,
-  .column-bg {
+  .column {
     transition: none;
   }
   /*

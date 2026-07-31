@@ -38,6 +38,10 @@ const DESIGN = read('docs/DESIGN.md');
 const ENGINE = read('docs/ENGINE.md');
 const MATH = read('docs/MATH.md');
 const README = read('README.md');
+// Round 5 removed the impellers; these two are read so the gate below can
+// assert no build quietly draws one back in.
+const CHAMBER_TS = read('src/client/chamber.ts');
+const CHAMBER_CSS = read('src/client/styles.css');
 
 describe('RTP wording distinguishes expectation from realised samples', () => {
   it('quantifies rounding shortfall and states the uniform-draw assumption', () => {
@@ -610,12 +614,18 @@ describe('the identity, icon and state specifications exist and stay closed', ()
     const geometry = DESIGN.slice(DESIGN.indexOf('### 6.9 Chamber geometry'), DESIGN.indexOf('### 6.10 First run'));
     expect(geometry).toContain(`${CHROME_CSS.tube.width} wide`);
     expect(geometry).toContain(`| Slot pitch | ${CHROME_CSS.slotHeight.classic} | ${CHROME_CSS.slotHeight.seven} |`);
-    // The impeller is the only rotating element, and §6.4 must still say so.
-    expect(geometry).toMatch(/only thing on screen that rotates/u);
-    expect(DESIGN).toContain('Nothing rotates on screen except');
-    // It lives in the WebGL layer, because a rotating chrome element would
-    // break §7.1.1's transform-only rule.
-    expect(geometry).toMatch(/drawn \*\*in the WebGL layer\*\*/u);
+    /*
+     * Round 5 removed the impellers, so this gate now asserts the *opposite*
+     * invariant to the one it used to: nothing in the chamber rotates, and both
+     * §6.4 and §6.9 have to keep saying so. It is deliberately stated in two
+     * places and checked in both, because "no rotating element" is the kind of
+     * rule a later art pass re-introduces by accident.
+     */
+    expect(geometry).toMatch(/There is no impeller/u);
+    expect(DESIGN).toContain('**Nothing rotates on screen at\nall**');
+    // And nothing in the client may draw one back.
+    expect(CHAMBER_TS).not.toMatch(/impeller/iu);
+    expect(CHAMBER_CSS).not.toMatch(/\.impeller/u);
   });
 
   it('specifies the states §10 requires, and none of them sells anything', () => {

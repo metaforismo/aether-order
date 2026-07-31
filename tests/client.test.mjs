@@ -167,9 +167,7 @@ describe('§1’s three-second test is present on the first screen', () => {
 
   it('carries item 5 — the line under the rail', () => {
     const line = copy('One line under the rail');
-    expect(line).toBe(
-      'Every bet pays 96%. The tiers are how wild the ride is, not how good the deal is.',
-    );
+    expect(line).toBe('Every bet pays 96%.');
     expect(MAIN).toContain(line);
   });
 

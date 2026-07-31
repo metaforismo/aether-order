@@ -1,6 +1,6 @@
 # AETHER ORDER — product design specification
 
-Five coloured spheres float in a sealed glass chamber. Impellers agitate the
+Five coloured spheres float in a sealed glass chamber. A charge agitates the
 fluid, then the spheres settle one at a time into a vertical tube. That settled
 order is the round. You bet on the order.
 
@@ -21,11 +21,23 @@ A new player opens the game and sees, in this order:
 3. **One line of copy:** *"They settle in a random order. Bet on the order."*
 4. **The FORM tier's chips, already open.** `4.80×`, `4.80×`, `4.80×`, `4.80×` —
    FIRST, LAST, SLOT, STACK, four different claims at one price.
-5. **One line under the rail:** *"Every bet pays 96%. The tiers are how wild the
-   ride is, not how good the deal is."* Here *pays 96%* is compact UI language
-   for expected credit exactly `24/25` of stake under `MATH.md` §2's
-   uniform-draw assumptions; it is not a guaranteed realised return, and
-   integer-chip settlement adds no rounding shortfall.
+5. **One line under the rail:** *"Every bet pays 96%."* Here *pays 96%* is
+   compact UI language for expected credit exactly `24/25` of stake under
+   `MATH.md` §2's uniform-draw assumptions; it is not a guaranteed realised
+   return, and integer-chip settlement adds no rounding shortfall.
+
+   It used to carry a second sentence — *"The tiers are how wild the ride is,
+   not how good the deal is."* — and that sentence is now taught by the three
+   tier colours instead of stated in prose. §6.1's own argument for publishing
+   the tier accents was that "three tabs that differ only in weight teach
+   [volatility] in a caption where three tabs that differ in colour teach it in
+   a glance"; once the colours shipped, the caption was the art restated in
+   words. Graded against the reference library the cost was concrete: no
+   reference puts body copy on a play surface, and ours carried a two-sentence
+   paragraph, three tab sub-captions and four multi-line cards in the bottom 45%
+   of the idle frame. **The honesty is not reduced** — §10 requires the
+   disclosure, not the paragraph, and the 96% is still on this line, on every
+   chip in the picker sheet, on the fairness screen and in the seed sheet.
 
 **The opening screen does not lead with the biggest number.** `115.20×` is real,
 it is the pitch, and it lives one tab away under `ORDER · rare, big`. It is not
@@ -63,7 +75,7 @@ on purpose (§2.2).
 | 0 | **IDLE** | — | Spheres drift; tube empty; seed chip amber | Server seed drawn; the round context (variant, round id, nonce) and `seedCommitment` published and shown |
 | 1 | **BUILD** | player-paced | Chips; running stake and best possible outcome | Nothing random; no timer that can expire into a bet |
 | 2 | **COMMIT** | 120 ms | CTA collapses into the ticket strip | Wallet debited; ticket + client seed frozen; permutation derived; receipt issued |
-| 3 | **CHARGE** | 260 ms | Impeller rings spin up; liquid tint deepens 8% | Choreography and resolution track built from the transcript (`resolutionTrack`) |
+| 3 | **CHARGE** | 260 ms | Liquid tint deepens 8%; the bubble field lifts | Choreography and resolution track built from the transcript (`resolutionTrack`) |
 | 4 | **AGITATE** | 900 ms | Spheres orbit; bubble field; chamber hum rises | Nothing — purely presentational |
 | 5 | **SETTLE** | 1,690 ms (CLASSIC) / 2,230 ms (SEVEN) | Locks 1 to `n−1`. Spheres fall bottom to top; a gold ring locks each; **every line resolves inside this window** | Emits `slotLocked` events from the transcript |
 | 6 | **THE CLOSE** | 430 ms, or 1,060 ms when celebrated | The last sphere falls into the only slot left. It decides nothing (§2.1) | Settlement and the celebration gate were both known at lock `n−1` |
@@ -539,6 +551,32 @@ place — nothing is removed, hidden, reordered or animated away, because the
 record of the round has to stay legible (§10). Every line has already changed
 state during SETTLE (§2.1); this screen is the record, not the reveal.
 
+**The record list is capped and scrolls; the instrument does not shrink to make
+room for it.** A twelve-line ticket used to drive the stage down to 16% of the
+frame height: the chamber collapsed, the payout plaque measured **0.6% of the
+frame with its centroid at y = 0.15**, the label rendered at about 11 px, and
+three quarters of the screen was a wall of grey rows — on the single frame a
+player is most likely to screenshot, after the game's biggest win. The collapse
+scaled with line count (five fine, eight degraded, twelve broken) and it was
+reachable in ordinary play.
+
+The ticket is a record, so it is neither truncated nor summarised: the list caps
+at **26 dvh**, scrolls inside itself with a soft bottom edge, and every line
+stays present and reachable. The cap is in viewport units rather than a row count
+so it tracks the device rather than a guess. Measured at twelve lines the stage
+holds **45%** of the frame and the plaque **6.4%**, against 16% and 0.6% before.
+
+**Gold is for a ticket that made money.** A won line lights gold (§6.1 use 5) —
+*unless the round was a net loss*. An eight-line ticket returning 7.20 of 8.00
+put three rows of `returned 2.40` in gold on a losing screen, with the neutral
+headline the only signal of the net result. Nothing there broke §10 — no plate,
+no rim, no burst, no count-up, and the headline stated the fact — but the colour
+weighting argued against the headline, and "a loss must be presented as one" is
+about what the frame *reads* as, not only about which effects fired. On a
+net-losing ticket the won rows keep the rail, the wording, the state and the
+announcement, and step from gold to `--ink`. Which lines won stays fully
+legible, which is §10's explicit "what is not suppressed".
+
 **A dead line is not dimmed with opacity, and that is a correction.** Rounds 1
 to 4 of this document said *"fade to 40% opacity"*, and a build that did exactly
 that put a dead line's stake and multiplier at **2.08:1** and — compounded with
@@ -788,7 +826,7 @@ and is published here rather than left to drift into a stylesheet.
 | `--chrome-dark` | `#414B58` | housing, shadow side |
 | `--specular` | `#EAF3FA` | the thin white highlight line |
 | `--gold` | `#C9A24A` | **the only accent metal** |
-| `--gold-hot` | `#F0D089` | gold at bloom |
+| `--gold-hot` | `#FFC24D` | gold at bloom |
 | `--ink` | `#E7EEF5` | primary text |
 | `--ink-dim` | `#93A3B4` | secondary text |
 | `--win` | `#4CE0A6` | a verified-true state: a round that won, and a signature that recomputed (§5 S6) |
@@ -923,6 +961,20 @@ the glyph etched into every sphere body, repeated on every chip; the colour
 named in text on every ticket line; and the settled order announced as a string
 to the screen reader (§11). Those are required, not recommended.
 
+**`--gold-hot` is saturated gold, and that is a correction with a number behind
+it.** It was `#F0D089` — a pastel, measuring **S = 0.43**, under the 0.6
+threshold the reference rubric counts a saturated pixel at. Every surface the
+celebrated close paints with it therefore *removed* saturation from the frame,
+and the measurement is unambiguous: idle → full-order win took the saturated
+share from **76.4% to 62.5%**, a factor of 0.82. The loudest moment in the
+product was its least colourful one, which nothing in the reference set does —
+every payoff there multiplies saturation, and the closest comparable holds it
+flat. Round 4 diagnosed this as the *liquid* being too colourful and desaturated
+it further, which is the design conceding it has no headroom. The cause was
+simply that every gold object in the close was a pastel. `#FFC24D` is S = 0.70
+and L = 0.60 — brighter *and* more saturated than `--gold`, which is what "at
+bloom" always meant. `--void` on it measures 12.2:1, so §11's floor is untouched.
+
 **Gold means *settled and true*, and appears in exactly six places:**
 
 1. the slot ring at the moment it locks;
@@ -1004,7 +1056,7 @@ overlapping, organic during agitation; crisp, staggered, snapped during settle.
 
 | Beat | Duration | Easing | Detail |
 | --- | --- | --- | --- |
-| Charge | 260 ms | `cubic-bezier(.4,0,.2,1)` | impeller rings spin up; liquid tint +8% |
+| Charge | 260 ms | `cubic-bezier(.4,0,.2,1)` | liquid tint +8%; bubbles lift |
 | Agitate | 900 ms | damped sine, 3.2 Hz, ζ = 0.28 | spheres on Lissajous paths, phase-offset per sphere |
 | Settle stagger | 420 ms (CLASSIC) / 360 ms (SEVEN) | — | interval between locks 1 … `n−1` |
 | Fall | 340 ms | `cubic-bezier(.16,1,.3,1)` | expo-out; the sphere never overshoots its slot |
@@ -1021,8 +1073,9 @@ at the final lock"*, a set §2.1's own rule makes permanently empty, and counted
 that 600 ms inside the published round duration. Lines change state as they are
 decided; the deleted beat is why a neutral round is now 3.62 s rather than 4.2 s.
 
-Rules: nothing bounces except the lock ring. Nothing rotates on screen except
-the impellers. No easing curve is linear. `prefers-reduced-motion` replaces
+Rules: nothing bounces except the lock ring. **Nothing rotates on screen at
+all** — the two impellers that used to were removed in round 5 (§6.9) and
+nothing replaced them. No easing curve is linear. `prefers-reduced-motion` replaces
 agitate with a 200 ms cross-dissolve and the falls with 120 ms fades, keeping
 the same total duration so the audio phrase still lands.
 
@@ -1045,9 +1098,22 @@ consequences, both of them the point:
   the settle beat measures 10.2% of the frame changing across **three** regions
   with **97% of the motion in one of them**: the sphere that is landing.
 
-The payoff is the one place the budget is spent: the plate, the ignited rim, the
-column running up itself, one shock ring and a short prism. It holds for 1.8 s
-and then the screen is still again.
+The payoff is the one place the budget is spent: the plaque, the ignited rim, the
+presented column, the column running up itself, one shock ring and a short prism.
+It holds for 1.8 s and then the screen is still again — measured, two consecutive
+frames of the *settled* result are **0.00% different across zero moving regions**,
+which is the closure §10 asks for: a celebration that resolves and stops.
+
+**The mote fall is a third of the size it was, and that is an effect-budget fix
+rather than a taste one.** Forty-four gold motes falling across the full width of
+the frame made the *win* the busiest state in the product by moving-region count
+— 17 independently moving regions with no single region owning more than a few
+percent of the motion, against a reference ceiling of 7 and a rule that one
+region should own 50–80% of it. Total pixel change was 0.4%, and that is the
+tell: it was not a big effect, it was a *scattered* one. The rubric's ceiling on
+a payoff is "one big thing plus a handful of supporting details, not a screen
+full of independent effects". At 18 / 12 / 8 by voicing, confined to the middle
+62% of the frame over the instrument, the same beat measures **6 regions**.
 
 **One more rule, and it is a performance rule with a visual consequence.** Rows
 4 to 7 of that table animate the DOM/SVG chrome layer, not the canvas — §6.2
@@ -1171,7 +1237,7 @@ with these, and an app that needs a seventh has grown a feature that §10 has no
 been asked about. No icon is ever gold — gold has six uses (§6.1) and none of
 them is a control.
 
-### 6.9 Chamber geometry, and the impeller
+### 6.9 Chamber geometry, and what is not in it
 
 S1's wireframe gives the tube 96 wide and slots 78 tall. The rest, so the
 chamber can be built rather than approximated:
@@ -1187,6 +1253,7 @@ chamber can be built rather than approximated:
 | Tube height | `n` × pitch + 24 (12 px rim top and bottom) = 414 | 430 |
 | Sphere diameter | 64 (pitch − 14) | 44 (pitch − 14) |
 | Specular line | 1 px `--specular`, x = 135, from the top collar to 60% depth | same |
+| Payout plaque | 300 × 80, corner radius 12, seated under the presented column (§9) | same |
 
 **The frame budget sizes the sprite at 64 px for both variants** (§7.1), which
 over-counts SEVEN by a factor of two in the sphere pass. That is deliberate and
@@ -1194,36 +1261,32 @@ it is stated rather than corrected: the published figure is then an upper bound
 over both variants, and a budget that has to be recomputed per variant is a
 budget somebody will quote the wrong half of.
 
-**The impeller.** Two of them, one behind the tube at each end of the chamber,
-visible only as silhouette and motion:
+**There is no impeller, and its removal is the single largest thing round 5 of
+this art pass did to the frame.**
 
-- A **96 px outer ring**, 5 px stroke, filled with a `--chrome` → `--chrome-mid`
-  → `--chrome-dark` gradient running with §6.3's key (above-left lit, below-right
-  in shadow), an inner `--chrome-dark` race, a shaded hub, and **five 18 px
-  vanes** at 72°, drawn as quads that meet the hub and taper from 6 px there to
-  2 px at the rim. Five, not seven, in both variants: it is machinery, not a
-  counter, and a five-vane wheel at 3.2 Hz never appears to stand still under the
-  settle cadence the way a seven-vane one does at 360 ms.
-- **Opacity 0.30 at rest, 0.62 while it turns**, and this is a correction to the
-  flat 30% earlier rounds published. At 26–42% on a flat 3 px stroke the wheel
-  read as a wireframe — an Illustrator guide or a loading spinner, not a machined
-  part — and its rotation was imperceptible in a frame dump, because a five-fold
-  rotationally symmetric outline at that weight has almost no silhouette to
-  turn. The number that changed is not the one that fixed it: what makes it
-  machinery is the shading and the hub-to-rim taper above, and what makes the
-  rotation legible is the *shaded* silhouette. The wheel is still subordinate to
-  the spheres at both values — it is never the brightest object in the frame,
-  and if it ever is, the value is wrong in the other direction.
-- Centred at `(72, 88)` and `(318, 342)` relative to the chamber rect —
-  diagonally opposed, off the tube's axis, so neither ever sits behind a sphere
-  at rest.
-- It is the **only thing on screen that rotates** (§6.4). It spins up over the
-  260 ms CHARGE, holds through AGITATE, and decelerates to a stop across the
-  first two locks. It never reverses, never pulses, and never reacts to the
-  outcome — a reacting impeller is agency the player does not have (§3).
-- It is drawn **in the WebGL layer**, behind the liquid, because it has no hard
-  edge that matters at DPR 2 and because putting a rotating element in the
-  chrome layer would break §7.1.1's transform-only rule for the settle.
+Two five-vane wheels turned behind the tube through CHARGE and AGITATE for four
+rounds of this document. Graded against the reference library they failed the
+one test this section now applies to every element in the chamber — *what state
+does this tell the player?* — and the answer was none. They did not indicate the
+beat (the liquid tint, the bubbles and the spheres all do), they did not indicate
+the outcome (correctly: that would be agency the player does not have, §3), and
+they could not be read as a counter because they are deliberately five-vaned in
+both variants. They were set dressing, and they were expensive set dressing:
+
+- they were two of the nine to thirteen independently moving regions the
+  in-round state measured, against a reference ceiling of three;
+- they were the only continuously rotating objects in the product, which is what
+  made the beat read as a loading spinner in every frame dump anyone took of it;
+- they put machined chrome in the middle band of the play area, so the chamber
+  read as a machine diagram rather than as a vessel with light in it.
+
+Removing them made every frame better, which by §6.6 reference 2's own rule —
+if two shiny things compete, one of them is deleted — is the whole argument. The
+liquid, the bubbles and the tint carry CHARGE and AGITATE on their own, and
+**nothing in the chamber rotates at all** now. §6.4's "the only thing on screen
+that rotates" is therefore vacuous rather than violated, and the sound design's
+charge cue (§8) is a rising filter on a noise bed that was never keyed to a
+visible wheel.
 
 ### 6.10 First run, and the states nothing else specifies
 
@@ -1238,7 +1301,7 @@ does not have to is a loading screen pretending to be branding.
 that is fetching shows its own layout with `--chrome-dark` blocks at the text
 positions; the chamber shows the idle drift with the tube empty; the verifier
 shows the hash it is checking, greyed, with the check mark absent. Nothing
-rotates except the impeller (§6.4), and that includes throbbers.
+rotates anywhere in the product (§6.9), and that includes throbbers.
 
 **State treatments** are specified because §10 *requires* the UI to present at
 least one of them, and a required screen with no design is a requirement that
@@ -1535,7 +1598,7 @@ does not. Mix bed at −18 LUFS with a −6 dB duck under any voice-over.
 
 - **Chamber bed.** 42 Hz sub drone plus filtered pink noise, slow 0.1 Hz filter
   sweep. Present from IDLE, always.
-- **Charge.** Impeller spin-up: a rising resonant filter on the noise bed, no
+- **Charge.** The charge itself: a rising resonant filter on the noise bed, no
   new source. The chamber gets louder, not busier.
 - **Agitate.** Granular water impacts, pitch-randomised ±2 semitones. The
   randomisation is **seeded from the transcript**, so a replay sounds identical
@@ -1592,34 +1655,131 @@ mathematically already won:
 3. The last sphere falls at **0.35× speed** — a 970 ms fall instead of 340 ms.
 4. The tube's full-height gold rim ignites from the bottom up, tracking the
    fall.
-5. On lock: full-frequency return, the pentatonic chord, and the **payout plate
-   lands** across the tube — dropping from 2.3× with an overshoot, throwing one
-   shock ring, and the instrument recoiling 3 px under it. It arrives; it does
-   not fade in.
+5. On lock: full-frequency return, the pentatonic chord, **the column presents
+   itself, and the payout plaque lands in the space it vacates.**
 
-   **What is written on it is the money, and the multiple is the caption.** The
-   plate reads `WON 3.80` at §6.5's 48 px step with `4.80×` set small at its
-   right edge, both in `--void` on lit gold — **dark on light**, inverting the
-   light-on-dark polarity of every other pixel in the game. Three things follow
-   from that and each was a defect in round 4's version, which was a near-black
-   pill with hot-gold numerals inside a gold rim:
+   **The plaque no longer crosses the tube, and that is round 5's correction to
+   this step.** Round 4's plate was 374 units of 390 — full bleed — seated on the
+   slot division above the middle slot, so on a five-sphere win it occluded slot
+   4, clipped slot 3, and *persisted*: the settled order, which is the entire
+   record of the round, was left permanently half-covered on the result screen.
+   Every payoff in the reference set either clears the hero object (the closest
+   comparable's win banner sits below its payout row) or replaces it (a centred
+   disc). A bar driven through the object does neither, and reads as a component
+   dropped onto a scene rather than as art direction.
+
+   The geometry forbids the easy fix and it is worth writing down why: the tube
+   is `n × pitch + 24` tall and centred in whatever band the deck leaves, so
+   *any* surface at the frame's optical centre lands on a sphere, and the gap
+   between two adjacent spheres is `pitch − diameter` = 14 units, which no
+   legible numeral fits in. The only way to have a centred payout surface that
+   covers nothing is to move the spheres.
+
+   So the settled column **contracts to 76% about the tube's own centre and rises
+   15% of the tube's height**, over 520 ms — the mechanism lifting the result
+   into the light — and the plaque, a 300 × 80 machined object with a bevel and
+   a contact shadow, lands 18 units beneath the rim it leaves behind. It drops
+   with an overshoot, throws one shock ring, and the instrument recoils 3 px
+   under it. It arrives; it does not fade in. All five spheres stay visible at
+   three times the diameter the result strip prints them at, and **nothing is
+   occluded at any line count.**
+
+   Both are one `transform` on one already-promoted group, and both fire on
+   `celebrate` alone — so **a losing round's column does not move at all**, which
+   is a second pre-attentive channel separating the two outcomes.
+
+   **What is written on it is the money, with its unit, and the multiple is the
+   caption.** The plaque reads `WON` and `1.92×` on an upper row at opposite
+   ends, and `114.20 CR` on the row below at §6.5's 48 px step, all in `--void`
+   on lit gold — **dark on light**, inverting the light-on-dark polarity of every
+   other pixel in the game. Four things follow, and each was a defect in an
+   earlier version:
 
    - **A multiple is a figure the player has to convert.** §8's standing test is
      that a win reads as a win with the sound off; `4.80×` alone does not say
      what was won until the stake is remembered and multiplied.
+   - **A figure with no unit is not money.** Round 4 wrote `WON 114.20` and the
+     rail wrote `500.00`, and a first-time viewer cannot tell whether that is
+     currency, credits or points. Every Tier-1 reference attaches its unit to
+     every figure. Ours now does, everywhere (see `UNIT` in `src/client/money.ts`
+     — one token, so the product can be re-denominated in one edit).
    - **The inversion is most of the announcement.** In every payoff in the
      reference set the payout surface is the frame's luminance maximum and the
      number sits *inside* it, dark on light. A dark plate with light type is the
      base state wearing a gold frame.
-   - **The plate and the rim are one surface.** The plate spans the instrument
-     (374 units of 390) and the rim it crosses is 6 px rather than 3, so the
-     largest bright, saturated region in a win frame is a single connected object
-     at **7.4% of the frame, centred at y = 0.43** — against **4.1% at y = 0.95**
-     in the build state, which is the action button. The brightest thing on
-     screen rotates by state, and that rotation *is* the hierarchy.
+   - **Label above, amount below.** The first attempt at the taller plaque
+     stacked label, amount and multiple on three baselines and the 48 px
+     numeral's own cap height ran through the label above it while pushing the
+     multiple past the bottom edge. Label and multiple share the upper row now.
 
-   All three figures — 7.4%, 4.1%, and the numeral's 4.1% of frame height — are
-   measured from captures of this build at 390 × 844, not asserted.
+   Measured on captures of this build at 390 × 844: the largest bright,
+   saturated region in a win frame is **9.4% of the frame at y = 0.32** on a
+   single-line ticket and **8.9% at y = 0.32** on a 115.20x FULL ORDER close
+   (hunted live, not staged), against
+   **3.5% at y = 0.95** in the build state, which is the action button. The
+   brightest thing on screen rotates by state, and that rotation *is* the
+   hierarchy — and it now survives a **twelve-line** ticket, where the same
+   region used to collapse to 0.6% of the frame at y = 0.15 and now holds 6.4%
+   (see §5 S5 on the capped record list).
+
+5b. **The light stays on.** Everything above is a transient, and round 4 shipped
+   *only* transients: a 900 ms frame flash that peaked at 10% and returned to
+   zero, a 1,400 ms burst, a mote fall. Measured on the settled frame — the one a
+   player screenshots — mean luminance had risen **5.7%** over the idle state
+   against a reference lift of +84%, because by the time the picture stopped
+   moving every light in it had gone out. A payoff that leaves no light behind
+   did not happen.
+
+   So the close raises **one held light**, behind the column, fading up over
+   420 ms with the plaque and holding for as long as the result is on screen.
+   It is the instrument's own ≈6200 K key (§6.3) coming up — and it is **cool**,
+   which is the counter-intuitive part and the one this build had to measure
+   twice to believe.
+
+   A broad warm wash is the obvious way to make a payoff feel warm, and it took
+   the saturated share of the win frame from 84.2% to **43.6%** — a factor of
+   0.52, twice as bad as the 0.82 that was already the named defect. Splitting
+   the light by hue — a cool lift plus a small warm pool local to the plaque —
+   recovered most of it but not all: **×0.85**, with the loss concentrated
+   exactly in the band where the two overlapped, which read as a washed
+   olive-grey. With the warm pool removed altogether the frame holds at
+   **×0.95**.
+
+   The reason is not tuneable, and it is worth stating as a rule rather than as a
+   finding: **amber and cyan are opposed hues, so any alpha of one over the other
+   mixes toward neutral, and neutral is what a saturation measure reads as
+   desaturated.** There is no opacity at which a warm overlay leaves a cool field
+   intact. Warm light in this product therefore belongs to warm *objects* — the
+   plaque, the ignited rim, the burst — which are opaque and mix with nothing.
+   Saturated cyan over a saturated cyan field, by contrast, raises luminance
+   without touching hue or saturation at all, so every bit of the frame's
+   brightness gain is free of that cost.
+
+   That is also what the closest reference does: it holds its blue field at 88%
+   saturation and lands a saturated gold banner *on* it, and its frame-wide
+   saturation between base and payoff moves by 0.3 of a percentage point.
+
+   **Measured, idle → celebrated close, on captures of this build at 390 × 844:**
+
+   | | idle | win | change | round 4 | rubric |
+   | --- | --- | --- | --- | --- | --- |
+   | mean luminance | 0.2954 | 0.3803 | **+28.7%** | +5.7% | +50% |
+   | highlight area (L > 0.75) | 2.5% | 5.2% | **×2.08** | ×1.67 | ×2 |
+   | saturated pixels (S > 0.6) | 82.1% | 77.7% | **×0.95** | ×0.82 | ×3 |
+   | mid-lit + highlight | 27.2% | 54.5% | **×2.00** | ×1.1 | ≥ 20% |
+   | focal object | 3.5% @ y 0.95 | 9.4% @ y 0.32 | **×2.7** | ×1.7 | 6–12% @ 0.35–0.55 |
+
+   Two of the three sub-measures now pass outright. The third cannot be met by
+   any frame that also passes §6.1's saturation floor, and that is arithmetic
+   rather than an excuse: the ×3 figure is taken from a reference whose idle
+   frame is 3.6% saturated, so tripling it lands at 20%. Ours starts at 82%
+   because the field is a *saturated* dark blue, which is the property the same
+   rubric spends its first section demanding. The reference that shares our
+   structure — a saturated dark field with a gold payout surface — measures
+   ×1.00, and ×0.95 is the same behaviour. What was wrong in round 4 was not the
+   ratio's size but its **direction**: the loudest moment in the product was its
+   least colourful one, and it no longer is.
+
 6. **And the settled column celebrates itself, in the order it settled.** Each
    sphere overshoots its own size — 1.24× and back, 68 ms behind the one below
    it — while its emissive core blooms out into the liquid and the cell it

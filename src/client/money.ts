@@ -2,6 +2,27 @@
 
 export const CHIPS_PER_CREDIT = 100n;
 
+/**
+ * The unit that rides every figure on screen.
+ *
+ * Round 1 shipped no unit anywhere: the rail read `500.00 / BALANCE`, the strip
+ * `1 line · 1.00`, the control `COMMIT 1.00`, the payout plate `WON 114.20`. A
+ * first-time viewer cannot tell whether `500.00` is currency, credits or points,
+ * and every Tier-1 reference in the library attaches its unit to every figure
+ * (`Bet 1.00 FUN`, `Balance 1,000.00 FUN`, `Win 1.10 FUN`). A number with no
+ * unit stops being money, which is exactly what the rubric's criterion 3 and
+ * criterion 17 are testing for.
+ *
+ * `CR` rather than a currency sign, because the server's unit of account is
+ * chips and the screen's is credits (see `credits` below) — this is play money
+ * and labelling it as a national currency would be a lie about what the balance
+ * is. It is one token so the whole product can be re-denominated in one edit.
+ */
+export const UNIT = 'CR';
+
+/** A figure with its unit attached — the only way money is written on screen. */
+export const money = (chips: bigint): string => `${credits(chips)} ${UNIT}`;
+
 export function credits(chips: bigint): string {
   const negative = chips < 0n;
   const absolute = negative ? -chips : chips;

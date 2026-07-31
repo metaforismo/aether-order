@@ -81,11 +81,30 @@ function elementGradients(element: ElementInfo): string {
       <stop offset="0.74" stop-color="${darken(hex, 0.3)}"/>
       <stop offset="1" stop-color="${darken(hex, 0.62)}"/>
     </radialGradient>
+    <!--
+      The contact glow, and it is deliberately *small*.
+
+      Round 1 drew this at 2.35 × the sphere's radius with 0.5 opacity at its
+      centre — five soft colour fields each covering five and a half times the
+      area of the object that threw them. Measured against the reference library
+      that is the single most expensive thing in the frame: the idle state
+      carried 2.4% highlight area and 76.4% saturated pixels with nothing held
+      back, so the celebrated close had no headroom left and had to *desaturate*
+      the liquid to make the payout plate read — the frame got less colourful at
+      its loudest moment, which nothing in the reference set does.
+
+      At 1.62 × radius with a steeper falloff it is what §6.6 reference 3
+      actually describes: light in the liquid immediately around a glowing body,
+      not a lamp. The silhouettes sharpen, four of the five in-round moving
+      regions disappear with it, and the win is free to bloom: the seated-bloom
+      rule in styles.css now lifts both the scale and the opacity rather than
+      the scale alone.
+    -->
     <radialGradient id="orb-bleed-${id}">
-      <stop offset="0" stop-color="${hex}" stop-opacity="0.5"/>
-      <stop offset="0.5" stop-color="${hex}" stop-opacity="0.3"/>
-      <stop offset="0.7" stop-color="${hex}" stop-opacity="0.15"/>
-      <stop offset="0.86" stop-color="${hex}" stop-opacity="0.06"/>
+      <stop offset="0" stop-color="${hex}" stop-opacity="0.34"/>
+      <stop offset="0.5" stop-color="${hex}" stop-opacity="0.17"/>
+      <stop offset="0.72" stop-color="${hex}" stop-opacity="0.07"/>
+      <stop offset="0.88" stop-color="${hex}" stop-opacity="0.02"/>
       <stop offset="1" stop-color="${hex}" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="orb-core-${id}">
@@ -214,7 +233,7 @@ export function orbArt(element: ElementInfo, radius: number, options: OrbOptions
   const etch = options.etch ?? 0.24;
   const round = (value: number): string => value.toFixed(2);
   return `
-    ${bleed ? `<circle class="orb__bleed" r="${round(radius * 2.35)}" fill="url(#orb-bleed-${id})"/>` : ''}
+    ${bleed ? `<circle class="orb__bleed" r="${round(radius * 1.62)}" fill="url(#orb-bleed-${id})"/>` : ''}
     <circle class="orb__body" r="${round(radius)}" fill="url(#orb-body-${id})"/>
     ${
       interior
