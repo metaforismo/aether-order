@@ -136,6 +136,25 @@ function elementGradients(element: ElementInfo): string {
       <stop offset="0.42" stop-color="${hex}" stop-opacity="0.92"/>
       <stop offset="0.78" stop-color="${hex}" stop-opacity="0.6"/>
       <stop offset="1" stop-color="${hex}" stop-opacity="0.16"/>
+    </radialGradient>
+    <!--
+      The light one seated sphere puts into its own cell, shaped for the CELL.
+      orb-bloom above is a halo — it decays to 16% at the box edge, which is
+      right for a glow around an object and wrong for the thing it was being
+      asked to do here: the sphere covers 43% of its slot, so a gradient that
+      has already spent itself by the box edge lights only the part of the cell
+      the sphere is standing in front of. Measured, the tube read at the same
+      value seated as empty and criterion 12 still had no object to point at.
+      This one holds most of its strength all the way out, so the liquid in an
+      occupied slot is *lit* rather than tinted, and five occupied slots stack
+      into one continuous bright, saturated column — the object the in-round
+      frame is entered on.
+    -->
+    <radialGradient id="orb-cell-${id}">
+      <stop offset="0" stop-color="${lighten(hex, 0.5)}" stop-opacity="1"/>
+      <stop offset="0.5" stop-color="${hex}" stop-opacity="0.98"/>
+      <stop offset="0.82" stop-color="${hex}" stop-opacity="0.86"/>
+      <stop offset="1" stop-color="${hex}" stop-opacity="0.42"/>
     </radialGradient>`;
 }
 

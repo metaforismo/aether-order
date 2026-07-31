@@ -25,7 +25,7 @@
  */
 
 import { claimSummary, type Params } from './claims.js';
-import { credits } from './money.js';
+import { UNIT, credits } from './money.js';
 import type { RoundView, VariantInfo } from './types.js';
 
 export interface TicketRow {
@@ -64,8 +64,12 @@ export function roundRows(
       summary: claimSummary(variant, line.code, line.params),
       right:
         won && line.grossChips
-          ? `returned ${credits(BigInt(line.grossChips))}`
-          : `${credits(BigInt(line.stakeChips))} × ${line.multiplierDecimal}`,
+          // The unit travels with the figure, without exception. §5 of the
+          // rubric: "currency unit is always attached to the number", and a
+          // bare `returned 4.80` beside a plate that says `4.80 CR` is two
+          // different-looking numbers for one fact.
+          ? `returned ${credits(BigInt(line.grossChips))} ${UNIT}`
+          : `${credits(BigInt(line.stakeChips))} ${UNIT} × ${line.multiplierDecimal}`,
       state: phase === 'live' ? 'pending' : line.won === true ? 'won' : 'lost',
     };
   });

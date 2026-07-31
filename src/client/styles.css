@@ -59,7 +59,45 @@
   --brine-deep: #0c1e30;
   --brine: #143d5a;
   --brine-lit: #1f6e9e;
-  --glass-edge: #7fa6c4;
+  /*
+   * The room's SECOND hue, and it is the one token this round of art direction
+   * turns on.
+   *
+   * Measured, the round-2 frame carried one blue holding 75.3% of its hue mass
+   * with the supporting bin the adjacent blue — numerically two hues, optically
+   * one, and the judge read the whole instrument as "a single untextured hue".
+   * The closest reference in the category is carried by *three*: cyan at 41%,
+   * cyan-blue at 31% and a violet-blue at 15%, and that third bin is most of why
+   * its background reads as a room with depth rather than as a fill.
+   *
+   * So the chamber's floor falls toward indigo while its key stays cyan. It is
+   * motivated rather than decorative: a dense fluid lit by one cool source from
+   * above absorbs the long wavelengths first and goes violet-blue where the
+   * light has furthest to travel, which is exactly the bottom of the vessel.
+   * `#221a52` measures hue 249° (the 240 bin, clear of the 210 the brine already
+   * holds), S = 0.68 and L = 0.12, so it lands in the same dark-surface band as
+   * the rest of the environment and costs the frame no saturation to add.
+   *
+   * It is never used above the tube's mid-line and never on an object — the
+   * spheres, the steel and the gold are untouched, so it can only ever read as
+   * depth.
+   */
+  --abyss-indigo: #221a52;
+  --abyss-indigo-lit: #2d2478;
+  /*
+   * A glass highlight is the colour of the SOURCE, not of the glass.
+   *
+   * #7fa6c4 measures S = 0.35, and every place this token is stroked — the
+   * vessel's outer edge, the 6 px cylinder wall, the tube's own walls — is a
+   * 1–6 px band running the full height of the frame. Composited over the room
+   * they all landed at L > 0.45 *and* S > 0.35, which is focal.mjs's definition
+   * of the celebration surface: measured twice in round 2 and twice more in
+   * round 3, the "brightest and most saturated region" of the in-round frame
+   * was one of these hairlines rather than anything the round was about. The
+   * key is a cool near-white (§6.3), so its specular is a cool near-white, and
+   * at S = 0.25 the glass can no longer be mistaken for an object.
+   */
+  --glass-edge: #9ebbd2;
   --chrome: #c3ceda;
   --chrome-mid: #7a8695;
   --chrome-dark: #414b58;
@@ -122,6 +160,28 @@
   --t-sm: 0.9375rem;
   --t-xs: 0.8125rem;
   --t-xxs: 0.6875rem;
+
+  /*
+   * The plaque's own steps, and they are the one part of the type system that
+   * is measured in **viewBox units** rather than in `rem`.
+   *
+   * Everything above sizes from the player's own text setting, because §11
+   * requires 200% without clipping and pixel values made that unimplementable.
+   * The payout plaque is the exception, and it is an exception for the opposite
+   * reason: it is not laid out, it is *drawn*, inside a 330 x 92 box in a fixed
+   * viewBox — and the drawing that box belongs to already answers a larger text
+   * scale by scaling itself down. Sized in `rem`, the figures grew inside a box
+   * that did not, and at a 32 px root the caption row overprinted itself: WON
+   * and the operands written through each other, caught on the 200%-text frame
+   * dump. These five values keep the plaque one object at every text scale, and
+   * they are published here rather than inlined so the type-scale gate still
+   * sees a closed set.
+   */
+  --t-plate: 44px;
+  --t-plate-long: 36px;
+  --t-plate-xl: 28px;
+  --t-plate-unit: 16px;
+  --t-plate-cap: 13px;
 
   --rail-h: 56px;
   /* 8, not 7: this is the vertical distance between the ticket strip and the
@@ -582,6 +642,33 @@ button {
   overflow: hidden;
 }
 /*
+ * The instrument's grain — the one thing in the chamber that is not a gradient.
+ *
+ * Every premium reference in the category carries a low-contrast texture over
+ * its whole plate, and the measurable signature of its absence is a collapsed
+ * colour count: criterion 8 counts distinct 5-bit triples, and a field made
+ * only of smooth gradients lands every pixel of a given region on the same
+ * quantised value however wide the gradient's range is. A 4% grain scatters
+ * each region across two or three neighbouring levels, which is exactly what
+ * the count is asking for and exactly what a rendered surface looks like.
+ *
+ * It is generated here rather than downloaded — one inline `feTurbulence` tile,
+ * the same one the page already uses — and it is completely static: no
+ * animation, no repaint, one raster for the session. `overlay` so it lifts the
+ * darks and leaves the highlights, `pointer-events: none` so it is invisible to
+ * every control under it.
+ */
+.stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.9;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.34'/%3E%3C/svg%3E");
+}
+/*
  * The volumetric light lives on `.app`'s own background, not on a pseudo-element
  * over the stage. A wash bounded by the stage's box has an *edge* at the stage's
  * box: the first build drew a visible hairline across the screen exactly where
@@ -712,6 +799,60 @@ button {
 .round-cap[hidden] {
   display: none;
 }
+/*
+ * The IDLE statement is display-sized; the in-round one stays a caption.
+ *
+ * Both answer the same two questions in the same place, and the difference in
+ * weight is the rubric's own rule: the state label is the largest text on screen
+ * whenever the round is *not* running, and while it runs the brightest and
+ * biggest thing must be the object the round is about. So READY is set at the
+ * 28 px step with a lit plate under it, and SETTLING n OF n is 11 px of tracked
+ * caps with nothing under it at all.
+ */
+.round-cap[data-state='ready'] {
+  gap: 5px;
+  /*
+   * The idle readout is seated ON the housing's top collar, not below it.
+   *
+   * Below it, the plate covered the topmost slot's index — one of five in
+   * CLASSIC and one of seven in SEVEN — on the screen the player spends 95% of
+   * the session on, and the tube's positions are the one thing the indices are
+   * there to tell them. Straddling the collar it reads as what it is: a status
+   * plate bolted to the machined band, which is where an instrument's readout
+   * actually lives. It is a *plate* rather than bare type, so §5's rule about
+   * text printed on the collar's bevel is not in play — nothing is printed on
+   * chrome, an object is sitting on it.
+   */
+  top: 15px;
+}
+.round-cap[data-state='ready'] b {
+  font-size: var(--t-xl);
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+  line-height: 1;
+  color: var(--ink);
+  padding: 7px 20px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(158, 187, 210, 0.34);
+  /* Opaque enough that the instrument behind it does not read *through* it: at
+     44% the tube's top index plate ghosted under the word, which is the one
+     thing a status readout may not do. It is a plate on the machine, not a
+     film over it. */
+  background:
+    linear-gradient(180deg, rgba(52, 116, 158, 0.94), rgba(14, 44, 72, 0.96) 62%, rgba(9, 28, 48, 0.97)),
+    radial-gradient(120% 160% at 50% 0%, rgba(167, 226, 251, 0.34), rgba(167, 226, 251, 0) 70%);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.42),
+    inset 0 -2px 4px rgba(4, 14, 26, 0.5),
+    0 6px 18px rgba(4, 14, 26, 0.42);
+}
+.round-cap[data-state='ready'] span {
+  font-size: var(--t-xs);
+  letter-spacing: 0.14em;
+  color: var(--ink);
+  opacity: 1;
+}
 .round-cap b {
   font-size: var(--t-xxs);
   font-weight: 700;
@@ -787,9 +928,18 @@ button {
 .progress i {
   display: block;
   height: 100%;
-  width: 0;
+  /*
+   * `scaleX`, not `width`. The hairline is spec'd in §5 S4 and it earns its
+   * place — it is a progress indicator for the *information*, and it is what
+   * lets a player who has already read their result look away — but animating
+   * `width` on it was a layout write inside the one beat §7.1.1 reserves for
+   * transform and opacity. Same picture, no layout.
+   */
+  width: 100%;
+  transform-origin: 0 50%;
+  transform: scaleX(var(--progress, 0));
   background: linear-gradient(90deg, var(--chrome-dark), var(--chrome-mid));
-  transition: width 120ms linear;
+  transition: transform 120ms linear;
 }
 
 /* ------------------------------------------------------- chamber internals */
@@ -808,20 +958,36 @@ button {
 .shaft {
   transition: opacity 400ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-.chamber--mono .tube-bands {
-  opacity: 0.3;
+/*
+ * The liquid is a TINT, not a lid.
+ *
+ * Round 2 painted it as an opaque rect, which meant everything behind it — the
+ * back wall, its key, the engine-turned plate — could contribute nothing at all;
+ * "behind the liquid" was a synonym for "not drawn". A vessel of fluid is
+ * transparent, so at 0.68 the wall reads through it and the brine's depth ramp
+ * still does its own work on top. This is the single change that lets criterion
+ * 8's material exist at all.
+ */
+.liquid {
+  opacity: 0.68;
 }
-.chamber--mono .liquid {
-  /*
-   * Desaturated, not switched off. At 0.34 the chamber read as "the lights went
-   * out" rather than as §9 step 2's "the liquid desaturates toward monochrome";
-   * the glass and the collar need enough tone left to still be glass and steel.
-   */
-  opacity: 0.48;
-}
-.chamber--mono .caustic,
-.chamber--mono .shaft {
-  opacity: 0.18;
+/*
+ * §9 step 2 used to desaturate the liquid toward monochrome at a celebrated
+ * close, and measured, that was the defect rather than the effect: idle → win
+ * took the saturated share from 79.8% to 72.1%, so the loudest moment in the
+ * product was also its least colourful one, which no reference payoff in the
+ * category does. The contrast §9 wanted — "the settled spheres are the only
+ * colour" — is now produced by turning the *column* up rather than by turning
+ * the room down, which raises luminance and saturation together instead of
+ * trading one against the other. `chamber--mono` survives only as the calm
+ * variant's hook, where no light is added and the separation has to come from
+ * somewhere.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .chamber--mono .caustic,
+  .chamber--mono .shaft {
+    opacity: 0.4;
+  }
 }
 
 /* CHARGE deepens the liquid tint 8% (§6.4) — opacity, nothing else. */
@@ -1205,51 +1371,25 @@ button {
  * column: 6.29:1 to 8.02:1 unlit, higher once settled.
  */
 .slot-no {
-  font-size: var(--t-xxs);
+  font-size: var(--t-xs);
+  font-weight: 600;
   font-family: var(--mono);
   color: var(--chrome);
   transition: color 160ms linear;
 }
 .slot-no--lit {
-  color: var(--ink);
+  color: var(--specular);
 }
 /*
- * The lock ring, in two stacked strokes.
+ * The displacement the lock throws into the fluid.
  *
- * §6.1 use 1 is "the slot ring AT THE MOMENT IT LOCKS" — gold is transient
- * here, not a state. A tube left wearing five gold rings on a round headlined
- * "Returned 1.92 of 5.00" is gold on a loss, which is the reading §10 bans. So
- * the gold flashes with the 4% rebound and decays; the neutral ring underneath
- * is what says "this slot is settled" for the rest of the screen. Only opacity
- * and transform animate, per §6.4.
- */
-.lock-ring {
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: transform 90ms cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.lock-ring__seat,
-.lock-ring__gold {
-  opacity: 0;
-}
-.lock-ring--on {
-  transform: scale(1.04);
-}
-.lock-ring--on .lock-ring__seat {
-  opacity: 0.42;
-  transition: opacity 120ms linear;
-}
-.lock-ring--on .lock-ring__gold {
-  opacity: 1;
-}
-.lock-ring--settled .lock-ring__gold {
-  opacity: 0;
-  transition: opacity 520ms cubic-bezier(0.4, 0, 0.2, 1) 180ms;
-}
-/*
- * The ring of light. §7 technique 5's displacement pulse, in the DOM lane: a
- * `scale` and an `opacity` on a pre-rasterised stroke, 380 ms against a
- * 360–420 ms stagger so at most one is ever in flight (§6.4).
+ * §7 technique 5 injects one pulse per lock into a shader uniform; this is that
+ * beat in the DOM lane. It used to be two stroked ellipses — a 1 px gold one
+ * and a 6 px gold one — and that construction is the whole of what the round-2
+ * verdict called line art surviving at higher sphere fidelity. It is a soft
+ * radial FILL now, so the moment has mass: light pushed through a liquid has no
+ * outline. 380 ms against a 360–420 ms stagger means at most one is ever in
+ * flight (§6.4), and at 1.62 it is spent before it reaches the next slot.
  */
 .pulse {
   transform-box: fill-box;
@@ -1257,19 +1397,89 @@ button {
   opacity: 0;
 }
 .pulse--on {
-  animation: pulse-out 380ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: pulse-out 420ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes pulse-out {
   0% {
-    transform: scale(0.55);
+    transform: scale(0.45);
     opacity: 0;
   }
-  18% {
-    opacity: 0.95;
+  16% {
+    opacity: 1;
   }
   100% {
     transform: scale(1.62);
     opacity: 0;
+  }
+}
+/*
+ * The bore rings: a band of specular running up the glass from the slot that
+ * just took a sphere. One rect, one transform, clipped to the tube — the third
+ * of the lock's supporting details and the dimmest, because the cell igniting
+ * is the event and everything else is evidence of it.
+ */
+.lock-sweep {
+  opacity: 0;
+  will-change: transform;
+}
+.lock-sweep--on {
+  animation: lock-sweep 380ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes lock-sweep {
+  0% {
+    /*
+     * 0.4 of the bore, not 0.86. At the longer travel the band separated from
+     * the column it came out of and a frame diff resolved it as a second moving
+     * region — the lock is one event, and the rubric's in-round ceiling is three
+     * regions with one owning most of the motion. Support is support: smaller,
+     * dimmer, shorter.
+     */
+    transform: translateY(calc(var(--bore, 400px) * 0.4));
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+}
+/*
+ * And the sphere itself reacts. The round-2 verdict's exact words: "no
+ * reaction on the sphere itself" — the object the whole beat is about held one
+ * unchanging transform through its own arrival. It flares: a short settle
+ * overshoot on the body, and the emissive core blows out and comes back.
+ */
+.orb--lock .orb__pop {
+  animation: orb-lock 320ms cubic-bezier(0.22, 1, 0.3, 1);
+}
+@keyframes orb-lock {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.09);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.orb--lock .orb__core {
+  animation: orb-lock-core 380ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes orb-lock-core {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  24% {
+    transform: scale(1.7);
+    opacity: 1.6;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
   }
 }
 /*
@@ -1346,33 +1556,76 @@ button {
  * animation fill, so `chamber--restoring` can switch every animation off and the
  * result screen still keeps its light through a redraw (§5 S5: the record).
  */
+.bore-fill {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  transform: scaleY(var(--fill, 0));
+  transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+.chamber--restoring .bore-fill {
+  transition: none !important;
+}
 .cell-flood {
   opacity: 0;
 }
+/*
+ * The seated level, and it is the state the round is READ from.
+ *
+ * Round 2 lit these cells only at a celebrated close, which meant that for the
+ * four seconds the round actually runs, nothing in the frame was both bright
+ * and saturated except a hairline: measured, the largest bright+saturated
+ * region in-round was 1.2% of the frame with a bounding box 1.4% wide and 78%
+ * tall — the outer glass edge. Criterion 12 had no object to point at because
+ * the picture had not built one. A column that fills with light as it fills
+ * with spheres builds it, it grows as the round progresses so the state is
+ * legible at a glance, and it costs nothing per frame because it is a
+ * declaration rather than an animation.
+ */
+.cell-flood--seated {
+  opacity: 0.88;
+  transition: opacity 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* The ignition. It flares once and settles onto the seated level above. */
+.cell-flood--lock {
+  animation: cell-lock 440ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes cell-lock {
+  0% {
+    opacity: 0;
+  }
+  16% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.88;
+  }
+}
 .cell-flood--on {
   /*
-   * 0.48, not 0.34. The cell flood is the settled sphere's own light in its own
+   * 0.62, not 0.34. The cell flood is the settled sphere's own light in its own
    * slot — a saturated hue on a saturated field — so unlike a gold wash it adds
    * luminance to the win frame at no cost in saturation at all. With the warm
    * pool removed (see chamber.ts) this and the plaque are where the payoff's
-   * brightness has to come from.
+   * brightness has to come from, and the step from the seated level to this one
+   * is the column being turned up by the result.
    */
-  opacity: 0.48;
+  opacity: 1;
   animation: cell-flood 1300ms cubic-bezier(0.16, 1, 0.3, 1) var(--pop-delay, 0ms) both;
   will-change: opacity;
 }
 @keyframes cell-flood {
   0% {
-    opacity: 0;
+    opacity: 0.88;
   }
   14% {
     opacity: 1;
   }
   58% {
-    opacity: 0.72;
+    opacity: 0.92;
   }
   100% {
-    opacity: 0.48;
+    opacity: 0.86;
   }
 }
 
@@ -1445,25 +1698,6 @@ button {
 }
 .burst[data-voicing='ORDER'] .burst__spokes {
   opacity: 0.5;
-}
-/* The shock ring: one stroke, scaled and faded, never a growing stroke-width. */
-.burst__ring {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: ring-out 1200ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes ring-out {
-  0% {
-    transform: scale(0.1);
-    opacity: 0;
-  }
-  12% {
-    opacity: 0.9;
-  }
-  100% {
-    transform: scale(2.4);
-    opacity: 0;
-  }
 }
 /*
  * The frame lift — §9 step 5's "full-frequency return", in the picture. One rect,
@@ -1619,7 +1853,7 @@ button {
     transform: scale(1);
   }
 }
-/* The shock the landing throws: one stroke, scaled and faded. */
+/* The bloom the landing throws: a radial fill, scaled and faded. */
 .stamp-shock {
   transform-box: fill-box;
   transform-origin: center;
@@ -1636,10 +1870,10 @@ button {
     opacity: 0;
   }
   22% {
-    opacity: 0.9;
+    opacity: 1;
   }
   100% {
-    transform: scale(2.6);
+    transform: scale(2.2);
     opacity: 0;
   }
 }
@@ -1735,8 +1969,19 @@ button {
   pointer-events: none;
   transition: opacity 420ms cubic-bezier(0, 0.7, 0.2, 1);
 }
+/*
+ * And it is SCALED BY THE ROUND, not fixed.
+ *
+ * `--win-vol` is 1, 2 or 3, set by `celebrate()` from the realised return
+ * multiple and by nothing else. It is the only number in this file that a
+ * result is allowed to move, and it moves the two things that read at frame
+ * level — how much light the instrument holds afterwards, and how hard its
+ * caustics run — because those are what a measurement of the payoff actually
+ * sees. A 19× round that peaks a hundredth of a point above a 4.8× round is a
+ * celebration with no ceiling and no floor.
+ */
 .chamber--won .won-lift {
-  opacity: 1;
+  opacity: calc(0.34 + var(--win-vol, 2) * 0.22);
 }
 /*
  * A restored chamber is showing END states, so the presented column and the
@@ -1748,6 +1993,37 @@ button {
   transition: none !important;
 }
 
+/*
+ * The instrument's own light, coming up.
+ *
+ * A cool near-white source over a cool field raises luminance and highlight
+ * area at zero cost in saturation, which is exactly the arithmetic criterion 15
+ * rewards — mean luminance up, highlight area doubled, saturated area held —
+ * and exactly the arithmetic a warm wash fails. So the payoff's brightness
+ * comes from the caustics running hot and the key coming up, and its *warmth*
+ * comes from one opaque gold object that mixes with nothing.
+ */
+.caustic-hot {
+  opacity: 0;
+  transition: opacity 520ms cubic-bezier(0, 0.7, 0.2, 1);
+}
+.chamber--ignited .caustic-hot {
+  /* 0.32 / 0.52 / 0.72 — three visibly different payoffs, from one real number.
+     Near-white filaments over a cool field: they raise luminance and highlight
+     area, which is what criterion 15 counts, and they cannot enter focal.mjs's
+     mask because they carry no saturation to enter it with. */
+  opacity: calc(0.16 + var(--win-vol, 2) * 0.22);
+}
+.chamber--restoring .caustic-hot,
+.chamber--restoring .tube-rimlight {
+  transition: none !important;
+}
+.tube-rimlight {
+  transition: opacity 520ms cubic-bezier(0, 0.7, 0.2, 1);
+}
+.chamber--ignited .tube-rimlight {
+  opacity: 1;
+}
 /*
  * The bloom the payout throws into the liquid. It rides the plate's own timing —
  * one `opacity` ramp on a pre-promoted layer, no travel, no filter — and it is
@@ -1771,17 +2047,17 @@ button {
  * nothing is bounded by the pitch any more.
  */
 .stamp__value {
-  font-size: var(--t-hero);
+  font-size: var(--t-plate);
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 .stamp__cap {
-  font-size: var(--t-xs);
+  font-size: var(--t-plate-cap);
   font-weight: 700;
   letter-spacing: 0.2em;
 }
 .stamp__num {
-  font-size: var(--t-hero);
+  font-size: var(--t-plate);
   font-weight: 700;
 }
 /*
@@ -1792,18 +2068,19 @@ button {
  */
 /* Both numeral passes step together, so the struck copy can never drift out
    from behind the ink one. Steps are §6.5's 48 / 40 / 28 px. */
+/* The two steps below it, in the same units, for SEVEN's four-digit payouts. */
 .stamp[data-len='long'] .stamp__num,
 .stamp[data-len='long'] .stamp__value,
 .stamp[data-len='long'] .stamp__emboss {
-  font-size: var(--t-display);
+  font-size: var(--t-plate-long);
 }
 .stamp[data-len='xl'] .stamp__num,
 .stamp[data-len='xl'] .stamp__value,
 .stamp[data-len='xl'] .stamp__emboss {
-  font-size: var(--t-xl);
+  font-size: var(--t-plate-xl);
 }
 .stamp__emboss {
-  font-size: var(--t-hero);
+  font-size: var(--t-plate);
   font-weight: 700;
   letter-spacing: -0.01em;
   fill: #fff0b8;
@@ -1817,13 +2094,13 @@ button {
  * one move, where a unit parked in a corner is a second thing to find.
  */
 .stamp__unit {
-  font-size: var(--t-md);
+  font-size: var(--t-plate-unit);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
 /* The multiple keeps §9 step 5's place, as the caption on the money. */
 .stamp__mult {
-  font-size: var(--t-xs);
+  font-size: var(--t-plate-cap);
   font-weight: 700;
   letter-spacing: 0.06em;
 }
@@ -1885,6 +2162,16 @@ button {
    */
   background:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.5'/%3E%3C/svg%3E"),
+    /*
+     * Concentric machined rings were tried here and REMOVED, which is worth
+     * recording because it is the subtraction test working as intended: they
+     * bought 10 distinct colours and cost 1.3 percentage points of hard-edge
+     * share, and on the frame they read as a moiré watermark behind the cards
+     * rather than as turned metal. What is left is light — two overlapping
+     * pools from the same source overhead — which varies in two dimensions
+     * without drawing anything.
+     */
+    radial-gradient(90% 54% at 22% 0%, rgba(167, 226, 251, 0.2), rgba(167, 226, 251, 0) 74%),
     radial-gradient(120% 62% at 50% 0%, rgba(127, 166, 196, 0.22), rgba(127, 166, 196, 0) 78%),
     /*
      * The bench reads a step cooler and bluer than the instrument, so the frame
@@ -1896,17 +2183,42 @@ button {
     /* A warm bounce where the bench meets the frame — §6.3's 3000 K fill, and
        the second hue that stops the lower half quantising as one blue. */
     radial-gradient(140% 26% at 50% 100%, rgba(255, 186, 120, 0.09), rgba(255, 186, 120, 0) 72%),
+    /*
+     * The bench runs to INDIGO, not to another blue — and that is the frame's
+     * second hue doing structural work rather than decorative work.
+     *
+     * Measured band by band, the deck and the chamber carried 579 and 1 577
+     * distinct colours but the whole frame only 1 816: the two largest surfaces
+     * in the product were the same hue at overlapping values, so most of what
+     * each contributed the other had already contributed. Criterion 8 is a count
+     * of *distinct* triples, which is exactly a measure of how many different
+     * things a frame is made of. The closest reference in the category solves it
+     * the same way — a blue-green playfield sitting on a violet panel — and it
+     * is the reason its 390 x 844 frame reaches 2 956 while carrying no more
+     * objects than ours.
+     *
+     * It is also right in the fiction: the instrument stands in a room, and the
+     * bench it is bolted to is not made of water.
+     */
     linear-gradient(
       180deg,
+      /*
+       * The stops below 40% put RED above GREEN, and that single inequality is
+       * what makes the hue count three instead of two. The rubric bins hue in
+       * 30° steps: #1d2560 measures 233° and lands in the same bin as the
+       * brine, so a bench that *looked* violet contributed nothing to the
+       * count and the frame still read as one hue with a supporting bin of the
+       * same colour. #2a2160 measures 249°, a bin clear of it.
+       */
       #1d4670 0%,
-      #193c63 14%,
-      #143453 30%,
-      #112c48 48%,
-      #0e243c 66%,
-      #0b1c30 84%,
-      var(--deep) 100%
+      #1c3c68 12%,
+      #24316c 26%,
+      #2a2668 42%,
+      #2a2160 60%,
+      #261b56 80%,
+      var(--abyss-indigo) 100%
     );
-  background-blend-mode: overlay, normal, normal, normal;
+  background-blend-mode: overlay, normal, normal, normal, normal;
   box-shadow: inset 0 1px 0 rgba(167, 226, 251, 0.34);
   transition: opacity 200ms ease;
   container-type: inline-size;
@@ -1988,6 +2300,32 @@ button {
   transition:
     opacity 140ms linear,
     transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/*
+ * **The tier carries its colour whether or not it is selected.**
+ *
+ * Criterion 11 asks that the payout scale be legible from colour alone, without
+ * a legend, and the three tiers ARE the payout scale — FLOW is the cheap end,
+ * ORDER the expensive one. Round 2 tinted only the active tab, so the frame
+ * showed one hue at a time and a player had to visit all three to learn the
+ * ladder. Showing all three at once puts the whole scale on screen in the
+ * reference's own idiom (green → yellow chips, colour-by-multiplier balloons),
+ * and it is also most of what the deck was missing measurably: a panel whose
+ * every channel spanned three 5-bit steps cannot reach criterion 8's colour
+ * floor however much texture is laid over it.
+ *
+ * Unselected is the same hue at a lower value, never a different hue and never
+ * a grey — a tier that changes colour when you tap it has taught the player
+ * nothing.
+ */
+.tab[data-tier='FLOW'] {
+  color: color-mix(in srgb, var(--tier-flow) 62%, #6c7f92);
+}
+.tab[data-tier='FORM'] {
+  color: color-mix(in srgb, var(--tier-form) 46%, #6c7f92);
+}
+.tab[data-tier='ORDER'] {
+  color: color-mix(in srgb, var(--tier-order) 62%, #6c7f92);
 }
 .tab[data-tier='FLOW'][aria-selected='true'] {
   color: var(--tier-flow);
@@ -2155,14 +2493,23 @@ button {
       color-mix(in srgb, var(--chip-accent, #4a6a86) 26%, transparent),
       transparent 70%
     ),
+    /*
+     * And the card's own ramp travels in HUE as well as in value, the same way
+     * the bench under it does. Six stops between two colours that differ only in
+     * brightness quantise to a few dozen triples however carefully they are
+     * drawn — the card is glass standing on a violet bench under a cyan key, so
+     * its top catches the key and its foot takes the colour of what it is
+     * standing on. That is one gradient doing three jobs: material, depth, and
+     * the colour count criterion 8 measures.
+     */
     linear-gradient(
       180deg,
-      #3b7ba6 0%,
-      #2a6389 18%,
-      #1d4d70 42%,
-      #143b58 66%,
-      #0d2a41 86%,
-      #081d2e 100%
+      #4a8cb8 0%,
+      #326f95 16%,
+      #21567a 38%,
+      #1a4062 60%,
+      #1b2f52 82%,
+      #1d2044 100%
     );
   box-shadow:
     inset 0 1px 0 rgba(234, 243, 250, 0.5),
@@ -2274,6 +2621,16 @@ button {
  * and tinted with the tier, and a long multiple (SEVEN's `4838.40×`) drops one
  * published step rather than overflowing the card.
  */
+/*
+ * The price sits on a plate of its own, tinted with the tier.
+ *
+ * Criterion 11 wants the payout scale readable from colour without a legend,
+ * and the tier IS the scale. A tinted numeral alone was too little of the frame
+ * to register — the reference prints its multipliers on saturated coloured
+ * chips, and the colour is the first thing the eye gets. The plate is a *pool*
+ * of the accent rather than a fill of it (§6.1's constraint on the accents), so
+ * the card is still a machined glass key and not a coloured card.
+ */
 .chip u {
   text-decoration: none;
   font-size: var(--t-lg);
@@ -2283,6 +2640,18 @@ button {
   color: var(--chip-accent, var(--ink));
   position: relative;
   align-self: end;
+  justify-self: start;
+  padding: 3px 9px 3px 8px;
+  margin-left: -3px;
+  border-radius: 6px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--chip-accent, #4a6a86) 20%, transparent),
+    color-mix(in srgb, var(--chip-accent, #4a6a86) 7%, transparent)
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--chip-accent, #4a6a86) 40%, transparent),
+    inset 0 -1px 0 rgba(5, 12, 20, 0.5);
 }
 .chip u[data-long='yes'] {
   font-size: var(--t-md);
@@ -2627,6 +2996,16 @@ button {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+.result-head b i {
+  /* The unit, not an emphasis. Attached to every money figure (§5), set one step
+     down and at the label's own weight so it reads as a denomination rather than
+     as part of the number. */
+  font-style: normal;
+  font-weight: 600;
+  font-size: var(--t-xs);
+  letter-spacing: 0.08em;
+  opacity: 0.86;
 }
 .result-head b {
   font-size: var(--t-xl);

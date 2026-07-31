@@ -816,12 +816,49 @@ function setRoundCap(settled: number | null): void {
   const node = app().querySelector<HTMLElement>('[data-round-cap]');
   if (!node) return;
   if (settled === null) {
-    node.hidden = true;
-    node.textContent = '';
+    /*
+     * **The idle state has a name, and it is the largest text on the screen.**
+     *
+     * Criterion 2 is one of the four gating comprehension criteria, and round 2
+     * failed it on exactly this frame: the caption existed for the round and for
+     * the result, but the state the player sits in longest — the one where they
+     * are deciding — carried no statement of what the round was doing anywhere
+     * in the play area. The rule copy under the instrument states the *rule*,
+     * not the state, and the largest text on the whole screen was a chip's
+     * multiplier. Every reference in the category announces the state in words
+     * at the centre of the play area, at the largest size on the frame, whenever
+     * the round is not running.
+     *
+     * Two words and a figure: what the machine is doing, and what it will cost.
+     * It leaks nothing — both are properties of the ticket the player built —
+     * and it is replaced in place by the round's own caption at COMMIT, so no
+     * layout moves.
+     */
+    if (state.mode !== 'build') {
+      // The result screen is the record of a round that has already happened,
+      // and it carries its own headline: a second state statement over it would
+      // be two answers to one question.
+      node.hidden = true;
+      node.textContent = '';
+      return;
+    }
+    /*
+     * One word, and no second line. The first draft carried
+     * `n LINES · 0.00 CR` under it, which is the same sentence the ticket strip
+     * prints two hundred pixels below — and the plate's height is paid for by
+     * the tube, whose topmost slot index it covers. The subtraction test
+     * settles it: removing the duplicate makes the frame better and gives the
+     * instrument back a slot. What is at stake stays on screen twice over, in
+     * the rail's balance and in the strip (criterion 3).
+     */
+    node.hidden = false;
+    node.dataset.state = 'ready';
+    node.innerHTML = `<b>READY</b>`;
     return;
   }
   const info = variant();
   node.hidden = false;
+  node.dataset.state = 'round';
   node.innerHTML = `<b>SETTLING ${settled} OF ${info.n}</b><span>STAKE ${esc(
     money(totalStakeCommitted()),
   )}</span>`;
@@ -873,8 +910,16 @@ function resultDeck(): string {
   const session = state.session as SessionState;
   const waiting = session.commitAvailableInMs > 0;
   return `
+    <!--
+      The headline is the SERVER's sentence, and the unit is appended to it
+      rather than folded into it: roundPresentation is the one place a round's
+      wording is decided, and a client that rewrites that string is a client
+      that can disagree with the receipt. What it may do — and criterion 17
+      requires — is attach the unit the figure is denominated in, which is
+      constant for the whole product.
+    -->
     <div class="result-head" data-outcome="${esc(presentation?.outcome ?? '')}">
-      <b>${esc(presentation?.headline ?? '')}</b>
+      <b>${esc(presentation?.headline ?? '')} <i>${UNIT}</i></b>
       <span class="result-head__order">${settledStrip(round)}${esc(
         round.transcript
           ? round.transcript.permutation
@@ -1256,7 +1301,7 @@ async function playRound(round: RoundView): Promise<void> {
 
   const setProgress = (fraction: number): void => {
     const bar = document.querySelector('[data-progress]') as HTMLElement | null;
-    if (bar) bar.style.width = `${Math.min(100, fraction * 100)}%`;
+    if (bar) bar.style.setProperty('--progress', Math.min(1, fraction).toFixed(4));
   };
   setProgress(0);
 
@@ -1371,10 +1416,30 @@ async function playRound(round: RoundView): Promise<void> {
    * all (§10).
    */
   if (round.presentation?.multiplierStamp && round.presentation.stampMultipleDecimal)
+    /*
+     * **The plate now shows its own arithmetic, and that is a comprehension fix
+     * rather than a decoration.**
+     *
+     * Round 2's plate paired `4.80×` with `3.80` against a visible 1.00 stake,
+     * so a player doing the obvious multiplication got 4.80 and read 3.80: the
+     * plate carried the NET while the multiple described the RETURN. Both
+     * figures were correct and the surface was incoherent, which is worse than
+     * either being wrong — the celebration surface is the one thing the player
+     * actually looks at.
+     *
+     * The house rule stays: the headline figure is the net, because
+     * `roundPresentation` deliberately never states a gross as if it were a
+     * gain. What changes is that the plate now shows the two operands beside
+     * the result — `1.00 CR AT 4.80×` over `+3.80 CR` — so every figure on the
+     * surface reconciles, and the sign says which kind of figure the big one is.
+     * All three come from the server: the stake, the realised multiple and the
+     * net. The client still computes no money.
+     */
     chamber.setStamp(
       {
         amount: credits(BigInt(round.presentation.netChips)),
         multiple: round.presentation.stampMultipleDecimal,
+        stake: credits(BigInt(round.presentation.stakedChips)),
       },
       true,
     );
@@ -1383,7 +1448,7 @@ async function playRound(round: RoundView): Promise<void> {
     // "full-frequency return" on the closing lock. Leaving it down would make the
     // record screen, which is the round's receipt, read as switched off.
     chamber.desaturate(false);
-    chamber.celebrate(voicing);
+    chamber.celebrate(voicing, Chamber.volumeOf(round.presentation?.stampMultipleDecimal ?? ''));
     sound.win(voicing);
     haptics.win();
   } else {
@@ -1395,7 +1460,7 @@ async function playRound(round: RoundView): Promise<void> {
 
   announce(
     `Settled order: ${permutation.map((element) => elementName(info, element)).join(', ')}. ${
-      round.presentation?.headline ?? ''
+      round.presentation?.headline ? `${round.presentation.headline} ${UNIT}` : ''
     }`,
   );
 

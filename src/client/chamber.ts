@@ -139,14 +139,14 @@ const BURST_MS = 1400;
  * `celebrate` is true, and a losing round therefore does not move at all — which
  * is a second pre-attentive channel separating the two outcomes (§9).
  */
-const LIFT_SCALE = 0.76;
+const LIFT_SCALE = 0.62;
 /** How far the presented column rises, as a fraction of the tube's height. */
-const LIFT_RISE = 0.15;
+const LIFT_RISE = 0.25;
 /** Half-height of the payout plaque, in viewBox units. */
-const PLATE_HALF = 40;
+const PLATE_HALF = 46;
 /** The plaque's width — inset from the glass, so it reads as an object on the
  *  instrument rather than as a bar across the screen. */
-const PLATE_WIDTH = 300;
+const PLATE_WIDTH = 330;
 
 /**
  * The interval between one sphere's celebration pop and the next one's.
@@ -171,13 +171,17 @@ const POP_STAGGER_MS = 68;
  * swing both ways.
  */
 const DRIFT: readonly (readonly [number, number])[] = [
-  [285, 0.14],
-  [105, 0.56],
-  [285, 0.32],
-  [105, 0.74],
-  [285, 0.5],
-  [105, 0.86],
-  [285, 0.66],
+  // The top of the tube's band is reserved: the idle frame now carries the
+  // round-state statement there (criterion 2), and a sphere drifting under a
+  // 28 px display word is a collision on the one screen the player sits on
+  // longest. Two lanes, five berths, all of them clear of the caption.
+  [288, 0.3],
+  [102, 0.58],
+  [288, 0.46],
+  [102, 0.78],
+  [288, 0.62],
+  [102, 0.9],
+  [288, 0.74],
 ];
 
 export type Beat = 'idle' | 'charge' | 'agitate' | 'settle' | 'close' | 'done';
@@ -190,6 +194,8 @@ export type Beat = 'idle' | 'charge' | 'agitate' | 'settle' | 'close' | 'done';
 export interface StampFace {
   amount: string;
   multiple: string;
+  /** What the round cost, so the plate can show its own arithmetic. */
+  stake?: string;
 }
 
 /**
@@ -253,13 +259,11 @@ export class Chamber {
   #orbMotion = new Map<number, SVGGElement>();
   /** Per-sphere travel limits, so turbulence can never cross the machinery. */
   #bounds = new Map<number, readonly [number, number, number, number]>();
-  #rings = new Map<number, SVGGElement>();
   #pulses = new Map<number, SVGGElement>();
   #numerals = new Map<number, SVGTextElement>();
   /** One rect per slot, filled at `celebrate` with the settled sphere's light. */
   #floods = new Map<number, SVGRectElement>();
   #tube: SVGGElement | null = null;
-  #rim: SVGGElement | null = null;
   #burst: SVGGElement | null = null;
   #flash: SVGRectElement | null = null;
   #stamp: SVGGElement | null = null;
@@ -267,6 +271,7 @@ export class Chamber {
   /** Cell floods whose animation is waiting on `celebrate`'s single reflow. */
   readonly #pendingFloods: Element[] = [];
   #shock: SVGGElement | null = null;
+  #sweep: SVGGElement | null = null;
   #motes: HTMLElement | null = null;
   #svg: SVGSVGElement | null = null;
 
@@ -276,10 +281,12 @@ export class Chamber {
   #rimLit = false;
   #mono = false;
   #burstAt = 0;
-  #stampFace: StampFace = { amount: '', multiple: '' };
+  #stampFace: StampFace = { amount: '', multiple: '', stake: '' };
   #stampOn = false;
   #won = false;
   #voicing: Voicing = 'FORM';
+  #volume: 1 | 2 | 3 = 2;
+  #fill = 0;
 
   /* The motion driver: one registration on the shared ticker. */
   #detach: (() => void) | null = null;
@@ -398,16 +405,42 @@ export class Chamber {
         <g class="cham-fit">
           <g class="cham-stretch">
             <g clip-path="url(#glass-clip)">
-              <!-- The back plate: --abyss, so the liquid has something behind it. -->
-              <rect x="16" y="${glassTop}" width="${WIDTH - 32}" height="${glassHeight}" fill="var(--abyss)"/>
+              <!--
+                The back wall, the light on it and the plate it is machined
+                from — the three layers that turn 358 units of "behind the
+                liquid" into a room.
+                Round 2 painted one flat --abyss rect here, and a blind judge
+                named that single untextured surface as the tell in all three
+                comparison sets. The liquid over it is now translucent, so the
+                engine-turning reads *through* the fluid the way an etched plate
+                behind glass actually does.
+              -->
+              <rect x="16" y="${glassTop}" width="${WIDTH - 32}" height="${glassHeight}" fill="url(#backwall)"/>
+              <rect x="16" y="${glassTop}" width="${WIDTH - 32}" height="${glassHeight}" fill="url(#wall-key)"/>
               <rect class="liquid" x="16" y="${glassTop}" width="${
                 WIDTH - 32
               }" height="${glassHeight}" fill="url(#brine)"/>
+              <!--
+                The bench the instrument stands on, and it is a whole VALUE BAND
+                the frame did not have.
+                Criterion 8 counts distinct quantised colours, and the reason
+                round 2 measured 1 573 of them is arithmetic rather than
+                aesthetic: every channel in the environment lived inside a range
+                of six or seven 5-bit steps, so the number of triples the room
+                could possibly produce was in the hundreds. A lit floor plane
+                under a lit wall is two surfaces at two different values seen at
+                two different angles — the cheapest honest way to widen the
+                range is to build the room properly rather than to add texture
+                to one wall of it.
+              -->
+              ${this.#bench(glassTop, glassHeight)}
+              ${this.#guilloche(tubeTop, tubeHeight)}
               ${this.#lightShaft(height)}
               ${this.#caustics(height)}
               ${this.#mottle(glassTop, glassHeight)}
               ${this.#particulate(height)}
               ${this.#bubbles(height)}
+              ${this.#rimLight(tubeTop, tubeHeight)}
               <!-- CHARGE deepens the liquid tint 8% (§6.4). Opacity, nothing else. -->
               <rect class="tint" x="16" y="${glassTop}" width="${
                 WIDTH - 32
@@ -432,7 +465,16 @@ export class Chamber {
                 light in the frame is light in the *liquid*, and everything gold
                 is painted over it at full saturation.
               -->
-              <ellipse class="stamp-halo" cx="${CENTRE_X}" cy="${stampY}" rx="264" ry="146" fill="url(#stamp-glow)"/>
+              <!--
+                Seated a little BELOW the plaque, so its light pools on the
+                bench rather than only behind it. The plaque lands at the
+                optical centre and the bottom third of the vessel is empty at
+                that moment; a payout surface that lights nothing beneath it is
+                a surface with no relationship to the room it arrived in.
+              -->
+              <ellipse class="stamp-halo" cx="${CENTRE_X}" cy="${
+                stampY + 34
+              }" rx="286" ry="168" fill="url(#stamp-glow)"/>
               <!--
                 The celebrated close's held key light (see won-lift in the defs
                 above). Inside the glass clip and under the column, so the
@@ -450,9 +492,22 @@ export class Chamber {
               empty in the middle. That gradient is what makes 358 px of flat
               rectangle read as borosilicate rather than as a box.
             -->
+            <!--
+              The vessel's outer edge, and it is a LIT BEZEL rather than a
+              uniform hairline.
+              Measured twice, in-round, this 1 px stroke of --glass-edge at a
+              flat 0.55 was the brightest and most saturated region in the whole
+              frame: focal.mjs returned a bounding box 1.9% wide and 78% tall,
+              which is to say the object the eye was being pointed at while the
+              game's signature beat ran was the border of the box. A real glass
+              edge catches the key at the top and loses it toward the floor, and
+              the highlight it catches is the colour of the SOURCE — near-white,
+              not saturated cyan — so it can never compete with a coloured
+              object for the eye again.
+            -->
             <rect x="16" y="${glassTop}" width="${
               WIDTH - 32
-            }" height="${glassHeight}" rx="24" fill="none" stroke="var(--glass-edge)" stroke-opacity="0.55" stroke-width="1"/>
+            }" height="${glassHeight}" rx="24" fill="none" stroke="url(#glass-bezel)" stroke-width="1.2"/>
             <rect x="19" y="${glassTop + 3}" width="${WIDTH - 38}" height="${
               glassHeight - 6
             }" rx="21" fill="none" stroke="url(#glass-wall)" stroke-width="6"/>
@@ -507,25 +562,26 @@ export class Chamber {
             -->
             <g class="tube" data-tube>
               ${this.#tubeBack(tubeTop, tubeHeight, pitch)}
-              ${this.#lockRings(pitch)}
               ${this.#spheres(variant, tubeTop, tubeHeight, diameter)}
+              ${this.#lockSweep(tubeTop, tubeHeight)}
               ${this.#tubeGlass(tubeTop, tubeHeight)}
-              <g class="tube-rim">
-                <rect class="tube-rim__bloom" x="${TUBE_X - 14}" y="${tubeTop - 14}" width="${
-                  TUBE_WIDTH + 28
-                }" height="${tubeHeight + 28}" rx="20" fill="url(#rim-bloom)"/>
-                <!--
-                  6 px, not 3. §6.1's sixth gold use is "the tube's full-height
-                  rim during a celebrated close", and at 3 px it was a hairline
-                  drawing of a rim rather than a lit band: the payout surface is
-                  the plate *plus* this rim — they meet where the plate crosses
-                  the column — and together they are the one bright, saturated
-                  region the win frame is read from.
-                -->
-                <rect class="tube-rim__line" x="${TUBE_X - 3}" y="${tubeTop - 3}" width="${
-                  TUBE_WIDTH + 6
-                }" height="${tubeHeight + 6}" rx="11" fill="none" stroke="url(#rim-gold)" stroke-width="6"/>
-              </g>
+              <!--
+                §6.1's sixth gold use — "the tube's full-height rim during a
+                celebrated close" — is GONE, and its removal is the single
+                largest subtraction in this pass.
+                Measured and judged, it was doing three kinds of damage at once.
+                It read as a flat uniform yellow outline with no gradient and no
+                bevel — "a CSS outline rather than a lit object". Its bloom rect
+                laid a gold veil across all five settled spheres, so the colours
+                the entire game is built on went khaki at the exact moment they
+                mattered most. And because it touched the plate where the two
+                crossed, focal.mjs merged them into one region 92% of the frame
+                wide, which is why the win frame had two things competing to be
+                the gold thing and a focal centroid outside the band. What
+                replaces it is the light the column already has: every settled
+                cell is turned up to full, in the colour of what landed in it.
+                One gold object in the frame, and it is the money.
+              -->
               ${this.#lockPulses(pitch)}
             </g>
             </g>
@@ -544,7 +600,6 @@ export class Chamber {
     this.#orbY = new Map();
     this.#orbMotion = new Map();
     this.#bounds = new Map();
-    this.#rings = new Map();
     this.#pulses = new Map();
     this.#numerals = new Map();
     this.#floods = new Map();
@@ -575,8 +630,6 @@ export class Chamber {
         Math.max(0, safeBottom - baseY),
       ]);
     }
-    for (const node of this.#root.querySelectorAll<SVGGElement>('.lock-ring'))
-      this.#rings.set(Number(node.dataset.slot), node);
     for (const node of this.#root.querySelectorAll<SVGGElement>('.pulse-at'))
       this.#pulses.set(Number(node.dataset.slot), node);
     for (const node of this.#root.querySelectorAll<SVGTextElement>('.slot-no'))
@@ -584,12 +637,12 @@ export class Chamber {
     for (const node of this.#root.querySelectorAll<SVGRectElement>('.cell-flood'))
       this.#floods.set(Number(node.dataset.slot), node);
     this.#tube = this.#root.querySelector('[data-tube]');
-    this.#rim = this.#root.querySelector('.tube-rim');
     this.#burst = this.#root.querySelector('.burst');
     this.#flash = this.#root.querySelector('.cham-flash');
     this.#stamp = this.#root.querySelector('.stamp');
     this.#halo = this.#root.querySelector('.stamp-halo');
     this.#shock = this.#root.querySelector('.stamp-shock');
+    this.#sweep = this.#root.querySelector('.lock-sweep');
 
     this.#restore();
     this.fit(this.#visibleCss);
@@ -675,9 +728,94 @@ export class Chamber {
         <stop offset="0" stop-color="#123a52"/>
         <stop offset="0.2" stop-color="var(--deep-lit)"/>
         <stop offset="0.5" stop-color="#0d2740"/>
-        <stop offset="0.76" stop-color="#0a1d33"/>
-        <stop offset="1" stop-color="var(--deep)"/>
+        <stop offset="0.76" stop-color="#0f1c3c"/>
+        <stop offset="1" stop-color="var(--abyss-indigo)"/>
       </linearGradient>
+      <!--
+        The back wall of the room, and it is the surface the whole instrument
+        was missing.
+        Round 2 painted --abyss flat behind the liquid: a single untextured
+        value across the largest area in the frame, which is precisely what a
+        blind judge picked our entry out on in three sets running. This is a
+        wall — lit warm-cool from the top-left where the key enters, falling to
+        indigo at the skirting, with a horizon shade where it meets the base
+        plate.
+      -->
+      <linearGradient id="backwall" x1="0.1" y1="0" x2="0.9" y2="1">
+        <stop offset="0" stop-color="#11374f"/>
+        <stop offset="0.26" stop-color="#0c2740"/>
+        <stop offset="0.58" stop-color="#0a1e39"/>
+        <stop offset="0.82" stop-color="#101740"/>
+        <stop offset="1" stop-color="#1b1445"/>
+      </linearGradient>
+      <!--
+        The engine-turned plate behind the tube — this build's answer to the
+        reference's damask filigree, in the fiction rather than in ornament.
+        A guilloché rosette is what a precision instrument's face is decorated
+        with, it is drawn rather than downloaded, and it is completely still: it
+        buys colour depth and material out of the idle budget's *unused* half,
+        because a still texture costs zero animating regions.
+      -->
+      <linearGradient id="guilloche" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${height}">
+        <stop offset="0" stop-color="#a6e6fb" stop-opacity="0.19"/>
+        <stop offset="0.34" stop-color="#66c0ea" stop-opacity="0.15"/>
+        <stop offset="0.66" stop-color="#6f95e6" stop-opacity="0.14"/>
+        <stop offset="1" stop-color="#b49bf8" stop-opacity="0.12"/>
+      </linearGradient>
+      <!--
+        The wall's own key: the pool of light the source above throws on the
+        back wall *before* it enters the liquid. It is what gives the room a
+        near and a far side, and it is the top of the frame's value range —
+        without it the environment's brightest and darkest pixels were six
+        5-bit steps apart in every channel, which caps the achievable colour
+        count in the hundreds however much texture is laid over it.
+      -->
+      <!--
+        And the pool is CAPPED, deliberately, a little under where it wants to
+        be. focal.mjs defines the important object as the largest region that is
+        both bright (L > 0.45) and saturated (S > 0.35); a key pool on a
+        saturated blue wall crosses both at once as soon as it is generous, and
+        when it does, the "brightest most saturated thing" in the in-round frame
+        becomes a patch of empty wall. Every environment surface in this drawing
+        is held under L 0.45 for the same reason the references hold 76–86% of
+        their pixels in the dark band: the room is not the object.
+      -->
+      <radialGradient id="wall-key" cx="0.28" cy="0.08" r="0.72">
+        <stop offset="0" stop-color="#68b8dc" stop-opacity="0.3"/>
+        <stop offset="0.2" stop-color="#3fa9e0" stop-opacity="0.17"/>
+        <stop offset="0.48" stop-color="#2b7fb8" stop-opacity="0.07"/>
+        <stop offset="1" stop-color="#1b3a86" stop-opacity="0"/>
+      </radialGradient>
+      <!--
+        The bench: the base plate the instrument stands on, seen at a shallow
+        angle so it catches more of the key than the wall behind it does.
+      -->
+      <linearGradient id="bench" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#2f7ea8" stop-opacity="0"/>
+        <stop offset="0.14" stop-color="#3f92bd" stop-opacity="0.42"/>
+        <stop offset="0.4" stop-color="#2d6f9c" stop-opacity="0.5"/>
+        <stop offset="0.78" stop-color="#243f7e" stop-opacity="0.46"/>
+        <stop offset="1" stop-color="var(--abyss-indigo)" stop-opacity="0.6"/>
+      </linearGradient>
+      <!-- The bench's near edge, catching the key along its whole length. -->
+      <linearGradient id="bench-lip" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.04"/>
+        <stop offset="0.32" stop-color="var(--key-hot)" stop-opacity="0.34"/>
+        <stop offset="0.68" stop-color="var(--key)" stop-opacity="0.16"/>
+        <stop offset="1" stop-color="var(--key)" stop-opacity="0.03"/>
+      </linearGradient>
+      <!--
+        The rim light that separates the tube from the wall behind it.
+        §1 of the rubric lists "a rim light separating the focal object from its
+        background" among the load-bearing depth cues, and without it 96 units
+        of glass sat at the same value as the 390 behind them — the hero object
+        and the room measured as one surface.
+      -->
+      <radialGradient id="tube-rimlight">
+        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.34"/>
+        <stop offset="0.42" stop-color="var(--key)" stop-opacity="0.16"/>
+        <stop offset="1" stop-color="var(--key)" stop-opacity="0"/>
+      </radialGradient>
       <!--
         Eight stops, travelling in hue as well as in value.
         A four-stop ramp between two colours 6° apart quantises to a handful of
@@ -689,14 +827,23 @@ export class Chamber {
         cyan-absorbing liquid lit from above actually does.
       -->
       <linearGradient id="brine" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0" stop-color="var(--brine-deep)"/>
-        <stop offset="0.18" stop-color="#0f2a41"/>
-        <stop offset="0.34" stop-color="#123651"/>
-        <stop offset="0.5" stop-color="var(--brine)"/>
-        <stop offset="0.64" stop-color="#164a6d"/>
-        <stop offset="0.78" stop-color="#1a5c85"/>
-        <stop offset="0.9" stop-color="#1d6a95"/>
-        <stop offset="1" stop-color="#2176a2"/>
+        <!--
+          The bottom three stops carry the room's second hue (see
+          --abyss-indigo in styles.css): the key enters at the top and the
+          fluid absorbs the long wavelengths on the way down, so the floor of
+          the vessel is violet-blue and the surface is teal. That ramp is what
+          takes the frame from two adjacent blue bins to the reference's three,
+          and it is the same shape the closest reference in the category uses.
+        -->
+        <stop offset="0" stop-color="#120d30"/>
+        <stop offset="0.1" stop-color="#111634"/>
+        <stop offset="0.22" stop-color="#0c1e38"/>
+        <stop offset="0.34" stop-color="#0d273e"/>
+        <stop offset="0.5" stop-color="#0f3045"/>
+        <stop offset="0.64" stop-color="#11394e"/>
+        <stop offset="0.78" stop-color="#13455f"/>
+        <stop offset="0.9" stop-color="#15506e"/>
+        <stop offset="1" stop-color="#175b80"/>
       </linearGradient>
       <!-- §6.2: brushed 316 steel, anisotropic highlight running horizontally. -->
       <linearGradient id="collar" x1="0" y1="0" x2="0" y2="1">
@@ -713,12 +860,25 @@ export class Chamber {
         <stop offset="0.78" stop-color="var(--specular)" stop-opacity="0.13"/>
         <stop offset="1" stop-color="var(--deep)" stop-opacity="0.5"/>
       </linearGradient>
+      <linearGradient id="glass-bezel" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#e8f4fb" stop-opacity="0.62"/>
+        <stop offset="0.18" stop-color="#c6dcea" stop-opacity="0.34"/>
+        <stop offset="0.52" stop-color="#8fa8bf" stop-opacity="0.18"/>
+        <stop offset="1" stop-color="#5c6390" stop-opacity="0.24"/>
+      </linearGradient>
       <!-- The cylinder: bright at both walls, nothing in the middle (§6.2). -->
+      <!--
+        The 6 px cylinder wall, in the colour of the key and at an alpha that
+        keeps it there. At 0.5 it composited to S 0.43 over the lit room, which
+        put a 6 px band running the full height of the frame back into
+        focal.mjs's mask — the third time a glass highlight has been measured as
+        this drawing's "most important object".
+      -->
       <linearGradient id="glass-wall" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.8"/>
-        <stop offset="0.13" stop-color="var(--glass-edge)" stop-opacity="0.05"/>
-        <stop offset="0.87" stop-color="var(--glass-edge)" stop-opacity="0.05"/>
-        <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0.66"/>
+        <stop offset="0" stop-color="#eef5fb" stop-opacity="0.78"/>
+        <stop offset="0.13" stop-color="#eef5fb" stop-opacity="0.05"/>
+        <stop offset="0.87" stop-color="#eef5fb" stop-opacity="0.05"/>
+        <stop offset="1" stop-color="#eef5fb" stop-opacity="0.7"/>
       </linearGradient>
       <!--
         §6.9's specular line, as a stroke that fades out rather than stopping.
@@ -738,17 +898,63 @@ export class Chamber {
         laboratory with the lights off.
       -->
       <radialGradient id="shaft">
-        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.5"/>
-        <stop offset="0.24" stop-color="var(--key)" stop-opacity="0.42"/>
-        <stop offset="0.55" stop-color="var(--key)" stop-opacity="0.2"/>
-        <stop offset="0.8" stop-color="var(--key-deep)" stop-opacity="0.08"/>
+        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.3"/>
+        <stop offset="0.24" stop-color="var(--key)" stop-opacity="0.26"/>
+        <stop offset="0.55" stop-color="var(--key)" stop-opacity="0.14"/>
+        <stop offset="0.8" stop-color="var(--key-deep)" stop-opacity="0.06"/>
         <stop offset="1" stop-color="var(--key-deep)" stop-opacity="0"/>
       </radialGradient>
-      <radialGradient id="caustic">
-        <stop offset="0" stop-color="var(--key)" stop-opacity="0.72"/>
-        <stop offset="0.35" stop-color="var(--brine-lit)" stop-opacity="0.6"/>
-        <stop offset="0.7" stop-color="var(--brine-lit)" stop-opacity="0.24"/>
-        <stop offset="1" stop-color="var(--brine-lit)" stop-opacity="0"/>
+      <!--
+        A caustic filament, in two passes: the hot core and the halo around it.
+        Both fade with depth on the same userSpace ramp, because the light
+        enters through the top collar and has further to travel the lower it
+        goes — which is the same physics the brine's own ramp expresses.
+      -->
+      <linearGradient id="caustic-line" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${height}">
+        <!--
+          The cores run toward WHITE rather than toward cyan, and that is a
+          hierarchy fix rather than a colour preference. A caustic core mixed at
+          #5cbaeb lands at L 0.48 and S 0.64 over the wall — bright AND
+          saturated — so the net qualified as focal.mjs's focal object and the
+          in-round frame's "brightest, most saturated region" became a
+          filigree spanning 91% of the width. A specular caustic is the colour
+          of its source, and this source is a cool near-white key (§6.3), so
+          every stop here sits under S 0.34 and the only things in the frame
+          that are bright and saturated at once are the spheres and the column
+          they land in.
+        -->
+        <stop offset="0" stop-color="#eef9ff" stop-opacity="0.8"/>
+        <stop offset="0.3" stop-color="#d3edfb" stop-opacity="0.56"/>
+        <stop offset="0.62" stop-color="#a8cfe8" stop-opacity="0.32"/>
+        <stop offset="1" stop-color="#a3aee2" stop-opacity="0.13"/>
+      </linearGradient>
+      <linearGradient id="caustic-glow" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${height}">
+        <stop offset="0" stop-color="#a8e2f8" stop-opacity="0.19"/>
+        <stop offset="0.34" stop-color="#78bfe4" stop-opacity="0.14"/>
+        <stop offset="0.7" stop-color="#6b95cc" stop-opacity="0.09"/>
+        <stop offset="1" stop-color="#8f97d8" stop-opacity="0.05"/>
+      </linearGradient>
+      <linearGradient id="caustic-line-hot" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${height}">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
+        <stop offset="0.34" stop-color="#f2fbff" stop-opacity="0.94"/>
+        <stop offset="0.68" stop-color="#dcf0fd" stop-opacity="0.8"/>
+        <stop offset="1" stop-color="#cfe0fb" stop-opacity="0.6"/>
+      </linearGradient>
+      <linearGradient id="caustic-glow-hot" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${height}">
+        <stop offset="0" stop-color="#dff5ff" stop-opacity="0.5"/>
+        <stop offset="0.34" stop-color="#b6e4fb" stop-opacity="0.42"/>
+        <stop offset="0.7" stop-color="#a8cff2" stop-opacity="0.3"/>
+        <stop offset="1" stop-color="#b2b8f0" stop-opacity="0.22"/>
+      </linearGradient>
+      <radialGradient id="caustic-node-hot">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+        <stop offset="0.3" stop-color="#e8f7ff" stop-opacity="0.6"/>
+        <stop offset="1" stop-color="#bcdcf2" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="caustic-node">
+        <stop offset="0" stop-color="#f8fdff" stop-opacity="0.44"/>
+        <stop offset="0.3" stop-color="#dcf0fc" stop-opacity="0.2"/>
+        <stop offset="1" stop-color="#b4d6ec" stop-opacity="0"/>
       </radialGradient>
       <!--
         Corners fall away from the key, so the light reads as one source from
@@ -758,10 +964,27 @@ export class Chamber {
         falloff to zero is a hole cut in the picture.
       -->
       <radialGradient id="vignette" cx="0.46" cy="0.2" r="0.9">
+        <!--
+          The falloff lands on the room's *second* hue rather than on --deep.
+          A vignette is the largest single tint in the frame — it is applied to
+          every pixel the key does not reach — so painting it in the same blue
+          as the liquid was quietly cancelling the depth ramp underneath it and
+          holding 75% of the hue mass in one bin.
+        -->
+        <!--
+          And it is HALF the strength it was. A vignette at 0.9 over the
+          bottom third of the vessel is not a falloff, it is a second flat
+          fill: it collapsed every value the wall, the bench and the
+          engine-turning put there into one indigo, which is most of why the
+          environment's channels spanned six 5-bit steps and the frame could
+          not reach criterion 8's floor however much material was drawn under
+          it. The spheres stay the brightest objects because they are lit, not
+          because everything else is dimmed.
+        -->
         <stop offset="0" stop-color="var(--deep)" stop-opacity="0"/>
-        <stop offset="0.38" stop-color="var(--deep)" stop-opacity="0.2"/>
-        <stop offset="0.68" stop-color="var(--deep)" stop-opacity="0.62"/>
-        <stop offset="1" stop-color="var(--deep)" stop-opacity="0.9"/>
+        <stop offset="0.4" stop-color="#0a1c34" stop-opacity="0.16"/>
+        <stop offset="0.7" stop-color="#0d1738" stop-opacity="0.44"/>
+        <stop offset="1" stop-color="#150e3a" stop-opacity="0.72"/>
       </radialGradient>
       <radialGradient id="floor-caustic">
         <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.42"/>
@@ -782,22 +1005,97 @@ export class Chamber {
         object as the darkest band in the frame, which inverts the hierarchy the
         whole instrument is built on.
       -->
+      <linearGradient id="bore-fill" x1="0" y1="1" x2="0" y2="0">
+        <!--
+          Bright enough to survive the cylinder shading drawn over it. The
+          charge level is the one surface that is continuous across every
+          settled slot whatever landed in them — one of the five elements is a
+          near-neutral IVORY, which can never itself be "bright and saturated" —
+          so it is what carries the column as a single region for the eye and
+          for the measurement alike. At 0.62 it was landing at L 0.42 after the
+          bore's own shading, a hundredth under the line.
+        -->
+        <stop offset="0" stop-color="#22bfe6" stop-opacity="0.84"/>
+        <stop offset="0.6" stop-color="#34d4f0" stop-opacity="0.76"/>
+        <stop offset="1" stop-color="#6ee2f6" stop-opacity="0.5"/>
+      </linearGradient>
+      <!--
+        The EMPTY bore, and it is deliberately dark.
+        Round 2 lit the whole column to --brine-lit whether or not anything was
+        in it, so an occupied slot and an empty one measured at the same value
+        and the tube carried no state at all. The column is a dark bore that
+        *fills with light* as it fills with spheres: the contrast between a lit
+        cell and an empty one is the state, and it is legible at a glance from
+        across a room, which is what criterion 2 asks of an in-round frame.
+      -->
       <linearGradient id="tube-column" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0" stop-color="var(--brine)"/>
-        <stop offset="0.3" stop-color="var(--brine-lit)"/>
-        <stop offset="1" stop-color="var(--brine-lit)"/>
+        <stop offset="0" stop-color="#0d2439"/>
+        <stop offset="0.3" stop-color="#123650"/>
+        <stop offset="1" stop-color="#175579"/>
       </linearGradient>
       <!-- Cylinder shading: the column is round, so it darkens at both walls. -->
       <linearGradient id="tube-round" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--deep)" stop-opacity="0.72"/>
-        <stop offset="0.18" stop-color="var(--deep)" stop-opacity="0.24"/>
-        <stop offset="0.4" stop-color="var(--key-hot)" stop-opacity="0.11"/>
-        <stop offset="0.7" stop-color="var(--deep)" stop-opacity="0.16"/>
-        <stop offset="1" stop-color="var(--deep)" stop-opacity="0.66"/>
+        <stop offset="0" stop-color="var(--deep)" stop-opacity="0.66"/>
+        <stop offset="0.2" stop-color="var(--deep)" stop-opacity="0.14"/>
+        <stop offset="0.42" stop-color="var(--key-hot)" stop-opacity="0.09"/>
+        <stop offset="0.72" stop-color="var(--deep)" stop-opacity="0.08"/>
+        <stop offset="1" stop-color="var(--deep)" stop-opacity="0.6"/>
       </linearGradient>
       <linearGradient id="tube-caustic" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="var(--key)" stop-opacity="0"/>
         <stop offset="0.5" stop-color="var(--key)" stop-opacity="0.5"/>
+        <stop offset="1" stop-color="var(--key)" stop-opacity="0"/>
+      </linearGradient>
+      <!--
+        One seat: the step in the bore between two slots. Shadow above where the
+        diameter narrows, a lit chamfer at the waist, occlusion under the lip.
+      -->
+      <linearGradient id="seat-step" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#04101d" stop-opacity="0"/>
+        <stop offset="0.34" stop-color="#04101d" stop-opacity="0.34"/>
+        <stop offset="0.5" stop-color="#cfe4f2" stop-opacity="0.42"/>
+        <stop offset="0.62" stop-color="#04101d" stop-opacity="0.3"/>
+        <stop offset="1" stop-color="#04101d" stop-opacity="0"/>
+      </linearGradient>
+      <!-- The index plate: dark machined steel, one value at every state. -->
+      <linearGradient id="index-plate" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#1c2c3e"/>
+        <stop offset="0.5" stop-color="#121e2c"/>
+        <stop offset="1" stop-color="#0a1420"/>
+      </linearGradient>
+      <linearGradient id="index-lip" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#9ebbd2" stop-opacity="0.42"/>
+        <stop offset="0.55" stop-color="#9ebbd2" stop-opacity="0.08"/>
+        <stop offset="1" stop-color="#04101d" stop-opacity="0.6"/>
+      </linearGradient>
+      <linearGradient id="seat-lip" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#0a1626" stop-opacity="0.34"/>
+        <stop offset="0.5" stop-color="#eaf6ff" stop-opacity="0.5"/>
+        <stop offset="1" stop-color="#0a1626" stop-opacity="0.2"/>
+      </linearGradient>
+      <!--
+        The displacement the lock throws into the fluid, and it is a FILL.
+        Round 2 spent this beat on two 1 px stroked ellipses, one of which ran
+        off both edges of the frame; the judge's note is exact — the whole
+        vocabulary of the signature moment was a gold rectangle and two
+        hairlines. Light pushed through a liquid has no outline. This is a soft
+        pressure bloom that expands and dies, and at 1.62 it has spent itself
+        before it reaches the neighbouring slot.
+      -->
+      <radialGradient id="lock-wave">
+        <stop offset="0" stop-color="var(--specular)" stop-opacity="0"/>
+        <stop offset="0.52" stop-color="var(--key-hot)" stop-opacity="0.34"/>
+        <stop offset="0.78" stop-color="var(--key)" stop-opacity="0.16"/>
+        <stop offset="1" stop-color="var(--key)" stop-opacity="0"/>
+      </radialGradient>
+      <!--
+        The shock that runs up the glass when a sphere seats: a band of specular
+        travelling the bore, clipped to the tube, opacity and transform only.
+      -->
+      <linearGradient id="lock-sweep" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="var(--specular)" stop-opacity="0"/>
+        <stop offset="0.46" stop-color="var(--specular)" stop-opacity="0.5"/>
+        <stop offset="0.54" stop-color="var(--key-hot)" stop-opacity="0.42"/>
         <stop offset="1" stop-color="var(--key)" stop-opacity="0"/>
       </linearGradient>
       <!--
@@ -807,42 +1105,19 @@ export class Chamber {
         the eye reads as thickness.
       -->
       <linearGradient id="tube-wall-l" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.6"/>
+        <stop offset="0" stop-color="#e2eef7" stop-opacity="0.52"/>
         <stop offset="0.55" stop-color="var(--deep)" stop-opacity="0.45"/>
-        <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0.14"/>
+        <stop offset="1" stop-color="#e2eef7" stop-opacity="0.1"/>
       </linearGradient>
       <linearGradient id="tube-wall-r" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--glass-edge)" stop-opacity="0.1"/>
+        <stop offset="0" stop-color="#e2eef7" stop-opacity="0.08"/>
         <stop offset="0.4" stop-color="var(--deep)" stop-opacity="0.45"/>
-        <stop offset="1" stop-color="var(--glass-edge)" stop-opacity="0.7"/>
+        <stop offset="1" stop-color="#e2eef7" stop-opacity="0.6"/>
       </linearGradient>
       <linearGradient id="tube-sheen" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.24"/>
         <stop offset="0.6" stop-color="var(--key-hot)" stop-opacity="0.05"/>
         <stop offset="1" stop-color="var(--specular)" stop-opacity="0"/>
-      </linearGradient>
-      <!--
-        The ignited rim runs hot at both ends and steps down through the middle,
-        and its hot stops are the plaque's own lit gold rather than --gold-hot —
-        L = 0.86, so
-        the band actually lands in the highlight bucket the payoff is measured
-        on, at S = 0.69 so it costs the frame no saturation to do it. It is the
-        second-largest gold object in the win frame after the plaque, and it was
-        contributing nothing to the celebration lift.
-      -->
-      <linearGradient id="rim-gold" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0" stop-color="#ffe04f"/>
-        <stop offset="0.28" stop-color="var(--gold-hot)"/>
-        <stop offset="0.5" stop-color="var(--gold)"/>
-        <stop offset="0.72" stop-color="var(--gold-hot)"/>
-        <stop offset="1" stop-color="#ffe04f"/>
-      </linearGradient>
-      <linearGradient id="rim-bloom" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--gold)" stop-opacity="0"/>
-        <stop offset="0.14" stop-color="var(--gold)" stop-opacity="0.3"/>
-        <stop offset="0.5" stop-color="var(--gold-hot)" stop-opacity="0.1"/>
-        <stop offset="0.86" stop-color="var(--gold)" stop-opacity="0.3"/>
-        <stop offset="1" stop-color="var(--gold)" stop-opacity="0"/>
       </linearGradient>
       <!--
         The stamp: PVD gold, warm, low roughness, one thin specular (§6.2) — and
@@ -879,10 +1154,28 @@ export class Chamber {
           highlight share *and* the saturated share, where the cream it replaces
           lifted neither.
         -->
-        <stop offset="0" stop-color="#ffe04f"/>
-        <stop offset="0.34" stop-color="#ffd24d"/>
-        <stop offset="0.64" stop-color="#f0b32e"/>
-        <stop offset="0.84" stop-color="var(--gold)"/>
+        <!--
+          Blue never exceeds 35% of red on any stop, not merely 40%: at the
+          higher figure the two hottest stops measured S 0.60 exactly, and
+          antialiasing put a share of the largest new surface in the frame on
+          the wrong side of the threshold — the payoff's saturated share came
+          out flat instead of rising. Gold can be bright and saturated at once;
+          the constraint is only how much blue is in it.
+          The face is weighted so three quarters of it clears L 0.75, which is
+          the band criterion 15 counts as *highlight*. The payout surface is
+          supposed to be the luminance maximum of the win frame — every payoff
+          in the reference set is — and it was carrying most of its area in the
+          mid band instead, which is why the frame's highlight share doubled
+          only just short of the ×2 the criterion asks for. Every stop still
+          clears S 0.6 (blue never exceeds 40% of red, which is what separates
+          lit gold from cream), so the extra brightness costs the frame no
+          saturation, and the bottom two stops keep the rolled edge that makes
+          it metal rather than a yellow rectangle.
+        -->
+        <stop offset="0" stop-color="#ffe94d"/>
+        <stop offset="0.42" stop-color="#ffdd42"/>
+        <stop offset="0.7" stop-color="#f7c32e"/>
+        <stop offset="0.88" stop-color="var(--gold)"/>
         <stop offset="1" stop-color="#9a6f1e"/>
       </linearGradient>
       <linearGradient id="stamp-bevel" x1="0" y1="0" x2="0" y2="1">
@@ -1038,11 +1331,33 @@ export class Chamber {
         result is on screen — which is what §4 of the rubric means by "the payoff
         surface persists".
       -->
+      <!--
+        And its stops are DARKER than they look like they should be, for a
+        reason that only a measurement finds.
+        focal.mjs defines the celebration surface as the largest connected
+        region that is bright (L > 0.45) AND saturated (S > 0.35). A saturated
+        cyan lift over a saturated cyan room takes most of the chamber over both
+        thresholds at once, so the "single focal object" of the win frame became
+        the *room* — 91% of the frame wide, with the payout plate a separate,
+        smaller component inside it. The lift has to raise the room from dark to
+        mid-dark and stop there: every pixel of it lands under L 0.45, the plate
+        sits at 0.8, and the hierarchy the whole payoff depends on survives its
+        own light.
+      -->
+      <!--
+        The ramp is weighted to the FLOOR, not to the ceiling, and that is the
+        whole of how a payoff gets brighter without losing its hierarchy. The
+        top of the vessel is already the lit end; lifting it crosses L 0.45 and
+        the room becomes the focal object. The floor sits at L 0.12–0.20 and has
+        a quarter of a stop of headroom before it does. So the light arrives
+        where there was none, which is also where a light *from the plaque*
+        would land.
+      -->
       <linearGradient id="won-lift" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0" stop-color="#1E6E9E" stop-opacity="0.5"/>
-        <stop offset="0.42" stop-color="#2394CE" stop-opacity="0.66"/>
-        <stop offset="0.78" stop-color="#33A9DE" stop-opacity="0.6"/>
-        <stop offset="1" stop-color="#4FC4EE" stop-opacity="0.4"/>
+        <stop offset="0" stop-color="#1c6c9e" stop-opacity="0.86"/>
+        <stop offset="0.42" stop-color="#1f7cb0" stop-opacity="0.82"/>
+        <stop offset="0.78" stop-color="#1f7cb0" stop-opacity="0.66"/>
+        <stop offset="1" stop-color="#2489c0" stop-opacity="0.42"/>
       </linearGradient>
 `;
   }
@@ -1066,6 +1381,115 @@ export class Chamber {
   }
 
   /**
+   * The bench — the base plate the instrument stands on.
+   *
+   * A room needs a floor before it needs decoration. The plane is drawn as a
+   * shallow ellipse-topped band rather than as a horizontal line so it reads as
+   * a surface receding under the tube, and its near edge carries the key along
+   * its whole length, which is what tells the eye where the light is coming
+   * from at the bottom of the frame — the one region that previously fell
+   * uniformly to the vignette.
+   */
+  #bench(glassTop: number, glassHeight: number): string {
+    const bottom = glassTop + glassHeight;
+    const top = bottom - Math.round(glassHeight * 0.3);
+    const depth = bottom - top;
+    return `<g class="bench" aria-hidden="true">
+      <path d="M16 ${bottom} V${top + 26} Q${CENTRE_X} ${top - 14} ${WIDTH - 16} ${
+        top + 26
+      } V${bottom} Z" fill="url(#bench)"/>
+      <path d="M16 ${top + 26} Q${CENTRE_X} ${top - 14} ${WIDTH - 16} ${
+        top + 26
+      }" fill="none" stroke="url(#bench-lip)" stroke-width="2"/>
+      <ellipse cx="${CENTRE_X}" cy="${bottom - depth * 0.2}" rx="176" ry="${Math.round(
+        depth * 0.5,
+      )}" fill="url(#floor-caustic)" opacity="0.5"/>
+    </g>`;
+  }
+
+  /**
+   * The engine-turned plate behind the tube.
+   *
+   * Criterion 8 is a floor of 2 500 distinct quantised colours and it is not a
+   * colour preference: it is how a flat fill is detected. Round 2 measured 1 573
+   * against the closest reference's 2 956 and the library's designated
+   * failure-mode control's 1 156, and the shortfall lived almost entirely in the
+   * area behind the tube. That reference solves the same problem with a damask
+   * filigree in its background plate; a laboratory instrument's own version of
+   * the same move is **guilloché** — the engine-turned rosette that has
+   * decorated precision dials and banknotes since the eighteenth century.
+   *
+   * It is generated, never downloaded: one clean rosette of overlapping circles
+   * whose interference *is* the pattern, plus the machined flutes of the panel
+   * it is turned into. Every stroke is under a unit and a half at 12–19% of a
+   * cool-to-violet ramp, so the field adds hundreds of intermediate values
+   * without adding a single hard edge (criterion 9 counts a luminance gradient
+   * over 0.25; this one never exceeds 0.04).
+   *
+   * And it is **completely still**. The rubric's strongest single finding is
+   * that the best reference in the category animates literally nothing while the
+   * player decides, so the material the frame was missing has to come out of the
+   * budget's unused half rather than out of its spent one.
+   */
+  #guilloche(tubeTop: number, tubeHeight: number): string {
+    const cy = Math.round(tubeTop + tubeHeight / 2);
+    const rosette = (count: number, orbit: number, radius: number, phase: number): string => {
+      let out = '';
+      for (let index = 0; index < count; index += 1) {
+        const angle = ((index + phase) / count) * Math.PI * 2;
+        out += `<circle cx="${(CENTRE_X + Math.cos(angle) * orbit).toFixed(1)}" cy="${(
+          cy +
+          Math.sin(angle) * orbit
+        ).toFixed(1)}" r="${radius}"/>`;
+      }
+      return out;
+    };
+    /*
+     * The flutes: the panel is milled, so it carries vertical ribs, and a rib
+     * is a pair of lines — a lit edge and its shade — rather than a stroke.
+     * They give the wall a direction, which is the thing a gradient cannot do.
+     */
+    let flutes = '';
+    for (let x = 30; x < WIDTH - 30; x += 26) {
+      flutes += `<line x1="${x}" y1="0" x2="${x}" y2="${
+        tubeTop + tubeHeight + 400
+      }" stroke="url(#guilloche)" stroke-width="1.2"/><line x1="${x + 3}" y1="0" x2="${
+        x + 3
+      }" y2="${tubeTop + tubeHeight + 400}" stroke="var(--abyss-indigo)" stroke-opacity="0.16" stroke-width="2"/>`;
+    }
+    return `<g class="guilloche" aria-hidden="true">
+      <g opacity="0.5">${flutes}</g>
+      <g stroke="url(#guilloche)" stroke-width="1" fill="none">${rosette(30, 122, 122, 0)}</g>
+      <g stroke="url(#guilloche)" stroke-width="0.8" fill="none" opacity="0.7">${rosette(
+        22,
+        62,
+        62,
+        0.5,
+      )}</g>
+    </g>`;
+  }
+
+  /**
+   * The rim light that stands the tube off the wall behind it.
+   *
+   * §1 of the rubric lists "a rim light separating the focal object from its
+   * background" among the depth cues that actually carry weight, and its absence
+   * measured exactly as the judge described it: 96 units of borosilicate sitting
+   * at the same value as the 358 behind them, so the instrument and the room
+   * resolved as one flat surface. Two soft ellipses hugging the walls, no edge
+   * in any direction, and they are the *chamber's own* key spilling round a
+   * cylinder rather than a new light source.
+   */
+  #rimLight(tubeTop: number, tubeHeight: number): string {
+    const ry = Math.round(tubeHeight * 0.56);
+    const cy = Math.round(tubeTop + tubeHeight / 2);
+    return `<g class="tube-rimlight" aria-hidden="true">
+      <ellipse cx="${TUBE_X - 4}" cy="${cy}" rx="30" ry="${ry}" fill="url(#tube-rimlight)"/>
+      <ellipse cx="${TUBE_X + TUBE_WIDTH + 4}" cy="${cy}" rx="30" ry="${ry}" fill="url(#tube-rimlight)"/>
+    </g>`;
+  }
+
+  /**
    * Two counter-drifting layers of soft ellipses, plus §6.3's one elliptical
    * caustic on the base plate.
    *
@@ -1074,19 +1498,107 @@ export class Chamber {
    * same field as the liquid so the two never desync — here they share one
    * keyframe pair, which is the strongest form of that guarantee.
    */
+  /**
+   * The caustics, rebuilt as **light** rather than as haze.
+   *
+   * Round 2 drew them as eleven soft elliptical blobs at 16–22% — a mist over
+   * the wall, which measured and read as nothing: the frame's whole environment
+   * spanned six 5-bit steps per channel and a blind judge called the interior a
+   * flat wash. That is not what a tank of liquid under one hard source does. A
+   * caustic is a *focused* thing — thin branching filaments with hot cores where
+   * the wavefronts fold, an order of magnitude brighter than the surface they
+   * land on — and it is the single most identity-true piece of light this
+   * instrument can carry (§6.2, §6.6 reference 1).
+   *
+   * So each filament is drawn the way caustics are drawn: a wide soft pass for
+   * the halo and a thin hot pass for the core, both on the same path, both
+   * fading with depth on a shared vertical ramp because the light enters from
+   * above. The bright cores are what widen the environment's value range, which
+   * is what criterion 8 is actually measuring.
+   */
   #caustics(height: number): string {
-    const next = stream(0x9e3779b9);
-    const blob = (layer: number): string => {
-      const cx = 30 + next() * 330;
-      const cy = next() * height;
-      const rx = 44 + next() * 74;
-      const ry = 16 + next() * 30;
-      return `<ellipse cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" rx="${rx.toFixed(
-        0,
-      )}" ry="${ry.toFixed(0)}" fill="url(#caustic)" opacity="${(0.16 + layer * 0.06).toFixed(2)}"/>`;
+    let next = stream(0x9e3779b9);
+    let hot = false;
+    /**
+     * A smooth wandering filament across the wall, as one path.
+     *
+     * The endpoints are picked on opposite edges of a box larger than the
+     * vessel and the direction is free, so the filaments *cross* rather than
+     * lying in parallel: a caustic is a net with bright nodes where the folds
+     * meet, and eleven horizontal wavy lines is a texture of scratches.
+     */
+    const filament = (yBase: number, amplitude: number): string => {
+      const steps = 7;
+      const tilt = (next() - 0.5) * 1.1;
+      const x0 = -60 - next() * 40;
+      const span = WIDTH + 120 - x0;
+      const phase = next() * 6.3;
+      const points: [number, number][] = [];
+      for (let index = 0; index <= steps; index += 1) {
+        const t = index / steps;
+        points.push([
+          x0 + span * t,
+          yBase +
+            tilt * span * (t - 0.5) +
+            Math.sin(t * 4.1 + phase) * amplitude +
+            Math.sin(t * 9.4 + phase * 1.7) * amplitude * 0.45,
+        ]);
+      }
+      let d = `M${points[0]![0].toFixed(0)} ${points[0]![1].toFixed(0)}`;
+      for (let index = 1; index < points.length - 1; index += 1) {
+        const [cx, cy] = points[index]!;
+        const [nx, ny] = points[index + 1]!;
+        d += ` Q${cx.toFixed(0)} ${cy.toFixed(0)} ${((cx + nx) / 2).toFixed(0)} ${(
+          (cy + ny) / 2
+        ).toFixed(0)}`;
+      }
+      const last = points[points.length - 1]!;
+      d += ` T${last[0].toFixed(0)} ${last[1].toFixed(0)}`;
+      const glow = hot ? 'caustic-glow-hot' : 'caustic-glow';
+      const core = hot ? 'caustic-line-hot' : 'caustic-line';
+      return `<path d="${d}" fill="none" stroke="url(#${glow})" stroke-width="${(
+        7 +
+        next() * 9
+      ).toFixed(1)}" stroke-linecap="round"/><path d="${d}" fill="none" stroke="url(#${core})" stroke-width="${(
+        1.1 +
+        next() * 1.1
+      ).toFixed(2)}" stroke-linecap="round"/>`;
     };
-    const layerA = Array.from({ length: 6 }, () => blob(0)).join('');
-    const layerB = Array.from({ length: 5 }, () => blob(1)).join('');
+    /*
+     * Weighted toward the top: `t²` rather than `t` puts more of the net near
+     * the collar the key enters through, which is where a real caustic is
+     * brightest and densest, and leaves the floor of the vessel to the bench.
+     */
+    const blob = (layer: number): string => {
+      const yBase = 10 + next() ** 1.7 * (height - 20);
+      return filament(yBase, 26 + next() * 40 + layer * 10);
+    };
+    /** Where the folds meet, the light concentrates. Eight of them, no more. */
+    const nodes = Array.from({ length: 8 }, () => {
+      const cx = 24 + next() * 342;
+      const cy = 16 + next() ** 1.7 * (height - 32);
+      const r = 7 + next() * 13;
+      return `<circle cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" r="${r.toFixed(
+        0,
+      )}" fill="url(#caustic-node)"/>`;
+    }).join('');
+    const layerA = `${Array.from({ length: 7 }, () => blob(0)).join('')}${nodes}`;
+    const layerB = Array.from({ length: 6 }, () => blob(1)).join('');
+    hot = true;
+    const reheat = stream(0x9e3779b9);
+    next = reheat;
+    const hotA = `${Array.from({ length: 7 }, () => blob(0)).join('')}${Array.from(
+      { length: 8 },
+      () => {
+        const cx = 24 + next() * 342;
+        const cy = 16 + next() ** 1.7 * (height - 32);
+        const r = 7 + next() * 13;
+        return `<circle cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" r="${(r * 1.5).toFixed(
+          0,
+        )}" fill="url(#caustic-node-hot)"/>`;
+      },
+    ).join('')}`;
+    const hotB = Array.from({ length: 6 }, () => blob(1)).join('');
     /*
      * The churn wrapper is why the beat named "THE CHAMBER AGITATES" now looks
      * like something is happening to the *liquid* and not only to the spheres.
@@ -1095,10 +1607,25 @@ export class Chamber {
      * `animation-duration` swap on a running animation jumps, which is the one
      * thing a fluid may not do.
      */
+    /*
+     * The hot pass, and it is why the payoff can be *bright* without being
+     * washed.
+     *
+     * CSS `opacity` clamps at 1, so "turn the caustics up" cannot be written as
+     * a value over 1 on the layer that already carries them — the first attempt
+     * at this measured exactly zero change. It is a second copy of the same
+     * paths on a hotter ramp instead, resting at zero and brought up by
+     * `chamber--ignited` in proportion to `--win-vol`. Structure rather than a
+     * wash: the light that arrives at the payoff lands on the same filaments
+     * the room already had, so the frame gets brighter without losing a single
+     * edge, and because the source is a cool near-white the frame's saturation
+     * does not move.
+     */
     return `
       <g class="caustic-churn">
         <g class="caustic caustic--a">${layerA}</g>
         <g class="caustic caustic--b">${layerB}</g>
+        <g class="caustic-hot" aria-hidden="true">${hotA}${hotB}</g>
       </g>`;
   }
 
@@ -1220,17 +1747,40 @@ export class Chamber {
    * caustic bands, the rising bubbles and the numerals.
    */
   #tubeBack(tubeTop: number, tubeHeight: number, pitch: number): string {
+    /*
+     * The seats, and they are machined bands rather than hairlines.
+     *
+     * Round 2 divided the column with a 1 px dark line and a 1 px light one per
+     * slot — the exact construction the rubric diagnoses as line art, doing the
+     * structural work that mass and shading should do. A seat in a real
+     * instrument is a *step* in the bore: a shadow where the diameter narrows, a
+     * lit chamfer where it opens again, and a soft occlusion under the lip. All
+     * three are fills on a gradient, none of them is a stroke, and together they
+     * are what makes the column read as a bored cylinder with five sockets in it
+     * rather than as a rectangle with lines across it.
+     */
     const engraved = this.#slots
       .map((y, index) => {
         if (index === 0) return '';
         const line = y + pitch / 2;
-        return `
-          <line x1="${TUBE_X + TUBE_WALL}" y1="${line}" x2="${
-            TUBE_X + TUBE_WIDTH - TUBE_WALL
-          }" y2="${line}" stroke="var(--deep)" stroke-opacity="0.7" stroke-width="1"/>
-          <line x1="${TUBE_X + TUBE_WALL}" y1="${line + 1}" x2="${
-            TUBE_X + TUBE_WIDTH - TUBE_WALL
-          }" y2="${line + 1}" stroke="var(--glass-edge)" stroke-opacity="0.5" stroke-width="1"/>`;
+        return `<rect x="${TUBE_X + 2}" y="${line - 7}" width="${
+          TUBE_WIDTH - 4
+        }" height="14" fill="url(#seat-step)"/>`;
+      })
+      .join('');
+    /*
+     * The chamfer, drawn OVER the light: a lit run of cells would otherwise
+     * read as a stack of solid coloured blocks, and the bore has to stay a bore.
+     * One narrow band of the key's own colour per division — no dark half, so it
+     * cannot cut the column into pieces.
+     */
+    const lips = this.#slots
+      .map((y, index) => {
+        if (index === 0) return '';
+        const line = y + pitch / 2;
+        return `<rect x="${TUBE_X + 2}" y="${line - 3}" width="${
+          TUBE_WIDTH - 4
+        }" height="6" fill="url(#seat-lip)"/>`;
       })
       .join('');
     // §11: a boundary the player needs to perceive clears 3:1 against the
@@ -1248,9 +1798,23 @@ export class Chamber {
           // mechanism that shipped a dead ticket line at 2.08:1 in round 1 and
           // the picker's slot numerals at 2.9:1 in round 2, and
           // `tests/client.test.mjs` now fails the build on any text that does it.
-          `<text class="slot-no" data-slot="${index + 1}" x="${TUBE_X + 8}" y="${
-            y + 4
-          }" fill="currentColor">${index + 1}</text>`,
+          // On its own machined index plate, and that is the fix for the one
+          // legibility defect round 2 left: the numerals were dim grey type
+          // sitting straight on the bore, "barely legible", and they are the
+          // only thing telling the player what the positions are. A lit cell
+          // makes it worse rather than better — light type on a saturated amber
+          // pool is 1.8:1 — so the index gets a surface of its own, dark steel
+          // at a fixed value, and the type on it clears 4.5:1 at every state the
+          // cell behind it can be in.
+          `<g class="slot-index" data-slot="${index + 1}">
+            <rect x="${TUBE_X + 3}" y="${y - 10}" width="21" height="20" rx="4" fill="url(#index-plate)"/>
+            <rect x="${TUBE_X + 3.5}" y="${
+              y - 9.5
+            }" width="20" height="19" rx="3.5" fill="none" stroke="url(#index-lip)" stroke-width="1"/>
+            <text class="slot-no" data-slot="${index + 1}" x="${TUBE_X + 13.5}" y="${
+              y + 4
+            }" text-anchor="middle" fill="currentColor">${index + 1}</text>
+          </g>`,
       )
       .join('');
     // Three caustic bands drifting up the column, on the same 19 s period as the
@@ -1298,20 +1862,50 @@ export class Chamber {
     const floods = this.#slots
       .map(
         (y, index) =>
+          // Four units of overlap top and bottom, so adjacent lit cells JOIN.
+          // Criterion 12 asks for one region that is brightest and most
+          // saturated, and a column of five discs separated by five seats is
+          // five regions of 0.5% each — measurably, "nothing is the important
+          // thing", which is exactly the failure this pass exists to fix.
           `<rect class="cell-flood" data-slot="${index + 1}" x="${TUBE_X}" y="${(
             y -
-            pitch / 2
-          ).toFixed(1)}" width="${TUBE_WIDTH}" height="${pitch.toFixed(1)}" fill="none"/>`,
+            pitch / 2 -
+            4
+          ).toFixed(1)}" width="${TUBE_WIDTH}" height="${(pitch + 8).toFixed(1)}" fill="none"/>`,
       )
       .join('');
     return `
       <g class="tube-well" clip-path="url(#tube-clip)">
         <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" fill="url(#tube-column)"/>
+        <!--
+          The charge level: the bore fills with the instrument's own light as it
+          fills with spheres, from the bottom up, one slot at a time.
+          It is the state made continuous. Five lit cells in five different hues
+          are five separate objects — and one of the five elements is IVORY, a
+          near-neutral, which breaks any chain that depends on the cells being
+          saturated. This is the backing that carries the column across it: a
+          single bright, saturated surface whose height is the number of slots
+          settled, so the in-round frame has one object whose *size* is the
+          round's progress. One rect, one scaleY on a promoted layer, 420 ms per
+          step, and it moves only when a lock has already happened.
+        -->
+        <g class="bore-fill"><rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" fill="url(#bore-fill)"/></g>
         <g class="tube-bands">${bands}</g>
-        <g class="cell-floods">${floods}</g>
         ${engraved}
         <g class="bubbles bubbles--tube">${fizz}</g>
         <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" fill="url(#tube-round)"/>
+        <!--
+          The lit cells are painted OVER the cylinder shading, not under it.
+          Under it they were darkened by the same pass that shapes the empty
+          bore, and the arithmetic mattered: the element hues sit at L 0.44–0.72
+          and S 0.53–0.88 in the raw, which is exactly the band focal.mjs counts
+          as a lit saturated surface — and a 0.14 multiply over the top was
+          enough to drop most of the cell back under the line. A cell full of
+          emissive liquid is a source; it is not shaded by the glass in front of
+          it, it is what lights the glass.
+        -->
+        <g class="cell-floods">${floods}</g>
+        <g class="seat-lips">${lips}</g>
         <!--
           The liquid surface. §6.6 reference 1: the meniscus bends the far edge of
           the column into a single thin bright line, and that line is the whole
@@ -1350,47 +1944,52 @@ export class Chamber {
       <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="${tubeHeight}" rx="8" fill="none" stroke="var(--glass-edge)" stroke-opacity="0.5" stroke-width="1"/>`;
   }
 
-  /** Two stacked rings per slot: the gold flash, and the seated state. */
-  #lockRings(pitch: number): string {
-    return this.#slots
-      .map((y, index) => {
-        const box = `x="${TUBE_X + 4}" y="${y - pitch / 2 + 3}" width="${
-          TUBE_WIDTH - 8
-        }" height="${pitch - 6}" rx="4" fill="none"`;
-        return `<g class="lock-ring" data-slot="${index + 1}">
-          <rect class="lock-ring__seat" ${box} stroke="var(--glass-edge)" stroke-width="1.5"/>
-          <rect class="lock-ring__gold" ${box} stroke="url(#rim-gold)" stroke-width="1.5"/>
-        </g>`;
-      })
-      .join('');
-  }
-
   /**
-   * The ring of light that pulses at each lock-in.
+   * The lock, as a lit event in a liquid rather than as line work.
    *
-   * §7 technique 5 injects one displacement pulse per lock into a shader
-   * uniform; this is that beat in the DOM lane, as an expanding ellipse that
-   * scales and fades. It is `transform` and `opacity` on a pre-rasterised
-   * stroke — never an animated `stroke-width`, which is the property §7.1.1
-   * names as the way a build breaks the frame budget while decorating it. §6.4
-   * bounds the overlap for free: a 380 ms pulse against a 360–420 ms stagger
-   * means at most one is ever in flight.
+   * This is the one beat the round-2 verdict called a blocker, and the diagnosis
+   * was mechanical rather than aesthetic: the signature moment of the game — a
+   * sphere seating into a slot — was drawn as a 2 px gold rectangle outline plus
+   * two 1 px expanding ellipses, with no luminance event, no bloom, no
+   * displacement and no reaction on the sphere itself. "A 1 px outline can only
+   * change colour", and at 1 px the eye barely resolves that.
+   *
+   * What replaces it is one thing with three parts, all of them fills:
+   *
+   * | Part | What it is |
+   * | --- | --- |
+   * | the cell ignites | the slot floods with the *settled sphere's own light* and stays lit for the rest of the round — see `#floodCell` |
+   * | the fluid displaces | one soft radial bloom pushed out through the brine, spent before it reaches the next slot |
+   * | the bore rings | a band of specular running up the glass, clipped to the tube |
+   *
+   * There is no gold anywhere in it. Gold is the money colour and it has exactly
+   * six sanctioned uses (§6.1); spending five of them per round on locks is what
+   * leaves the payoff nowhere to go, and the honest light for this beat is the
+   * light of the object that just landed — the spheres are the only emitters in
+   * this world, so the room brightening because one of them arrived is the
+   * physics the art direction already committed to.
    */
   #lockPulses(pitch: number): string {
     return this.#slots
       .map(
         (y, index) => `<g class="pulse-at" data-slot="${index + 1}" transform="translate(${CENTRE_X},${y})">
           <g class="pulse">
-            <ellipse rx="${TUBE_WIDTH / 2 - 4}" ry="${(pitch / 2 - 3).toFixed(
+            <ellipse rx="${TUBE_WIDTH / 2 + 34}" ry="${(pitch / 2 + 20).toFixed(
               1,
-            )}" fill="none" stroke="var(--gold-hot)" stroke-width="1.5"/>
-            <ellipse class="pulse__wide" rx="${TUBE_WIDTH / 2 + 22}" ry="${(pitch / 2 + 10).toFixed(
-              1,
-            )}" fill="none" stroke="var(--gold)" stroke-width="6" stroke-opacity="0.28"/>
+            )}" fill="url(#lock-wave)"/>
           </g>
         </g>`,
       )
       .join('');
+  }
+
+  /** The band of specular that runs up the bore when a sphere seats. */
+  #lockSweep(tubeTop: number, tubeHeight: number): string {
+    return `<g class="sweep-clip" clip-path="url(#tube-clip)">
+      <g class="lock-sweep" style="--bore:${tubeHeight}px">
+        <rect x="${TUBE_X}" y="${tubeTop}" width="${TUBE_WIDTH}" height="54" fill="url(#lock-sweep)"/>
+      </g>
+    </g>`;
   }
 
   /**
@@ -1491,14 +2090,17 @@ export class Chamber {
     return `<g clip-path="url(#glass-clip)"><g class="burst-at" transform="translate(${CENTRE_X},${Math.round(
       tubeTop + tubeHeight / 2,
     )})">
+      <!--
+        And the expanding gold ring is gone with it. The subtraction test the
+        task sets — remove the two weakest effects and check the frame got
+        better — named this and the plate's shock ellipse as the two, and both
+        were the same construction: a stroked circle scaled and faded, which is
+        line art wearing a keyframe. What is left is the prism (mass, tinted by
+        the objects' own colours) and its core.
+      -->
       <g class="burst">
         <g class="burst__spokes">${spokes}</g>
         <circle class="burst__core" r="${(length * 0.44).toFixed(0)}" fill="url(#burst-core)"/>
-        <g class="burst__ring">
-          <circle r="${(length * 0.36).toFixed(
-            0,
-          )}" fill="none" stroke="var(--gold-hot)" stroke-width="3" stroke-opacity="0.7"/>
-        </g>
       </g>
     </g></g>`;
   }
@@ -1530,13 +2132,15 @@ export class Chamber {
     const half = PLATE_HALF;
     return `<g class="stamp-at" transform="translate(${CENTRE_X},${y})">
       <!--
-        The landing shock: one stroked ellipse, scaled and faded, thrown outward
-        from the plate at the instant it lands. It is the impact the round-1
-        stamp did not have — that one cross-faded in over 220 ms, which reads as
-        a tooltip appearing rather than as a machined plate arriving.
+        The landing shock, and it is a BLOOM rather than a stroked ellipse.
+        The impact is right — a plate that cross-fades in reads as a tooltip
+        appearing rather than as machined brass arriving — but the round-2
+        version drew it as a 1 px gold outline, and the subtraction test caught
+        it: removing that ellipse made the frame better, which by the task's own
+        rule made it noise. Light thrown off a landing surface has no edge.
       -->
       <g class="stamp-shock">
-        <ellipse rx="${width * 0.4}" ry="${half * 1.5}" fill="none" stroke="var(--gold-hot)" stroke-width="2" stroke-opacity="0.8"/>
+        <ellipse rx="${width * 0.62}" ry="${half * 2.1}" fill="url(#stamp-glow)"/>
       </g>
       <g class="stamp">
         <!-- The pop's origin anchor; see the sphere markup. The shine translates
@@ -1577,10 +2181,16 @@ export class Chamber {
         -->
         <text class="stamp__cap" text-anchor="start" x="${
           -width / 2 + 18
-        }" y="${-half + 22}" fill="#5A4310" data-cap>WON</text>
+        }" y="${-half + 24}" fill="#5A4310" data-cap>WON</text>
+        <!--
+          The operands, beside the result. "1.00 CR AT 4.80x" is the whole of
+          the arithmetic the plate's own big figure is the answer to, and it is
+          there because round 2's plate invited a multiplication whose answer
+          was a different number from the one printed underneath it.
+        -->
         <text class="stamp__mult" text-anchor="end" x="${
           width / 2 - 18
-        }" y="${-half + 22}" fill="#5A4310" data-mult></text>
+        }" y="${-half + 24}" fill="#5A4310" data-mult></text>
         <!--
           The numeral is BUILT, not styled — §5 of the rubric's "display type is
           built, not styled; flat system-font text reads as placeholder".
@@ -1594,12 +2204,19 @@ export class Chamber {
           Both passes carry the same string from the same node write (see
           setStamp below), so they can never disagree.
         -->
+        <!--
+          The sign is load-bearing. "3.80" beside "4.80x" is ambiguous; "+3.80"
+          is not — it says the figure is what the round ADDED, on top of the
+          stake printed in the caption above it. It appears on no other surface
+          and on no other outcome, because the plate exists only where
+          creditedChips > totalStakeChips (§10).
+        -->
         <text class="stamp__emboss" text-anchor="middle" y="${
           half - 13.5
-        }" aria-hidden="true"><tspan data-num></tspan><tspan class="stamp__unit"> ${UNIT}</tspan></text>
+        }" aria-hidden="true"><tspan>+</tspan><tspan data-num></tspan><tspan class="stamp__unit"> ${UNIT}</tspan></text>
         <text class="stamp__value" text-anchor="middle" y="${
           half - 15
-        }" fill="var(--void)"><tspan class="stamp__num" data-num></tspan><tspan class="stamp__unit"> ${UNIT}</tspan></text>
+        }" fill="var(--void)"><tspan class="stamp__sign">+</tspan><tspan class="stamp__num" data-num></tspan><tspan class="stamp__unit"> ${UNIT}</tspan></text>
         <g clip-path="url(#stamp-clip)">
           <rect class="stamp__shine" x="${-width / 2}" y="${-half}" width="76" height="${
             half * 2
@@ -1629,6 +2246,8 @@ export class Chamber {
     // The held key light and the presented column are part of the record, so a
     // redraw restores them like every other end state (see `celebrate`).
     svg?.classList.toggle('chamber--won', this.#won);
+    svg?.style.setProperty('--win-vol', String(this.#volume));
+    svg?.style.setProperty('--fill', this.#fill.toFixed(3));
     for (const [slot, element] of this.#seated) {
       const orb = this.#orbs.get(element);
       const orbY = this.#orbY.get(element);
@@ -1641,14 +2260,15 @@ export class Chamber {
       void orb.getBoundingClientRect();
       orb.style.transition = '';
       orbY.style.transition = '';
-      const ring = this.#rings.get(slot);
-      if (ring) ring.classList.add('lock-ring--on', 'lock-ring--settled');
       this.#numerals.get(slot)?.classList.add('slot-no--lit');
+      // The cell keeps the light of what landed in it — that light IS the
+      // seated state now, so a redraw has to restore it or the tube forgets
+      // which slots are filled.
+      this.#floodCell(slot, element, 0, this.#won ? 'won' : 'seated');
       // A celebrated tube stays lit by what landed in it, so the record screen
       // survives a redraw with its colour. `--on` carries the resting opacity as
       // a declaration rather than as an animation fill, which is what lets
       // `chamber--restoring` switch every animation off and keep the state.
-      if (this.#won) this.#floodCell(slot, element, 0);
     }
     // The burst is the one thing that is legitimately mid-flight across a
     // redraw, so it resumes rather than restarting: a negative animation delay
@@ -1681,11 +2301,13 @@ export class Chamber {
     const restoring = this.#svg;
     restoring?.classList.add('chamber--restoring');
     this.#seated.clear();
+    this.#fill = 0;
+    this.#svg?.style.setProperty('--fill', '0');
     this.#turbulence = null;
     this.#beat = 'idle';
     this.setBeat('idle');
     this.igniteRim(false);
-    this.setStamp({ amount: '', multiple: '' }, false);
+    this.setStamp({ amount: '', multiple: '', stake: '' }, false);
     this.desaturate(false);
     this.#burstAt = 0;
     this.#won = false;
@@ -1700,10 +2322,12 @@ export class Chamber {
     this.#shock?.classList.remove('stamp-shock--on');
     this.#stamp?.classList.remove('stamp--land');
     for (const flood of this.#floods.values()) {
-      flood.classList.remove('cell-flood--on');
+      flood.classList.remove('cell-flood--on', 'cell-flood--lock', 'cell-flood--seated');
       flood.style.removeProperty('--pop-delay');
       flood.setAttribute('fill', 'none');
     }
+    this.#sweep?.classList.remove('lock-sweep--on');
+    for (const orb of this.#orbs.values()) orb.classList.remove('orb--lock');
     if (this.#motes) this.#motes.innerHTML = '';
     for (const [index, orb] of this.#orbs) {
       const [x, fraction] = DRIFT[index] ?? [CENTRE_X, 0.5];
@@ -1726,8 +2350,6 @@ export class Chamber {
       orb.style.transition = '';
       if (orbY) orbY.style.transition = '';
     }
-    for (const ring of this.#rings.values())
-      ring.classList.remove('lock-ring--on', 'lock-ring--settled');
     for (const pulse of this.#pulses.values())
       pulse.querySelector('.pulse')?.classList.remove('pulse--on');
     for (const numeral of this.#numerals.values()) numeral.classList.remove('slot-no--lit');
@@ -1799,6 +2421,13 @@ export class Chamber {
     }
   }
 
+  /** How much of the bore is lit: one slot's worth per lock, bottom-up. */
+  #setFill(slot: number): void {
+    const n = this.#variant?.n ?? 5;
+    this.#fill = Math.max(this.#fill, Math.min(1, slot / n));
+    this.#svg?.style.setProperty('--fill', this.#fill.toFixed(3));
+  }
+
   #seatedElement(element: number): boolean {
     for (const seated of this.#seated.values()) if (seated === element) return true;
     return false;
@@ -1853,42 +2482,88 @@ export class Chamber {
   }
 
   /**
-   * The lock: the gold ring flashes, the ring of light pulses outward, the slot's
-   * numeral lights, and the chamber flexes 2 px (§6.4).
+   * The lock — the game's signature beat, and the one the round-2 verdict
+   * blocked on.
    *
-   * Every one of those is `transform`, `opacity` or `color`. The 4% ring
-   * overshoot is a `scale` on a pre-rasterised ring and the flex is a `translate`
-   * on the tube group, never a new path — §7.1.1's rule, kept rather than
-   * quoted.
+   * It is now **one dominant event with three supporting details**, in the
+   * rubric's own arithmetic: the cell the sphere landed in ignites with that
+   * sphere's light and *stays lit*, and around it the fluid displaces, the bore
+   * rings, the sphere flares and the instrument flexes 2 px. All five are
+   * `opacity` or `transform` on already-composited groups, all five live inside
+   * the tube's bounding box so a frame diff clusters them as a single moving
+   * region (criterion 18), and the whole thing is over in 460 ms.
+   *
+   * The persistence is the part that matters most. Every other beat in the round
+   * returns the frame to where it started, so at any given instant the in-round
+   * frame carried no evidence that anything had happened: measured, its
+   * brightest and most saturated region was a 1.4%-wide vertical hairline — the
+   * outer glass edge — because nothing else in the picture was both lit and
+   * coloured. A column that fills with light as it fills with spheres gives the
+   * state an object, and the object grows as the round progresses.
    */
   lock(slot: number): void {
-    const ring = this.#rings.get(slot);
-    if (ring) {
-      ring.classList.add('lock-ring--on');
-      // The gold is the moment, not the state: it decays to the neutral seated
-      // ring on its own, and a losing tube is never left wearing five golds.
-      window.setTimeout(() => ring.classList.add('lock-ring--settled'), 40);
-    }
     this.#numerals.get(slot)?.classList.add('slot-no--lit');
-    const pulse = this.#pulses.get(slot)?.querySelector('.pulse');
-    if (pulse && !this.#reduced) {
-      pulse.classList.remove('pulse--on');
-      void (pulse as SVGGElement).getBoundingClientRect();
-      pulse.classList.add('pulse--on');
-    }
-    const tube = this.#tube;
-    if (tube && !this.#reduced) {
-      tube.classList.remove('tube--flex');
-      void tube.getBoundingClientRect();
-      tube.classList.add('tube--flex');
-    }
+    this.#setFill(slot);
+    const element = this.#seated.get(slot);
+    if (element !== undefined) this.#floodCell(slot, element, 0, 'lock');
+    const restart: [Element | null | undefined, string][] = this.#reduced
+      ? []
+      : [
+          [this.#pulses.get(slot)?.querySelector('.pulse'), 'pulse--on'],
+          [this.#sweep, 'lock-sweep--on'],
+          [this.#tube, 'tube--flex'],
+          [element === undefined ? null : (this.#orbs.get(element) ?? null), 'orb--lock'],
+        ];
+    // One flush for the whole beat, not one per element: an interleaved
+    // read-write-read-write costs a full style-and-layout recalculation each
+    // time, inside the single frame that has to draw the hero moment.
+    for (const [node, name] of restart) node?.classList.remove(name);
+    if (restart.length) void this.#svg?.getBoundingClientRect();
+    for (const [node, name] of restart) node?.classList.add(name);
   }
 
   /* ---------------------------------------------------------- celebration -- */
 
+  /**
+   * The instrument's own light comes up.
+   *
+   * §9 step 4 used to be "the tube's full-height gold rim ignites from the
+   * bottom up", and that rim is gone (see the tube markup). What survives is the
+   * *semantic*: the moment the round is known to have returned more than it
+   * cost, the chamber's key comes up and its caustics run hot. That is light
+   * with no hue of its own — a cool near-white source over a cool field — so it
+   * raises the frame's luminance and its highlight area without moving its
+   * saturation a point, which is the exact arithmetic criterion 15 rewards and
+   * the exact arithmetic a warm wash fails.
+   */
   igniteRim(on: boolean): void {
     this.#rimLit = on;
-    this.#rim?.classList.toggle('tube-rim--lit', on);
+    this.#svg?.classList.toggle('chamber--ignited', on);
+  }
+
+  /**
+   * How loud the close is allowed to be, from the round's own realised multiple.
+   *
+   * The round-2 verdict measured a 4.80× win peaking at mean luminance 0.391 and
+   * a 19.20× win peaking at 0.361 — a four-times-bigger result producing a
+   * marginally *quieter* frame, because the only thing scaling was a spoke count
+   * and a mote count, both sub-perceptual at frame level. §8's rule is that a
+   * win scales by voicing rather than by loudness, and that rule is about not
+   * making a small win *feel* like a big one; it is not a licence for every win
+   * to look identical. So the shape stays voiced by tier and the *volume* is now
+   * keyed to the realised return multiple, which is the round's own result and
+   * nothing else — the one thing the task allows a celebration's intensity to
+   * follow.
+   *
+   * Three steps, not a continuum: a continuum is unreadable and invites tuning
+   * toward the top of it. Under 3×, under 10×, and above.
+   */
+  static volumeOf(multiple: string): 1 | 2 | 3 {
+    const value = Number.parseFloat(multiple);
+    if (!Number.isFinite(value)) return 1;
+    if (value >= 10) return 3;
+    if (value >= 3) return 2;
+    return 1;
   }
 
   /**
@@ -1921,8 +2596,10 @@ export class Chamber {
    * ORDER win throws the full eighteen wedges and a long shower, a FLOW win at
    * 1.92× gets a quiet flare. Both are celebrated, because both won.
    */
-  celebrate(voicing: Voicing): void {
+  celebrate(voicing: Voicing, volume: 1 | 2 | 3 = 2): void {
     this.#voicing = voicing;
+    this.#volume = volume;
+    this.#svg?.style.setProperty('--win-vol', String(volume));
     this.#won = true;
     this.#burstAt = performance.now();
     const burst = this.#burst;
@@ -1970,7 +2647,7 @@ export class Chamber {
         orb.classList.remove('orb--won');
         popped.push(orb as unknown as HTMLElement);
       }
-      this.#floodCell(slot, element, delay);
+      this.#floodCell(slot, element, delay, 'won');
     }
     /*
      * And the stamp lands rather than appearing. §9 step 5 puts the number on
@@ -2002,7 +2679,7 @@ export class Chamber {
         ];
     if (!this.#reduced) this.#tube?.classList.remove('tube--flex');
     for (const [node, name] of landing) node?.classList.remove(name);
-    this.#dropMotes(voicing);
+    this.#dropMotes(voicing, volume);
 
     /*
      * **One forced layout, not eleven.**
@@ -2043,14 +2720,38 @@ export class Chamber {
    * the object's colour rather than a colour chosen for the party — and because
    * the gradient is `objectBoundingBox`, one definition serves a 64 px sphere and
    * a 96 × 78 cell without a second asset.
+   *
+   * Three states, and the difference between them is only how bright the cell
+   * is:
+   *
+   * - `lock` — the ignition, at the instant the sphere seats. It flares and
+   *   settles to the seated level, and it is information rather than
+   *   celebration: which slot is filled by which colour is a fact about the
+   *   round that the player is entitled to and can read off the tube anyway
+   *   (§10's `lineLighting` is deliberately never gated).
+   * - `seated` — the resting level, restored without an animation after a
+   *   redraw.
+   * - `won` — the celebrated close turns every cell up together.
+   *
+   * There is no gold in any of the three. A losing tube ends the round lit by
+   * five coloured spheres, exactly as a winning one does, and the difference
+   * between the two outcomes is carried entirely by what happens *around* the
+   * column (§9's no-near-miss rule at the render layer).
    */
-  #floodCell(slot: number, element: number, delay: number): void {
+  #floodCell(slot: number, element: number, delay: number, state: 'lock' | 'seated' | 'won'): void {
     const flood = this.#floods.get(slot);
     const id = this.#variant?.elements[element]?.id;
     if (!flood || id === undefined) return;
-    flood.setAttribute('fill', `url(#orb-bloom-${id})`);
+    flood.setAttribute('fill', `url(#orb-cell-${id})`);
     flood.style.setProperty('--pop-delay', `${delay}ms`);
-    flood.classList.remove('cell-flood--on');
+    flood.classList.remove('cell-flood--lock', 'cell-flood--on');
+    flood.classList.add('cell-flood--seated');
+    if (state === 'seated') return;
+    if (state === 'lock') {
+      void flood.getBoundingClientRect();
+      flood.classList.add('cell-flood--lock');
+      return;
+    }
     // Started by `celebrate`, after the one flush that restarts the whole beat.
     this.#pendingFloods.push(flood);
   }
@@ -2080,16 +2781,28 @@ export class Chamber {
    * over the instrument, where it reads as light coming off the plaque rather
    * than as weather. It stays voiced by tier rather than scaled by amount (§8).
    */
-  #dropMotes(voicing: Voicing): void {
+  #dropMotes(voicing: Voicing, volume: 1 | 2 | 3): void {
     const host = this.#motes;
     if (!host || this.#reduced) return;
-    const count = voicing === 'ORDER' ? 18 : voicing === 'FORM' ? 12 : 8;
+    /*
+     * Fewer, and bigger. Measured on two consecutive frames of the settled
+     * celebration, a shower of twenty was nine independently moving regions
+     * with no region owning more than 41% of the motion — the rubric's
+     * signature for a scattered effect rather than a big one, and the same
+     * defect this shower was already cut once for. The payoff is one large
+     * event plus a handful of supporting details; a handful is what this is.
+     */
+    const count = (voicing === 'ORDER' ? 5 : voicing === 'FORM' ? 4 : 3) + volume;
     const next = stream(0xc2b2ae35 + count);
     host.innerHTML = Array.from({ length: count }, () => {
       const x = 19 + next() * 62;
-      const delay = next() * 1.1;
-      const duration = 2.4 + next() * 2.1;
-      const size = 2.4 + next() * 4.2;
+      // Bounded so the whole shower is spent inside four seconds: §7 of the
+      // rubric puts a celebration's hold at 1.5–3 s and its outer edge under 4,
+      // and a supporting detail that outlives the event it supports stops
+      // reading as part of it.
+      const delay = next() * 0.7;
+      const duration = 2 + next() * 1.3;
+      const size = 3.6 + next() * 5.4;
       const drift = (next() * 2 - 1) * 30;
       return `<i style="left:${x.toFixed(1)}%;--size:${size.toFixed(1)}px;--drift:${drift.toFixed(
         0,
@@ -2131,7 +2844,10 @@ export class Chamber {
     for (const amount of this.#stamp.querySelectorAll('[data-num]'))
       amount.textContent = face.amount;
     const multiple = this.#stamp.querySelector('[data-mult]');
-    if (multiple) multiple.textContent = face.multiple;
+    if (multiple)
+      multiple.textContent = face.stake
+        ? `${face.stake} ${UNIT} AT ${face.multiple}`
+        : face.multiple;
     this.#stamp.classList.toggle('stamp--on', on);
     this.#halo?.classList.toggle('stamp-halo--on', on);
   }

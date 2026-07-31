@@ -408,6 +408,25 @@ target during a round.
 810                  ▁▁▁▁▁▁                        home indicator
 ```
 
+- **The play area carries a round-state readout, and on the home screen it is
+  the largest text on the frame.** `READY`, set at §6.5's 28 px step on a lit
+  glass plate at the top of the play area, with `n LINES · 0.00 CR` under it.
+  It answers "what state is the round in" and "what is at stake" in the place
+  the eye is already looking, and it is replaced *in place* by the round's own
+  caption at COMMIT — `SETTLING 2 OF 5` / `STAKE 1.00 CR`, at the 11 px step,
+  because while the round runs the largest and brightest thing must be the
+  object the round is about (§9). Nothing moves between the two forms.
+
+  This is a round-3 addition and it closes a gating comprehension failure. The
+  state the player sits in longest carried no statement of what the machine was
+  doing anywhere in the play area: the rule copy under the instrument states the
+  *rule*, not the state, and the largest text on the whole screen was a chip's
+  multiplier. Every reference in the category announces the state in words at
+  the centre of the play area, at the largest size on the frame, whenever the
+  round is not running. The readout leaks nothing — both figures are properties
+  of the ticket the player built — and it is absent on the result screen, which
+  is the record of a round that has already happened and carries its own
+  headline.
 - **§1's one line of copy sits at the top of the deck, directly under the
   chamber and directly above the tier tabs** — the first row of the deck, not a
   caption on the instrument. The wireframe above predates it and shows the deck
@@ -813,14 +832,16 @@ and is published here rather than left to drift into a stylesheet.
 | `--void` | `#05070C` | the ink that sits dark-on-light: on gold, and on `--key` |
 | `--deep` | `#08192B` | the field the page is painted on, and the colour every falloff falls to |
 | `--deep-lit` | `#123049` | the field where the instrument's light reaches it |
-| `--abyss` | `#0A1220` | chamber back plate |
+| `--abyss` | `#0A1220` | the ink behind a sheet (**no longer the chamber's back plate** — see §6.2's back wall) |
 | `--brine-deep` | `#0C1E30` | liquid, bottom of the column |
 | `--brine` | `#143D5A` | liquid, mid |
 | `--brine-lit` | `#1F6E9E` | liquid where the key light passes |
+| `--abyss-indigo` | `#221A52` | the room's second hue: the floor of the vessel, where the fluid has absorbed the long wavelengths, and the colour every falloff inside the chamber falls to |
+| `--abyss-indigo-lit` | `#2D2478` | the same depth where the key still reaches it |
 | `--key` | `#43B4E8` | the key light made solid: the face of the primary control |
 | `--key-hot` | `#A7E2FB` | its specular lip, and the key's own colour in the liquid |
 | `--key-deep` | `#1D6F9E` | its shaded lower edge |
-| `--glass-edge` | `#7FA6C4` | glass edge tint, 6 px inner gradient |
+| `--glass-edge` | `#9EBBD2` | glass edge tint, 6 px inner gradient |
 | `--chrome` | `#C3CEDA` | housing, lit face |
 | `--chrome-mid` | `#7A8695` | housing, body |
 | `--chrome-dark` | `#414B58` | housing, shadow side |
@@ -896,8 +917,8 @@ published, with four constraints that keep §6.1's first sentence true:
    words `amber < aqua`, which are the channel (§11).
 3. **They never enter the chamber.** Nothing in `chamber.ts` may reference
    them; the instrument stays `--void` through `--specular` plus the spheres.
-4. **They are never gold and gold is never them.** §6.1's six gold uses are
-   unchanged, and a tier accent may not appear in any of the six.
+4. **They are never gold and gold is never them.** §6.1's four gold uses are
+   closed, and a tier accent may not appear in any of the four.
 
 Spheres — each is a body tint plus an emissive core plus a glyph.
 
@@ -975,21 +996,42 @@ simply that every gold object in the close was a pastel. `#FFC24D` is S = 0.70
 and L = 0.60 — brighter *and* more saturated than `--gold`, which is what "at
 bloom" always meant. `--void` on it measures 12.2:1, so §11's floor is untouched.
 
-**Gold means *settled and true*, and appears in exactly six places:**
+**Gold means *settled and true*, and appears in exactly four places:**
 
-1. the slot ring at the moment it locks;
-2. the multiplier stamp;
-3. the fairness chip once verified locally;
-4. the count badge on a chip that is already on the ticket;
-5. a line that has resolved *won* (§2.1);
-6. the tube's full-height rim during a celebrated close (§9).
+1. the multiplier stamp;
+2. the fairness chip once verified locally;
+3. the count badge on a chip that is already on the ticket;
+4. a line that has resolved *won* (§2.1).
 
-Nowhere else. The list is six rather than "three, ever" because the shorter rule
-was contradicted three times inside this same document, and an art director
-enforcing it literally would have hit all three in a day. Every entry is the
-same semantic: something is settled, and it is true. Gold never appears on
-anything speculative, pending, or merely available — never on an unplaced chip,
-never on a balance, never on a call to action.
+Nowhere else. Every entry is the same semantic: something is settled, and it is
+true. Gold never appears on anything speculative, pending, or merely available —
+never on an unplaced chip, never on a balance, never on a call to action.
+
+**Two uses were withdrawn in round 3 of the art pass, and both for the same
+measured reason: the money colour was being spent five times a round.**
+
+*The slot ring at the moment it locks.* The lock was drawn as a 2 px gold
+rectangle outline plus two 1 px expanding ellipses — no luminance event, no
+bloom, no displacement, and no reaction on the sphere that had just arrived. A
+blind ranking against the reference library placed the in-round frame last in
+its set and named this beat: "a 1 px outline can only change colour", and at
+1 px the eye barely resolves that. The lock is now a *lit* event in the fiction
+the instrument already had — the cell the sphere landed in ignites **with that
+sphere's own light** and stays lit for the rest of the round, the fluid
+displaces, the bore rings, the sphere flares. The spheres are the only emitters
+in this world; the room getting brighter because one of them arrived is the
+physics §6.3 already committed to, and it costs the payoff nothing.
+
+*The tube's full-height rim during a celebrated close.* Measured on the win
+frame it was doing three kinds of damage at once. It read as a flat uniform
+yellow outline with no gradient and no bevel — a CSS outline rather than a lit
+object. Its bloom rect laid a gold veil across all five settled spheres, so the
+five colours the whole game is built on measured *less* saturated at the moment
+of their own win. And because it touched the payout plaque where the two
+crossed, the win frame's focal region merged them into one shape 92% of the
+frame wide, with a centroid outside the band §9 requires — two gold objects
+competing to be the gold thing. The frame now carries exactly one, and it is
+the money.
 
 ### 6.2 Materials
 
@@ -1006,8 +1048,28 @@ never on a balance, never on a call to action.
   inner edge gradient to `--glass-edge`, plus one 1 px `--specular` line down
   the left third. Never a full glass shader.
 - **Liquid** — glycerol-like, faintly cyan-absorbing. Vertical gradient
-  `--brine-deep` → `--brine` → `--brine-lit`, plus a scrolling caustic.
+  `--abyss-indigo` → `--brine` → `--brine-lit`, plus a scrolling caustic.
+  **The floor of the ramp is indigo rather than a fourth blue**, and that is
+  physics rather than palette: a dense fluid lit by one cool source from above
+  absorbs the long wavelengths first, so the deepest part of the vessel — where
+  the light has furthest to travel — goes violet-blue. It is also the frame's
+  second hue. Round 2 measured one blue holding 75.3% of the hue mass with its
+  supporting bin the adjacent blue, which is numerically two hues and optically
+  one; the reference band is 1–3 hues with a dominant at 40–55%, and the third
+  bin is what stops a saturated screen reading as a monochrome wash.
   Beer–Lambert depth is faked with the gradient; there is no volumetric pass.
+
+  **The caustic is a net of filaments with hot cores, not a haze.** Round 2 drew
+  it as eleven soft elliptical blobs at 16–22% opacity, and a blind ranking read
+  the interior as a flat wash: a caustic is a *focused* thing — thin branching
+  lines where the wavefronts fold, an order of magnitude brighter than the
+  surface they land on. Each filament is two passes on one path, a wide soft
+  halo and a thin hot core, both fading with depth on a shared ramp because the
+  light enters through the top collar. **The cores run toward white**, because a
+  specular is the colour of its source and this source is a cool near-white key
+  (§6.3) — and because a core mixed at a saturated cyan lands above both of the
+  thresholds that define a *focal object*, which made the in-round frame's
+  "brightest, most saturated region" a filigree spanning 91% of its width.
   **The three stops are spread across the depth**, roughly 0 / 0.44 / 0.86 from
   the floor up. That is written down because it was not obeyed: round 2 held
   `--brine-deep` flat for the bottom 58% and reached `--brine-lit` only in the
@@ -1234,7 +1296,7 @@ as a bright mark.
 
 Six icons is a constraint, not a coincidence: every screen in §5 is reachable
 with these, and an app that needs a seventh has grown a feature that §10 has not
-been asked about. No icon is ever gold — gold has six uses (§6.1) and none of
+been asked about. No icon is ever gold — gold has four uses (§6.1) and none of
 them is a control.
 
 ### 6.9 Chamber geometry, and what is not in it
@@ -1636,7 +1698,7 @@ else in §10:
 
 | At lock `n−1` | The close |
 | --- | --- |
-| `creditedChips > totalStakeChips` | Celebrated: audio ducks, the fall slows to 0.35×, the tube rim ignites, the chord lands on the lock. 1,060 ms. |
+| `creditedChips > totalStakeChips` | Celebrated: audio ducks, the fall slows to 0.35×, the instrument's own key comes up, the chord lands on the lock. 1,060 ms. |
 | anything else | Neutral: one fall at full speed, one lock, no audio event, no colour change. 430 ms. |
 
 A losing round's close is byte-for-byte the same 430 ms whether the ticket
@@ -1650,11 +1712,33 @@ with a sphere still in the liquid.
 mathematically already won:
 
 1. Audio ducks to the single 42 Hz sub tone. Everything else drops out.
-2. The liquid desaturates toward monochrome over 400 ms; the settled spheres
-   keep their colour and everything else goes grey.
+2. The settled column is turned **up**, not the room turned down.
+
+   Round 5 desaturated the liquid toward monochrome over 400 ms so that the
+   settled spheres would be the only colour left. Measured idle → win, that took
+   the frame's saturated share from 79.8% to 72.1%: the loudest moment in the
+   product was also its least colourful one, which no payoff in the reference
+   library does — every one of them multiplies saturation at the payoff rather
+   than dividing it. The contrast the step wanted is real and it is kept; what
+   changed is its sign. Every settled cell goes to full in the colour of what
+   landed in it, and the room is left alone. Same separation, opposite
+   arithmetic: luminance and saturation now rise together.
+
+   The desaturation survives in one place — the `prefers-reduced-motion`
+   variant, where no light is added and the separation has to come from
+   somewhere.
 3. The last sphere falls at **0.35× speed** — a 970 ms fall instead of 340 ms.
-4. The tube's full-height gold rim ignites from the bottom up, tracking the
-   fall.
+4. The instrument's own key comes up, and its caustics run hot.
+
+   §6.3's source is a cool near-white at ≈6200 K. A cool near-white lift over a
+   cool field raises mean luminance and highlight area at no cost in saturation
+   — the exact arithmetic a payoff is measured on — where a warm wash cannot,
+   because amber over cyan mixes toward neutral at every opacity. So the
+   brightness of the payoff is the room's own light, and its *warmth* is one
+   opaque gold object that mixes with nothing. The lift is scaled by the round's
+   realised return multiple in three steps (under 3×, under 10×, above), which
+   is the only quantity in this document a celebration's volume is permitted to
+   follow.
 5. On lock: full-frequency return, the pentatonic chord, **the column presents
    itself, and the payout plaque lands in the space it vacates.**
 
@@ -1675,12 +1759,22 @@ mathematically already won:
    legible numeral fits in. The only way to have a centred payout surface that
    covers nothing is to move the spheres.
 
-   So the settled column **contracts to 76% about the tube's own centre and rises
-   15% of the tube's height**, over 520 ms — the mechanism lifting the result
-   into the light — and the plaque, a 300 × 80 machined object with a bevel and
-   a contact shadow, lands 18 units beneath the rim it leaves behind. It drops
-   with an overshoot, throws one shock ring, and the instrument recoils 3 px
-   under it. It arrives; it does not fade in. All five spheres stay visible at
+   So the settled column **contracts to 62% about the tube's own centre and rises
+   25% of the tube's height**, over 520 ms — the mechanism lifting the result
+   into the light — and the plaque, a **330 × 92** machined object with a bevel
+   and a contact shadow, lands 18 units beneath the rim it leaves behind. It
+   drops with an overshoot, throws one bloom, and the instrument recoils 3 px
+   under it.
+
+   **The four numbers moved in round 3 of the art pass, and they moved together
+   because the plaque's seat is derived from the column's lift.** At 76% and 15%
+   the plaque's measured focal centroid sat at y = 0.59 of the frame, below the
+   0.35–0.55 band a payout surface has to land in; the column now gives up more
+   room and the surface lands at 0.51. The shock *ring* went with them: it was a
+   stroked ellipse scaled and faded, which is line art wearing a keyframe, and
+   the subtraction test named it and the burst's gold ring as the two weakest
+   effects in the frame. A landing surface throws light, and light has no
+   outline. It arrives; it does not fade in. All five spheres stay visible at
    three times the diameter the result strip prints them at, and **nothing is
    occluded at any line count.**
 
@@ -1688,10 +1782,29 @@ mathematically already won:
    `celebrate` alone — so **a losing round's column does not move at all**, which
    is a second pre-attentive channel separating the two outcomes.
 
+   **The plaque shows its own arithmetic, and the sign is load-bearing.** Round 2
+   paired `4.80×` with `3.80` against a visible 1.00 stake, so a player doing the
+   obvious multiplication got 4.80 and read 3.80: the plate carried the NET while
+   the multiple described the RETURN. Both figures were correct and the surface
+   was incoherent, which is worse than either being wrong — the celebration
+   surface is the one thing the player actually looks at. The house rule stays,
+   because `roundPresentation` deliberately never states a gross as if it were a
+   gain; what changed is that the two operands now sit beside the result, and the
+   `+` says which kind of figure the big one is. All three come from the server:
+   the stake, the realised multiple and the net.
+
+   **The plaque's type is measured in viewBox units, not in `rem`**, and it is
+   the one exception to §6.5's rule. It is not laid out, it is drawn inside a
+   fixed box in a fixed viewBox, and the drawing already answers a larger text
+   setting by scaling itself down (§11 is satisfied by the instrument, not by the
+   plaque). Sized in `rem` the three figures grew inside a box that did not, and
+   at a 32 px root the caption row overprinted itself. The five steps are
+   published as tokens and `tests/client.test.mjs` keeps the set closed.
+
    **What is written on it is the money, with its unit, and the multiple is the
-   caption.** The plaque reads `WON` and `1.92×` on an upper row at opposite
-   ends, and `114.20 CR` on the row below at §6.5's 48 px step, all in `--void`
-   on lit gold — **dark on light**, inverting the light-on-dark polarity of every
+   caption.** The plaque reads `WON` and `12.00 CR AT 1.92×` on an upper row at
+   opposite ends, and `+114.20 CR` on the row below at §6.5's 48 px step, all in
+   `--void` on lit gold — **dark on light**, inverting the light-on-dark polarity of every
    other pixel in the game. Four things follow, and each was a defect in an
    earlier version:
 

@@ -98,7 +98,7 @@ describe('the pinned strip during a round (docs/DESIGN.md §2.1, §5 S4)', () =>
       // 4.80 is the winning line's credit on a 1.00 stake. It is also the
       // multiplier printed on the chip, so the assertion is on the *credit*
       // being absent, not on the digits.
-      expect(row.right).toBe('1.00 × 4.80×');
+      expect(row.right).toBe('1.00 CR × 4.80×');
     }
     // The whole strip, concatenated, must be identical for a winning ticket and
     // a losing one — five identical FIRST lines at the same stake are exactly
@@ -114,9 +114,9 @@ describe('the pinned strip during a round (docs/DESIGN.md §2.1, §5 S4)', () =>
 
     expect(won).toHaveLength(1);
     expect(lost).toHaveLength(4);
-    expect(won[0]?.right).toBe('returned 4.80');
+    expect(won[0]?.right).toBe('returned 4.80 CR');
     // Losing lines are never swept away and never hidden (§5 S5, §10).
-    for (const row of lost) expect(row.right).toBe('1.00 × 4.80×');
+    for (const row of lost) expect(row.right).toBe('1.00 CR × 4.80×');
   });
 
   it('renders the ticket in the order the player built it', async () => {

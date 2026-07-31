@@ -604,10 +604,13 @@ describe('the identity, icon and state specifications exist and stay closed', ()
       .filter((line) => /^\| `[⌂◈←×⧉↻]/u.test(line));
     expect(iconRows).toHaveLength(6);
     expect(art).toMatch(/No icon is ever gold/u);
-    // And gold is still exactly the six uses §6.1 enumerates: the new sections
-    // must not have quietly added a seventh.
-    const goldList = DESIGN.slice(DESIGN.indexOf('appears in exactly six places'), DESIGN.indexOf('Nowhere else.'));
-    expect(goldList.match(/^\d\. /gmu)).toHaveLength(6);
+    // And gold is still exactly the four uses §6.1 enumerates: the new sections
+    // must not have quietly added a fifth. The list shrank from six in round 3
+    // of the art pass — the slot ring at lock and the tube's full-height rim
+    // were both withdrawn, and §6.1 records why — and the gate moves with it so
+    // that the count stays a closed set rather than a soft target.
+    const goldList = DESIGN.slice(DESIGN.indexOf('appears in exactly four places'), DESIGN.indexOf('Nowhere else.'));
+    expect(goldList.match(/^\d\. /gmu)).toHaveLength(4);
   });
 
   it('the chamber geometry is stated in the same numbers the budget uses', () => {

@@ -53,10 +53,30 @@ function publishedScale() {
     .filter((step) => Number.isFinite(step));
 }
 
-/** Every `--t-*` token declared in the client stylesheet, in declaration order. */
+/**
+ * Every `--t-*` token declared in the client stylesheet, in declaration order —
+ * split into the two families the product actually has.
+ *
+ * The **layout scale** is §6.5's eight published steps, and it is held in `rem`
+ * so the player's own text setting moves it (§11's 200% requirement).
+ *
+ * The **plaque steps** are the payout surface's own type, and they are held in
+ * viewBox units on purpose: the plaque is not laid out, it is drawn inside a
+ * fixed 330 x 92 box in a fixed viewBox, and the drawing already answers a
+ * larger text setting by scaling itself down. Sized in `rem` they grew inside a
+ * box that did not, and the caption row overprinted itself at a 32 px root.
+ * They are a closed set of five and this gate is what keeps them closed.
+ */
 function declaredTokens() {
   const tokens = [];
   for (const match of CSS.matchAll(/^\s*(--t-[a-z-]+):\s*([^;]+);/gmu))
+    tokens.push({ name: match[1], value: match[2].trim() });
+  return tokens.filter((token) => !token.name.startsWith('--t-plate'));
+}
+
+function plateTokens() {
+  const tokens = [];
+  for (const match of CSS.matchAll(/^\s*(--t-plate[a-z-]*):\s*([^;]+);/gmu))
     tokens.push({ name: match[1], value: match[2].trim() });
   return tokens;
 }
@@ -79,6 +99,17 @@ describe('the client implements §6.5’s published type scale', () => {
     ]);
   });
 
+  it('holds the plaque\u2019s drawn type in viewBox units, as a closed set', () => {
+    const plate = plateTokens();
+    expect(plate.map((token) => token.name)).toEqual([
+      '--t-plate',
+      '--t-plate-long',
+      '--t-plate-xl',
+      '--t-plate-unit',
+      '--t-plate-cap',
+    ]);
+    for (const token of plate) expect(token.value).toMatch(/^\d+px$/u);
+  });
   it('sizes every step in rem against a 16 px root, exactly', () => {
     for (const [index, token] of tokens.entries()) {
       const rem = /^([\d.]+)rem$/u.exec(token.value);
