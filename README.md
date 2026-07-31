@@ -1,5 +1,9 @@
 # AETHER ORDER
 
+<p align="center">
+  <img src="docs/screenshots/gameplay.png" alt="AETHER ORDER winning five-sphere permutation settlement" width="390">
+</p>
+
 **Five coloured spheres settle one by one into a glass tube. You bet on the
 order.** AETHER ORDER is a premium permutation draw from Axiom Games, built on
 Reveal Engine™. A round is one uniformly random permutation of five spheres —
