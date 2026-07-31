@@ -1605,6 +1605,12 @@ button {
   font-size: var(--t-hero);
   font-weight: 700;
 }
+/* SEVEN's slot pitch bounds the plate at 32 units; the numeral takes the step
+   that fits it. Both are published steps — nothing here leaves §6.5's scale. */
+.stamp[data-fit='tight'] .stamp__value,
+.stamp[data-fit='tight'] .stamp__num {
+  font-size: var(--t-xl);
+}
 /* The multiple keeps §9 step 5's place, as the caption on the money. */
 .stamp__mult {
   font-size: var(--t-xs);

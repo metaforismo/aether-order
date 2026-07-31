@@ -1372,6 +1372,19 @@ export class Chamber {
      * along the only axis that costs nothing.
      */
     const width = 374;
+    /*
+     * The numeral has to fit the plate, and the plate's height is the variant's.
+     *
+     * §6.5's 48 px payout step assumes CLASSIC's 78-unit pitch, which bounds the
+     * plate at 23 units of half-height. SEVEN packs seven spheres into the same
+     * chamber — 58-unit pitch, 44-unit spheres — so the same rule gives a
+     * 16-unit half and a 48 px numeral overflowed the plate above and below it,
+     * caught on a frame dump of a SEVEN win. Two published steps, chosen by the
+     * geometry rather than by the variant name, so a future pitch picks the right
+     * one on its own.
+     */
+    const tight = half < 21;
+    const baseline = tight ? 10 : Math.round(half * 0.76);
     return `<g class="stamp-at" transform="translate(${CENTRE_X},${y})" data-half="${half}">
       <!--
         The landing shock: one stroked ellipse, scaled and faded, thrown outward
@@ -1382,7 +1395,7 @@ export class Chamber {
       <g class="stamp-shock">
         <ellipse rx="${width * 0.4}" ry="${half * 1.9}" fill="none" stroke="var(--gold-hot)" stroke-width="2" stroke-opacity="0.8"/>
       </g>
-      <g class="stamp">
+      <g class="stamp" data-fit="${tight ? 'tight' : 'wide'}">
         <!-- The pop's origin anchor; see the sphere markup. The shine translates
              300 px inside a clip, which would otherwise drag the box with it. -->
         <circle class="stamp__anchor" r="${(width * 0.8).toFixed(0)}" fill="none"/>
@@ -1400,12 +1413,10 @@ export class Chamber {
           convert. The multiple keeps its place at the right, which is §9 step
           5's stamp; it is now the caption on the money instead of the headline.
         -->
-        <text class="stamp__value" text-anchor="middle" y="${Math.round(
-          half * 0.76,
-        )}" fill="var(--void)"><tspan class="stamp__cap" data-cap>WON </tspan><tspan class="stamp__num" data-num></tspan></text>
+        <text class="stamp__value" text-anchor="middle" y="${baseline}" fill="var(--void)"><tspan class="stamp__cap" data-cap>WON </tspan><tspan class="stamp__num" data-num></tspan></text>
         <text class="stamp__mult" text-anchor="end" x="${
           width / 2 - 16
-        }" y="${Math.round(half * 0.34)}" fill="#4a3812" data-mult></text>
+        }" y="${Math.round(half * 0.3)}" fill="#4a3812" data-mult></text>
         <g clip-path="url(#stamp-clip)">
           <rect class="stamp__shine" x="${-width / 2}" y="${-half}" width="76" height="${
             half * 2
