@@ -434,9 +434,13 @@ button {
    */
   background:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.5'/%3E%3C/svg%3E"),
-    radial-gradient(96% 40% at 50% 0%, rgba(167, 226, 251, 0.2), rgba(167, 226, 251, 0) 72%),
-    radial-gradient(78% 26% at 50% 46%, rgba(67, 180, 232, 0.13), rgba(67, 180, 232, 0) 76%),
-    radial-gradient(120% 30% at 50% 100%, rgba(23, 64, 92, 0.55), rgba(23, 64, 92, 0) 74%),
+    radial-gradient(96% 40% at 50% 0%, rgba(167, 226, 251, 0.11), rgba(167, 226, 251, 0) 72%),
+    radial-gradient(78% 26% at 50% 46%, rgba(67, 180, 232, 0.07), rgba(67, 180, 232, 0) 76%),
+    radial-gradient(120% 30% at 50% 100%, rgba(23, 64, 92, 0.36), rgba(23, 64, 92, 0) 74%),
+    /* The same two-dimensional-light argument the deck's own pools carry: one
+       more pool, off-axis and in the room's second hue, so the page behind the
+       instrument varies across the frame rather than only down it. */
+    radial-gradient(66% 34% at 88% 62%, rgba(88, 116, 200, 0.12), rgba(88, 116, 200, 0) 76%),
     /*
      * Five stops rather than three, and they travel in hue as well as in value:
      * the bench light at the top is a teal-leaning blue, the middle is the room,
@@ -445,12 +449,19 @@ button {
      * is half of why the frame measured 1 600 colours against a reference band
      * of 2 400–7 400.
      */
+    /*
+     * Graded down with the instrument (see #chamber-field in chamber.ts). The
+     * page is the largest surface in the product and it was the reason the top
+     * rail measured L 0.353 while the play area under it measured 0.25 — the
+     * chrome was brighter than the game. Same five stops, same hue travel, ~0.7
+     * of the level.
+     */
     linear-gradient(
       180deg,
-      #123a52 0%,
-      var(--deep-lit) 22%,
-      #0d2740 48%,
-      #0a1d33 74%,
+      #0c2a3b 0%,
+      #0b2134 22%,
+      #091b2e 48%,
+      #071526 74%,
       var(--deep) 100%
     );
   /*
@@ -464,7 +475,7 @@ button {
    * 160 px, blended at 4%, so it costs one raster and reads as anodised metal
    * rather than as noise.
    */
-  background-blend-mode: overlay, normal, normal, normal, normal;
+  background-blend-mode: overlay, normal, normal, normal, normal, normal;
   color: var(--ink);
   position: relative;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
@@ -498,9 +509,33 @@ button {
  * resolve lock by lock is the round (§2.1), and dimming the strip would dim the
  * information the beat exists to deliver.
  */
+/*
+ * AND IT IS DIMMED BY COLOUR, not by opacity — which is rule 4 at the top of
+ * this file, applied at last to the one element that was still breaking it.
+ *
+ * `opacity: 0.2` over the rail put `--ink-dim` on the dark field at a measured
+ * 1.43:1: the balance, the one figure a player is entitled to see at every
+ * instant, was unreadable for the 3.5 s the round runs, and a blind ranking
+ * picked our in-round frame out of its set on exactly that. §11's floor is
+ * stated for tokens and an opacity applied afterwards multiplies a token that
+ * was checked at full strength by a number no table contains.
+ *
+ * Both in-round references keep balance and bet panel fully legible. So the
+ * rail steps back the way a disabled control does — the chrome around the
+ * figure goes to `--ink-dim`, the controls stop accepting input — and the
+ * balance itself stays `--ink` at its full published contrast. Recessive is a
+ * value relationship; illegible is a defect.
+ */
 .app[data-mode='round'] .rail {
-  opacity: 0.2;
   pointer-events: none;
+}
+.app[data-mode='round'] .rail .rail__title,
+.app[data-mode='round'] .rail .rail__balance > span:last-child,
+.app[data-mode='round'] .rail .variant-toggle,
+.app[data-mode='round'] .rail .badge,
+.app[data-mode='round'] .rail .icon-btn {
+  color: var(--ink-dim);
+  border-color: var(--edge-soft);
 }
 .rail__title {
   margin-right: auto;
@@ -531,6 +566,15 @@ button {
   font-size: var(--t-md);
   font-weight: 700;
   letter-spacing: 0.01em;
+  /*
+   * `--ink`, stated. `.rail__balance span` sets `--ink-dim` and `.rail__figure`
+   * IS a span, so the balance figure had been inheriting the caption's colour in
+   * every state — 6.87:1 rather than the 12.9:1 the token it should carry gives.
+   * It cleared §11's floor, so nothing failed and nobody looked; but this is the
+   * figure criterion 3 is about, and the label under it is what is supposed to
+   * be dim.
+   */
+  color: var(--ink);
 }
 .rail__unit {
   font-style: normal;
@@ -811,6 +855,11 @@ button {
  */
 .round-cap[data-state='ready'] {
   gap: 5px;
+  /* 8, not 15. The plate straddles the collar, and at 15 its lower edge landed
+     on the topmost slot's index — which is the one thing the indices exist to
+     say, on the screen the player sits on longest. Caught on a frame dump after
+     the deck grew by the payout ramp's height and the instrument gave back the
+     slack. */
   /*
    * The idle readout is seated ON the housing's top collar, not below it.
    *
@@ -823,7 +872,7 @@ button {
    * text printed on the collar's bevel is not in play — nothing is printed on
    * chrome, an object is sitting on it.
    */
-  top: 15px;
+  top: 8px;
 }
 .round-cap[data-state='ready'] b {
   font-size: var(--t-xl);
@@ -840,8 +889,8 @@ button {
      thing a status readout may not do. It is a plate on the machine, not a
      film over it. */
   background:
-    linear-gradient(180deg, rgba(52, 116, 158, 0.94), rgba(14, 44, 72, 0.96) 62%, rgba(9, 28, 48, 0.97)),
-    radial-gradient(120% 160% at 50% 0%, rgba(167, 226, 251, 0.34), rgba(167, 226, 251, 0) 70%);
+    linear-gradient(180deg, rgba(54, 114, 154, 0.95), rgba(13, 40, 66, 0.96) 62%, rgba(7, 22, 38, 0.97)),
+    radial-gradient(120% 160% at 50% 0%, rgba(167, 226, 251, 0.24), rgba(167, 226, 251, 0) 70%);
   box-shadow:
     inset 0 1px 0 rgba(234, 243, 250, 0.42),
     inset 0 -2px 4px rgba(4, 14, 26, 0.5),
@@ -852,6 +901,44 @@ button {
   letter-spacing: 0.14em;
   color: var(--ink);
   opacity: 1;
+}
+/*
+ * The in-round readout sits on a plate too, and that is a legibility fix with a
+ * measurement behind it.
+ *
+ * `STAKE 1.00 CR` was 11 px of `--ink-dim` printed straight onto a lit, moving
+ * liquid: measured against what it actually lands on it came out at about
+ * 3.3:1 and was unreadable in a frame dump — the one figure criterion 3 asks
+ * for during the round, unreadable for the whole of the round. A caption is
+ * allowed to be quiet; it is not allowed to be unreadable. The plate is the
+ * same machined readout READY sits on at a third of the size, so the two states
+ * are the same object at two volumes, and the ink can go back to `--ink` at its
+ * published contrast because it now sits on a surface the palette controls.
+ */
+.round-cap[data-state='round'] {
+  gap: 2px;
+  padding: 5px 14px 6px;
+  border-radius: 999px;
+  /*
+   * It is a PLATE, so it has to have edges. `.round-cap` is stretched wall to
+   * wall by its own absolute positioning, and a background put on that box drew
+   * a 390-unit bar across the top of the play area that ran under the SKIP key —
+   * a bar across the frame is exactly what §9 spent a round deleting from the
+   * payoff. `max-content` inside the stretched box gives the readout its own
+   * silhouette; the 44% ceiling is what keeps it clear of SKIP's 44 px target
+   * plus its gutter at every text scale, wrapping inside itself instead of
+   * growing into the control.
+   */
+  width: max-content;
+  max-width: 44%;
+  margin-inline: auto;
+  background:
+    linear-gradient(180deg, rgba(30, 74, 104, 0.9), rgba(9, 28, 48, 0.94) 70%),
+    radial-gradient(120% 160% at 50% 0%, rgba(167, 226, 251, 0.2), rgba(167, 226, 251, 0) 72%);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.28),
+    inset 0 -1px 0 rgba(4, 14, 26, 0.5),
+    0 4px 12px rgba(4, 14, 26, 0.38);
 }
 .round-cap b {
   font-size: var(--t-xxs);
@@ -865,7 +952,7 @@ button {
 .round-cap span {
   font-size: var(--t-xxs);
   letter-spacing: 0.1em;
-  color: var(--ink-dim);
+  color: var(--ink);
   font-variant-numeric: tabular-nums lining-nums;
 }
 
@@ -892,13 +979,27 @@ button {
   display: none;
   place-items: center;
   border-radius: 22px;
-  border: 1px solid var(--chrome-mid);
+  /*
+   * And it is a machined key, not a hole punched in the art.
+   *
+   * `rgba(5, 7, 12, 0.86)` is `--void` at 86%, and it made this pill the only
+   * dead-black object in an otherwise fully saturated frame — unmotivated by any
+   * state, sitting in the top-right corner of the one screen the game's
+   * signature beat plays on. §6.1's whole argument about `--void` is that it is
+   * the ink that sits dark-on-light and never the paint; the same sentence
+   * applies to a control. It is the same steel the result buttons are now made
+   * of, at a smaller radius, so it recedes by being a quieter object rather than
+   * by being an absence.
+   */
+  border: 0;
   background:
-    linear-gradient(180deg, rgba(195, 206, 218, 0.2), rgba(5, 7, 12, 0.72)),
-    rgba(5, 7, 12, 0.86);
+    radial-gradient(130% 180% at 50% 0%, rgba(167, 226, 251, 0.16), rgba(167, 226, 251, 0) 72%),
+    linear-gradient(180deg, #2c5f83 0%, #1c4363 44%, #142c48 100%);
   box-shadow:
-    inset 0 1px 0 rgba(234, 243, 250, 0.28),
-    0 2px 10px rgba(5, 7, 12, 0.7);
+    inset 0 1px 0 rgba(234, 243, 250, 0.4),
+    inset 0 -2px 0 rgba(5, 12, 20, 0.6),
+    inset 0 0 0 1px rgba(234, 243, 250, 0.09),
+    0 2px 8px rgba(5, 12, 20, 0.6);
   font-size: var(--t-sm);
   font-weight: 600;
   letter-spacing: 0.1em;
@@ -1089,20 +1190,13 @@ button {
  * every reference in the category has in-round: one object, one region, most of
  * the budget.
  */
-.chamber[data-beat='charge'] .floor-caustic,
-.chamber[data-beat='agitate'] .floor-caustic {
-  animation: floor-breathe 19s ease-in-out infinite alternate;
-}
-@keyframes floor-breathe {
-  from {
-    transform: scale(0.92);
-    opacity: 0.75;
-  }
-  to {
-    transform: scale(1.06);
-    opacity: 1;
-  }
-}
+/*
+ * The base-plate pool went the same way and for the same reason: an eighth of
+ * the frame breathing on a 19 s loop at the bottom of a picture whose subject is
+ * at the top is a moving region spent on nothing. §6.3's requirement that it be
+ * driven by the same field as the liquid is unaffected — a field that is not
+ * moving cannot desync from one that is.
+ */
 
 /*
  * The caustic light inside the tube — three bands drifting up the column on the
@@ -1118,28 +1212,19 @@ button {
   transform-origin: center;
   opacity: 0.5;
 }
-.chamber[data-beat='charge'] .tube-caustic--0,
-.chamber[data-beat='agitate'] .tube-caustic--0 {
-  animation: band-drift 19s ease-in-out infinite alternate;
-}
-.chamber[data-beat='charge'] .tube-caustic--1,
-.chamber[data-beat='agitate'] .tube-caustic--1 {
-  animation: band-drift 19s ease-in-out infinite alternate-reverse;
-}
-.chamber[data-beat='charge'] .tube-caustic--2,
-.chamber[data-beat='agitate'] .tube-caustic--2 {
-  animation: band-drift 15s ease-in-out infinite alternate;
-}
-@keyframes band-drift {
-  from {
-    transform: translateY(26px) scaleY(0.7);
-    opacity: 0.24;
-  }
-  to {
-    transform: translateY(-30px) scaleY(1.2);
-    opacity: 0.62;
-  }
-}
+/*
+ * AND THEY NO LONGER DRIFT. Subtraction test, applied to the in-round budget.
+ *
+ * Three bands crossing the column on their own 15–19 s loops were three of the
+ * frame's independently moving regions during the one beat that is supposed to
+ * be about a single falling sphere: measured 520 ms apart, the in-round frame
+ * carried ten moving regions against a bar of three, and the references run one
+ * (a falling ball) to three (a climbing rocket). The bands restate nothing the
+ * spheres already in the tube have not said, and the light in the column that IS
+ * state — the charge level — is a different layer entirely. Still, they are what
+ * they always were: caustic light on the bore's back wall, costing colour depth
+ * and no motion at all.
+ */
 
 /* §7 technique 4's bubbles: alive only through CHARGE and AGITATE. */
 .bubbles circle {
@@ -1791,6 +1876,19 @@ button {
   transform-box: fill-box;
   transform-origin: center;
   transform: scale(1.18);
+  /*
+   * The plaque is on the volume ladder too — 0.97 / 1.015 / 1.06.
+   *
+   * Deliberately the SMALLEST of the four channels the tier moves, and bounded
+   * by geometry rather than by taste: the plate is 330 units inside a 358-unit
+   * glass, so 1.06 is the largest scale that still leaves it an edge to cast a
+   * shadow onto. The tier's real volume is light — the held key, the hot
+   * caustics and the payout bloom — because that is what a measurement of a
+   * still frame actually sees, and because a plaque that changed size by a
+   * third would read as two different components rather than one object at two
+   * volumes.
+   */
+  --stamp-vol: calc(0.925 + var(--win-vol, 2) * 0.045);
   transition:
     opacity 220ms cubic-bezier(0, 0.7, 0.2, 1),
     transform 220ms cubic-bezier(0, 0.7, 0.2, 1);
@@ -1798,7 +1896,7 @@ button {
 }
 .stamp--on {
   opacity: 1;
-  transform: scale(1);
+  transform: scale(var(--stamp-vol, 1));
 }
 /*
  * The landing. §9 step 5 ends the set piece on the number, and round 1 got there
@@ -1838,19 +1936,22 @@ button {
 @keyframes stamp-land {
   0% {
     opacity: 0;
-    transform: scale(1.28);
+    /* 1.21 x the tier's own resting scale, so the entrance's ceiling is 1.283 at
+       the loudest tier — the bound the paragraph above computes, held whichever
+       rung the round lands on. */
+    transform: scale(calc(var(--stamp-vol, 1) * 1.21));
   }
   18% {
     opacity: 1;
   }
   48% {
-    transform: scale(0.93);
+    transform: scale(calc(var(--stamp-vol, 1) * 0.93));
   }
   74% {
-    transform: scale(1.04);
+    transform: scale(calc(var(--stamp-vol, 1) * 1.04));
   }
   100% {
-    transform: scale(1);
+    transform: scale(var(--stamp-vol, 1));
   }
 }
 /* The bloom the landing throws: a radial fill, scaled and faded. */
@@ -1928,13 +2029,19 @@ button {
  * a payoff that used to leave no light behind.
  *
  * **The column presents itself.** On a celebrated close the group holding the
- * tube, its spheres and its rings contracts to 76% about the tube's own centre
- * and rises 15% of the tube's height, so the plaque lands in the space it
+ * tube, its spheres and its rings contracts to 80% about the tube's own centre
+ * and rises 30% of the tube's height, so the plaque lands in the space it
  * vacates instead of being driven through the middle of it. Both numbers are in
  * chamber.ts (LIFT_SCALE / LIFT_RISE) because the plaque's seat is derived from
  * them; this rule only carries the timing. It is one transform on one promoted
  * layer, it fires on `celebrate` alone, and a losing round therefore does not
  * move — which is a second pre-attentive channel separating the outcomes.
+ *
+ * The contraction used to be 62%, which made the object the round was about the
+ * one thing on screen that got *smaller* when it won. 80% is the largest scale
+ * that still leaves the plaque a seat under the column at every layout, and it
+ * is what puts five lit, saturated spheres into the top half of the win frame
+ * instead of an empty field.
  *
  * **The light holds.** Round 1 spent the entire payoff on transients and
  * measured +5.7% mean luminance on the settled frame against a reference +84%,
@@ -1980,8 +2087,18 @@ button {
  * sees. A 19× round that peaks a hundredth of a point above a 4.8× round is a
  * celebration with no ceiling and no floor.
  */
+/*
+ * And the ladder is now a ladder you can see.
+ *
+ * At 0.34 + 0.22n the three steps were 0.56 / 0.78 / 1.00 over a room that was
+ * already spending the whole range, so a 115.20x round measured +2.3% mean
+ * luminance against a 4.80x one and the rarest event in the game was
+ * pixel-indistinguishable from the commonest. With the room graded down the
+ * same three steps have somewhere to land: 0.52 / 0.76 / 1.00 over a base two
+ * thirds as bright is a visibly different instrument at each rung.
+ */
 .chamber--won .won-lift {
-  opacity: calc(0.34 + var(--win-vol, 2) * 0.22);
+  opacity: calc(0.28 + var(--win-vol, 2) * 0.24);
 }
 /*
  * A restored chamber is showing END states, so the presented column and the
@@ -2008,11 +2125,17 @@ button {
   transition: opacity 520ms cubic-bezier(0, 0.7, 0.2, 1);
 }
 .chamber--ignited .caustic-hot {
-  /* 0.32 / 0.52 / 0.72 — three visibly different payoffs, from one real number.
+  /* 0.28 / 0.50 / 0.72 — three visibly different payoffs, from one real number.
      Near-white filaments over a cool field: they raise luminance and highlight
      area, which is what criterion 15 counts, and they cannot enter focal.mjs's
-     mask because they carry no saturation to enter it with. */
-  opacity: calc(0.16 + var(--win-vol, 2) * 0.22);
+     mask because they carry no saturation to enter it with.
+
+     These are the SAME filaments the base state now draws at 0.28 rather than
+     0.80 (see #caustic-line). That is the whole of this round's argument in one
+     pair of numbers: the drifting white net was the base state's loudest
+     feature and is now the payoff's, so the light in the frame belongs to the
+     event instead of to the wait. */
+  opacity: calc(0.06 + var(--win-vol, 2) * 0.22);
 }
 .chamber--restoring .caustic-hot,
 .chamber--restoring .tube-rimlight {
@@ -2034,8 +2157,10 @@ button {
   pointer-events: none;
   transition: opacity 300ms cubic-bezier(0, 0.7, 0.2, 1);
 }
+/* The bloom is on the ladder too: 0.64 / 0.82 / 1.00. A 115.20x round throws
+   half again as much light into the liquid as a 4.80x one. */
 .stamp-halo--on {
-  opacity: 1;
+  opacity: calc(0.46 + var(--win-vol, 2) * 0.18);
 }
 /*
  * The plaque's three lines, and their order is §4 of the rubric's: the label
@@ -2171,8 +2296,24 @@ button {
      * pools from the same source overhead — which varies in two dimensions
      * without drawing anything.
      */
-    radial-gradient(90% 54% at 22% 0%, rgba(167, 226, 251, 0.2), rgba(167, 226, 251, 0) 74%),
-    radial-gradient(120% 62% at 50% 0%, rgba(127, 166, 196, 0.22), rgba(127, 166, 196, 0) 78%),
+    radial-gradient(90% 54% at 22% 0%, rgba(167, 226, 251, 0.11), rgba(167, 226, 251, 0) 74%),
+    radial-gradient(120% 62% at 50% 0%, rgba(127, 166, 196, 0.12), rgba(127, 166, 196, 0) 78%),
+    /*
+     * Two more pools, and they are here for criterion 8 rather than for the
+     * mood.
+     *
+     * A *linear* gradient produces at most about thirty distinct 5-bit triples
+     * however many stops it has, because it varies in one dimension: measured
+     * band by band, the deck's own ramp was contributing a few dozen colours to
+     * 45% of the frame. The frame's grain does not help either — it is
+     * high-frequency, and every measurement in the rubric downsamples before it
+     * counts, which averages a 160 px noise tile away entirely. What survives
+     * downsampling and genuinely varies in two dimensions is soft overlapping
+     * light, so the bench now carries four pools from three directions in three
+     * hues instead of two in one. No new edge, no new motion, no new object.
+     */
+    radial-gradient(72% 46% at 84% 24%, rgba(96, 128, 214, 0.13), rgba(96, 128, 214, 0) 76%),
+    radial-gradient(84% 40% at 12% 72%, rgba(58, 150, 190, 0.11), rgba(58, 150, 190, 0) 78%),
     /*
      * The bench reads a step cooler and bluer than the instrument, so the frame
      * is carried by two hues rather than one. Measured, a single-hue build put
@@ -2210,15 +2351,21 @@ button {
        * count and the frame still read as one hue with a supporting bin of the
        * same colour. #2a2160 measures 249°, a bin clear of it.
        */
-      #1d4670 0%,
-      #1c3c68 12%,
-      #24316c 26%,
-      #2a2668 42%,
-      #2a2160 60%,
-      #261b56 80%,
+      /*
+       * Graded down with the room. The bench used to run from L 0.066 at the
+       * top to L 0.031 at the floor over the bottom 40% of every frame; at that
+       * level the decision surface was contributing as much luminance as the
+       * instrument, so the payoff had nothing left to be brighter than.
+       */
+      #14314f 0%,
+      #142b4a 12%,
+      #19224d 26%,
+      #1d1a49 42%,
+      #1d1743 60%,
+      #1a123b 80%,
       var(--abyss-indigo) 100%
     );
-  background-blend-mode: overlay, normal, normal, normal, normal;
+  background-blend-mode: overlay, normal, normal, normal, normal, normal, normal;
   box-shadow: inset 0 1px 0 rgba(167, 226, 251, 0.34);
   transition: opacity 200ms ease;
   container-type: inline-size;
@@ -2231,6 +2378,55 @@ button {
  */
 .app[data-mode='round'] .deck {
   background: linear-gradient(180deg, #0d2438 0%, #0a1d2f 54%, var(--deep) 100%);
+}
+/*
+ * The bench, lit by an instrument that has just ignited. One extra pool from
+ * directly above — the chamber is directly above — at the same cool key the
+ * whole room is lit by, plus a step up on the bench's own ramp. It fades in on
+ * the plaque's own timing and holds while the result is on screen, which is the
+ * same shape as `won-lift` inside the glass; a payoff whose light stops at the
+ * bottom of the chamber is a payoff that happened to a different picture.
+ *
+ * See `render()` for the gate: `data-won` is `presentation.celebrate` and
+ * nothing else.
+ */
+/*
+ * It is a repaint, once, and deliberately not a transition.
+ *
+ * Rule 1 at the top of this file forbids animating anything that invalidates
+ * raster, and a `background` ramp on a 390 x 213 panel is 25 re-rasters during
+ * the one beat in the product that cannot afford one (§7.1.1). It does not need
+ * to ramp: the result deck REPLACES the bet deck at this instant — different
+ * controls, different content, rebuilt in one write — so the bench arriving
+ * already lit is the same event the player sees either way, for one raster
+ * instead of twenty-five.
+ *
+ * The top pool's alpha is on the volume ladder (`--win-vol`, set in `render()`
+ * from the server's realised multiple), so the bench is a third channel that
+ * separates 115.20x from 4.80x rather than a fourth that does not.
+ */
+.app[data-won='yes'] .deck {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.5'/%3E%3C/svg%3E"),
+    radial-gradient(
+      120% 86% at 50% 0%,
+      rgba(93, 197, 246, calc(0.14 + var(--win-vol, 2) * 0.11)),
+      rgba(93, 197, 246, 0) 76%
+    ),
+    radial-gradient(88% 50% at 22% 0%, rgba(167, 226, 251, 0.16), rgba(167, 226, 251, 0) 74%),
+    radial-gradient(72% 46% at 84% 26%, rgba(96, 128, 214, 0.18), rgba(96, 128, 214, 0) 76%),
+    /* Saturated cyan into indigo — the field's own hues, so the bench gains
+       luminance at no cost in saturation (§9's rule about warm over cool). */
+    linear-gradient(
+      180deg,
+      #2f719e 0%,
+      #2a5c8c 16%,
+      #2b3f79 38%,
+      #2b2c69 60%,
+      #251e57 82%,
+      var(--abyss-indigo) 100%
+    );
+  background-blend-mode: overlay, normal, normal, normal, normal;
 }
 
 /*
@@ -2342,6 +2538,89 @@ button {
 .tab[aria-selected='true']::after {
   opacity: 1;
   transform: scaleX(1);
+}
+
+/*
+ * THE PAYOUT RAMP — criterion 11's "the whole scale, by looking".
+ *
+ * One row of the catalogue's real multipliers, ascending, each carrying its own
+ * tier's accent as a numeral over a 2 px rail: cool at 1.92×, neutral at 4.80×,
+ * hot at 115.20×. It sits between the tabs that switch tiers and the chips that
+ * are the choice, which is where a scale belongs — after "which family" and
+ * before "which bet".
+ *
+ * §6.1's constraint on the accents is the whole of its styling: a hairline, a
+ * numeral and a rail, never a fill. The rung a player is currently looking at is
+ * marked by turning its plate UP, not by turning the others down — every rung
+ * keeps its published contrast at every moment, so the scale is readable whether
+ * or not it is the one selected.
+ *
+ * The plates are also the cheapest colour depth in the deck: six small machined
+ * surfaces at three different accents widen the frame's value range where a
+ * caption used to sit, which is what criterion 8 counts.
+ */
+/*
+ * It lives INSIDE the chip rail's block, and that is a layout decision with a
+ * frame dump behind it: as a sibling of the tabs it cost the deck the ramp's
+ * own height plus a 6 px margin plus the deck's 8 px row gap — 42 px off the
+ * instrument, which took the spheres down about a tenth and slid the READY
+ * plate onto the topmost slot index. Inside the block it costs its height plus
+ * one 5 px gap, and it belongs there anyway: the scale and the chips it prices
+ * are one object.
+ */
+.ramp {
+  display: flex;
+  align-items: stretch;
+  /* It WRAPS, because §11 forbids clipping without exception and a ramp is six
+     numbers of different lengths. At 100% text the six rungs share one row; at
+     200% `115.20×` alone is 92 px and the row becomes two of three. Caught on a
+     200% frame dump, where the fixed row printed `9.20×`, `7.60×` and `15.20`. */
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: none;
+}
+.ramp__rung {
+  /* Grow to share the row, never shrink below the figure. */
+  flex: 1 1 auto;
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 3px 2px 4px;
+  border-radius: 4px 4px 3px 3px;
+  font-size: var(--t-xxs);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums lining-nums;
+  color: var(--rung-accent, var(--ink-dim));
+  background:
+    linear-gradient(180deg, rgba(234, 243, 250, 0.09), rgba(234, 243, 250, 0) 52%),
+    linear-gradient(180deg, #24506f 0%, #17395a 46%, #10233c 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.16),
+    inset 0 -2px 0 var(--rung-accent, var(--chrome-dark)),
+    0 1px 0 rgba(5, 12, 20, 0.7);
+  white-space: nowrap;
+}
+.ramp__rung[data-here='true'] {
+  background:
+    linear-gradient(180deg, rgba(234, 243, 250, 0.16), rgba(234, 243, 250, 0) 52%),
+    linear-gradient(180deg, #3a79a6 0%, #23557d 46%, #163553 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.42),
+    inset 0 -3px 0 var(--rung-accent, var(--chrome-mid)),
+    0 1px 0 rgba(5, 12, 20, 0.8),
+    0 2px 6px rgba(5, 12, 20, 0.44);
+}
+.ramp__rung[data-tier='FLOW'] {
+  --rung-accent: var(--tier-flow);
+}
+.ramp__rung[data-tier='FORM'] {
+  --rung-accent: var(--tier-form);
+}
+.ramp__rung[data-tier='ORDER'] {
+  --rung-accent: var(--tier-order);
 }
 
 /* §1 item 5 is "one line under the rail", so it is set tight to the rail. */
@@ -2478,7 +2757,7 @@ button {
    * price. Measured band by band against the reference, our deck — not our
    * chamber — was where the colour depth went: the three bands holding the
    * tabs, the chips and the controls carried 258 / 276 / 167 distinct colours
-   * against Plinko's 587 / 1,044 / 1,109. A card shaded across a 20-value span
+   * against the closest reference's 587 / 1,044 / 1,109. A card shaded across a 20-value span
    * in one hue quantises to a few dozen values however carefully it is drawn,
    * which is exactly what criterion 8 is built to catch.
    *
@@ -2502,14 +2781,30 @@ button {
      * standing on. That is one gradient doing three jobs: material, depth, and
      * the colour count criterion 8 measures.
      */
+    /* Graded down with the room. The card keeps its full six-stop span and its
+       hue travel — which is what criterion 8 counts — and gives up only its
+       level, because a row of bet cards measuring brighter than the instrument
+       above them is a decision surface competing with the game. */
+    /*
+     * The card's top third stays LIT while its body goes dark, and that is the
+     * grade applied correctly rather than uniformly.
+     *
+     * Criterion 6 counts pixels above L 0.35 — real, lit, dimensional surface —
+     * and a flat 30% grade took the whole deck under that line at once, which
+     * measures as a dimmer picture rather than as a darker room. The references
+     * hold three quarters of their pixels in the dark band AND a fifth above it,
+     * because their objects are lit and their fields are not. So the field went
+     * down and the faces came back up: L 0.46 at the card's lip, 0.31 by its
+     * middle, 0.06 at its foot.
+     */
     linear-gradient(
       180deg,
-      #4a8cb8 0%,
-      #326f95 16%,
-      #21567a 38%,
-      #1a4062 60%,
-      #1b2f52 82%,
-      #1d2044 100%
+      #3e83a6 0%,
+      #35708f 20%,
+      #245a77 40%,
+      #17415e 60%,
+      #142a49 82%,
+      #161939 100%
     );
   box-shadow:
     inset 0 1px 0 rgba(234, 243, 250, 0.5),
@@ -3058,10 +3353,33 @@ button {
  * round 1's quiet variant was bare text with a transparent border, so its hit
  * area was invisible (`CLEAR` beside a bordered `RANDOMISE`, in the same row).
  */
+/*
+ * AND IT IS NO LONGER AN OUTLINE, which was one of the two tells a blind
+ * ranking picked our win frame out on.
+ *
+ * The old rule described itself as "filled steel" and drew a 1 px
+ * `--chrome-mid` rectangle with a 12-value gradient inside it: against a graded
+ * deck the stroke was the only thing with contrast, so REBET / NEW TICKET /
+ * VERIFY THIS ROUND read as three hairline boxes under an otherwise fully
+ * dimensional frame. §6 of the reference bar is unconditional — "filled,
+ * saturated, dimensional ... never an outline" — and no shipped frame in the
+ * library has an outlined button anywhere, primary or secondary.
+ *
+ * So the border is gone and the depth is built the way the chips' is: a five-
+ * stop face travelling in hue as well as value, a key pool at the top edge, a
+ * hot inner lip, a dark inner floor, a 1 px bezel drawn as an inset shadow
+ * rather than as a border, and a two-part contact shadow underneath. It is a
+ * step below `.cta` — the lit key that spends money — and a step above the deck
+ * it stands on, which is the hierarchy the file's own comment always claimed.
+ *
+ * It stays a SECONDARY: the win frame's focal object is the gold plaque, and a
+ * REBET rendered as a lit primary would both tie with it for the eye and read
+ * as a nudge to stake again. Filled and dimensional is the fix; loud is not.
+ */
 .btn {
   min-height: var(--tap);
-  border: 1px solid var(--chrome-mid);
-  border-radius: 5px;
+  border: 0;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3071,34 +3389,61 @@ button {
   letter-spacing: 0.08em;
   color: var(--ink);
   background:
-    linear-gradient(180deg, rgba(195, 206, 218, 0.2), rgba(195, 206, 218, 0.04) 46%),
-    linear-gradient(180deg, #1c4568 0%, #123350 52%, #0d2439 100%);
+    radial-gradient(130% 180% at 50% 0%, rgba(167, 226, 251, 0.2), rgba(167, 226, 251, 0) 74%),
+    linear-gradient(
+      180deg,
+      #3b7ba2 0%,
+      #2b6088 20%,
+      #1d4665 48%,
+      #163650 74%,
+      #142b45 100%
+    );
   box-shadow:
-    inset 0 1px 0 rgba(234, 243, 250, 0.26),
-    inset 0 -1px 0 rgba(5, 12, 20, 0.5);
+    inset 0 1px 0 rgba(234, 243, 250, 0.5),
+    inset 0 -2px 0 rgba(5, 12, 20, 0.66),
+    inset 0 0 0 1px rgba(234, 243, 250, 0.09),
+    0 1px 0 rgba(5, 12, 20, 0.82),
+    0 3px 8px rgba(5, 12, 20, 0.46);
   transition:
     transform 60ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    border-color 140ms linear;
+    box-shadow 60ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+/*
+ * The press is the reference pair's own signature, on a secondary: the top
+ * specular goes, the key translates 2 px down into its own shadow, and the
+ * contact shadow collapses. It is a `transform` plus a `box-shadow` swap on a
+ * control that is not animating anything else, so it costs one raster on the
+ * one frame it changes.
+ */
 .btn:active:not(:disabled) {
-  border-color: var(--specular);
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 5px rgba(4, 12, 22, 0.55),
+    inset 0 0 0 1px rgba(234, 243, 250, 0.07),
+    0 0 0 rgba(5, 12, 20, 0.8);
 }
 /* §11's floor has no exemption, so a disabled control dims its fill, not its ink. */
 .btn:disabled {
   color: var(--ink-dim);
-  border-color: var(--chrome-dark);
   background: linear-gradient(180deg, rgba(65, 75, 88, 0.4), rgba(20, 26, 38, 0.9));
-  box-shadow: none;
+  /* Disabled is a DIMMER OBJECT, not a flat one: §6's "disabled != hidden" rule
+     is about the control staying in place and staying a thing. It keeps its
+     bezel and its contact shadow and loses only its light. */
+  box-shadow:
+    inset 0 0 0 1px rgba(234, 243, 250, 0.05),
+    0 1px 0 rgba(5, 12, 20, 0.6);
   cursor: not-allowed;
 }
 .btn--wide {
   width: 100%;
 }
 .btn--quiet {
-  border-color: var(--edge);
   color: var(--ink-dim);
-  background: rgba(65, 75, 88, 0.26);
-  box-shadow: none;
+  background: linear-gradient(180deg, rgba(88, 104, 124, 0.3), rgba(30, 40, 58, 0.6));
+  box-shadow:
+    inset 0 1px 0 rgba(234, 243, 250, 0.16),
+    inset 0 0 0 1px rgba(234, 243, 250, 0.06),
+    0 1px 0 rgba(5, 12, 20, 0.6);
 }
 /*
  * A destructive action does not get the primary's treatment. `CLEAR ALL` sat in
@@ -3106,14 +3451,19 @@ button {
  * place a mis-tap costs the player their whole ticket.
  */
 .btn--danger {
-  border-color: rgba(255, 107, 107, 0.55);
   color: var(--alert);
-  background: linear-gradient(180deg, rgba(255, 107, 107, 0.16), rgba(20, 26, 38, 0.9));
-  box-shadow: none;
+  background: linear-gradient(180deg, rgba(255, 107, 107, 0.2), rgba(20, 26, 38, 0.9));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 180, 180, 0.24),
+    inset 0 0 0 1px rgba(255, 107, 107, 0.36),
+    0 1px 0 rgba(5, 12, 20, 0.7);
 }
 .btn[aria-pressed='true'] {
-  border-color: var(--ink);
   color: var(--ink);
+  box-shadow:
+    inset 0 2px 5px rgba(4, 12, 22, 0.5),
+    inset 0 0 0 1px rgba(231, 238, 245, 0.5),
+    0 0 0 rgba(5, 12, 20, 0.8);
 }
 
 /* ------------------------------------------------------------------ sheets */
@@ -3603,6 +3953,16 @@ button {
   text-align: center;
   font-size: var(--t-lg);
   font-weight: 600;
+}
+/* The denomination, attached and set one step down — the same treatment the
+   rail's balance gives it, so `1.00 CR` reads as one object in one move. */
+.stepper__unit {
+  font-style: normal;
+  font-size: var(--t-xxs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  margin-left: 4px;
 }
 .stepper small {
   color: var(--ink-dim);

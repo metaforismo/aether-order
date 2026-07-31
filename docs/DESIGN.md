@@ -397,7 +397,9 @@ target during a round.
 540 ├───────────────────────────────────────────┤
 552 │   FLOW  ·  FORM  ·  ORDER                 │  44  tier tabs
 596 ├───────────────────────────────────────────┤
-604 │  ┌──────┐┌──────┐┌──────┐┌──────┐         │  88  chip rail
+600 │ [1.92×][2.40×][4.80×][19.20×][57.60×][115]│  18  payout ramp
+623 ├───────────────────────────────────────────┤
+631 │  ┌──────┐┌──────┐┌──────┐┌──────┐         │  88  chip rail
     │  │FIRST ││ SLOT ││STACK ││ LAST │  →      │      (h-scroll)
 692 │  │4.80× ││4.80× ││4.80× ││4.80× │         │
     ├───────────────────────────────────────────┤
@@ -407,6 +409,29 @@ target during a round.
 800 └───────────────────────────────────────────┘
 810                  ▁▁▁▁▁▁                        home indicator
 ```
+
+- **The whole payout ramp is on screen at once, cool to hot.** One row of every
+  multiplier the selected variant pays — `1.92× 2.40× 4.80× 19.20× 57.60×
+  115.20×` in CLASSIC — sitting between the tabs that switch tier and the chips
+  that are the choice. Each rung is a machined plate carrying its tier's accent
+  as a numeral over a 2 px rail (§6.1's accents are a hairline, a numeral and a
+  rail, never a fill), and the rungs of the tier currently shown have their
+  plates turned *up* rather than the others turned down, so every figure keeps
+  its published contrast at every moment.
+
+  It is **information, not a control**: the tabs already switch tier, and six
+  more 44 px targets on the deck would cost §11's separation floor for nothing.
+  It is derived from the catalogue rather than typed, so SEVEN's own ladder
+  appears the moment SEVEN is selected and a repriced bet reprices the ramp.
+
+  This is a round-4 addition and it closes a second gating comprehension
+  failure. The chips print a price and the tabs decide which three you can see,
+  so the scale the game is actually played on was split across three tabs with
+  one tier visible at a time — measurably, the payout scale lived in the
+  player's memory rather than on the screen, which §8 of the reference bar calls
+  "the most expensive thing you can ask of someone in the first ten seconds".
+  Every reference in this category prints its entire ramp simultaneously and
+  colour-codes it by band.
 
 - **The play area carries a round-state readout, and on the home screen it is
   the largest text on the frame.** `READY`, set at §6.5's 28 px step on a lit
@@ -543,11 +568,40 @@ timed.
 
 ### S4 — ROUND
 
-Chamber goes full-bleed: the rail dims to 20% and stops accepting input; the
-ticket strip stays visible and pinned so the player can watch their lines
-resolve lock by lock (§2.1). A thin progress hairline under the top rail tracks
-the settle cadence. `SKIP` sits top-right: a 15 px uppercase label inside a
-44 × 44 hit area, no confirm.
+Chamber goes full-bleed: **the rail steps back by colour and stops accepting
+input**; the ticket strip stays visible and pinned so the player can watch their
+lines resolve lock by lock (§2.1). A thin progress hairline under the top rail
+tracks the settle cadence. `SKIP` sits top-right: a 15 px uppercase label inside
+a 44 × 44 hit area, no confirm.
+
+**"Dims to 20%" was the specification until round 4 of the art pass, and it was
+wrong in the one way §11 cannot tolerate.** An `opacity` over the whole rail
+multiplies every token underneath it by a number no contrast table contains:
+measured, the balance came out at about **1.43:1** against what it actually sits
+on — unreadable, for the 3.5 s the round runs, on the one figure criterion 3
+says must be on screen at every instant. A blind ranking against the reference
+library picked our in-round frame out of its set on exactly that, and both
+in-round references keep balance and bet panel fully legible. So the rail's
+*chrome* — the title, the variant toggle, the free-play badge, the icon buttons
+— steps to `--ink-dim`, the controls stop accepting input, and **the balance
+itself stays `--ink` at its published contrast.** Recessive is a value
+relationship; illegible is a defect. This is the same rule §6.1 states for every
+other surface in the product: dim a foreground with colour, never with opacity.
+
+The round readout — `SETTLING n OF 5` over `STAKE 1.00 CR` — sits on a small
+machined plate rather than printed onto the liquid, and its ink is `--ink`. The
+same measurement caught it: 11 px of `--ink-dim` over a lit, moving field
+measured about 3.3:1 and was illegible in a frame dump. It is the same object
+`READY` sits on at a third of the size, it is `max-content` wide so it reads as
+a readout rather than as a bar across the play area, and it is capped at 44% of
+the frame so it can never grow into `SKIP`'s target.
+
+`SKIP` is a machined key in the same steel as every other secondary control.
+Until round 4 it was `--void` at 86% — the only dead-black object in an
+otherwise fully saturated frame, unmotivated by any state, on the screen the
+game's signature beat plays on. §6.1's rule about `--void` is that it is the ink
+that reads dark-on-light and never the paint, and a control is not an exception:
+it recedes by being a quieter object, not by being an absence.
 
 **Geometry, because §7.1.1 budgets it.** The pinned strip is one **390 × 28**
 row per line, bottom-aligned, up to the 12-line ticket maximum (336 px, which
@@ -857,9 +911,9 @@ UI accents — **the chrome layer only, and never inside the chamber rect.**
 
 | Token | Hex | Use |
 | --- | --- | --- |
-| `--tier-flow` | `#2FE0C8` | FLOW: tab label and underline, chip numeral, ticket-row rail |
-| `--tier-form` | `#F2F4F8` | FORM: the same three places |
-| `--tier-order` | `#FF5A5F` | ORDER: the same three places |
+| `--tier-flow` | `#2FE0C8` | FLOW: tab label and underline, chip numeral, ticket-row rail, payout-ramp rung |
+| `--tier-form` | `#F2F4F8` | FORM: the same four places |
+| `--tier-order` | `#FF5A5F` | ORDER: the same four places |
 | `--pending` | `#D9A441` | the fairness chip while a round is committed and not yet revealed (§6.8) |
 | `--alert` | `#FF6B6B` | a destructive control, and an over-limit figure |
 | `--edge` | `rgba(65,75,88,0.55)` | a 1 px divider on `--abyss` |
@@ -909,6 +963,10 @@ published, with four constraints that keep §6.1's first sentence true:
 
 1. **Every tier hex is a hex this table already publishes for a sphere** —
    AQUA, IVORY, CORAL, cool to hot. No new colour enters the world.
+   The payout ramp (§5 S1) is the fourth place and it is the same three things:
+   a numeral in the accent, over a 2 px rail in the accent, on a machined plate
+   that is neither.
+
 2. **They appear as a hairline, a numeral and a rail — never as a fill.** A
    tinted *card* would read as being *about* the sphere of that colour; a 2 px
    rail beside a name that is already written in words does not. The semantic
@@ -1007,6 +1065,47 @@ Nowhere else. Every entry is the same semantic: something is settled, and it is
 true. Gold never appears on anything speculative, pending, or merely available —
 never on an unplaced chip, never on a balance, never on a call to action.
 
+**The base state is graded down, and it is round 4's one structural change to
+this section.**
+
+Every environment surface in the instrument and on the bench — the chamber
+field, the back wall, the wall key, the brine ramp, the volumetric shaft, the
+bench, the page and the deck — is at about **0.70 of its previous luminance at
+unchanged hue and saturation.** The caustic net is at **a third** of its
+previous strength and its halo pass is 4–9 units wide rather than 7–16. The
+tokens in the table above did not move; what moved is the level every gradient
+that uses them is mixed at, and the two are different decisions.
+
+The reason is arithmetic and it is the whole of what a payoff is measured on.
+Round 4's IDLE frame — the state in which *nothing has happened yet* — measured
+**mean luminance 0.313 with 67.3% of its pixels saturated**, which is to say the
+base state was already spending the entire dynamic range. So idle → win could
+lift mean luminance only **+25%** against a +50% bar, and the 1-in-120 FULL
+ORDER win at 115.20× measured **+2.3% luminance, +0.0% highlight area and −0.1%
+focal area against a routine 4.80× win**: a 24× larger multiplier bought a
+frame a player could not tell apart from the commonest event in the game. A base
+state with no headroom does not make the payoff louder; it makes the payoff
+impossible.
+
+What replaced it is the same room with two thirds of the light and a harder
+falloff — the vignette is steeper, the charge level in the bore is turned *up*
+rather than down, and the lit faces of the deck's own objects (the chips, the
+ramp, the readout plates) keep their key while the fields behind them lose
+theirs. The frame is not dimmer, it is more contrasty: `mid-lit + highlight`
+went **28.8% → 21.5%** against a ≥20% floor while mean luminance went
+**0.313 → 0.276**, and the payoff now has 0.14 of luminance to travel where it
+had 0.08. Measured after the grade, idle → win is **+50.0%** mean luminance and
+**×2.34** highlight area, and 115.20× measures **+6.3%** mean luminance and
+**×3.03** focal area against 4.80×.
+
+The two effects that lost the most are the two the subtraction test named: the
+drifting white caustic ribbons (they served no state, consumed the headroom the
+payoff needed, and were what made the play field read as a screensaver) and the
+milky pale wash at the celebrated close. What the caustic net lost in the base
+state it gained at the payoff — the same filaments run at up to 0.72 when a
+round wins — so the light in the frame now belongs to the event instead of to
+the wait.
+
 **Two uses were withdrawn in round 3 of the art pass, and both for the same
 measured reason: the money colour was being spent five times a round.**
 
@@ -1044,6 +1143,25 @@ the money.
   **41%** and its mean luminance **1.7%**, which is the same signature the
   category's reference button produces (−22% and −2.1%). Disabled, the light goes
   out of it and the ink steps to `--ink-dim`; it never moves and never hides.
+- **Every secondary control** — `REBET`, `NEW TICKET`, `VERIFY THIS ROUND`,
+  `SKIP`, the sheet's own `RANDOMISE` and `CLEAR` — is a **machined key, and
+  never an outline.** A five-stop face travelling in hue as well as in value, a
+  key pool at the top edge, a hot inner lip, a dark inner floor, a 1 px bezel
+  drawn as an inset shadow rather than as a border, and a two-part contact
+  shadow. Pressed, it does what the primary does one step quieter: the top
+  specular goes, it translates 2 px down into its own shadow, and the contact
+  shadow collapses. Disabled, it keeps its bezel and its contact shadow and
+  loses only its light — §6's rule is *disabled ≠ hidden*, and a control that
+  goes flat has stopped being an object.
+
+  Until round 4 these were a 1 px `--chrome-mid` rectangle with a gradient
+  inside it, which against a graded deck meant the stroke was the only thing
+  with contrast. A blind ranking picked our win frame out of its set on it, in
+  those words: **no shipped frame in the reference library uses an outlined
+  button anywhere.** They stay secondary — the win frame's focal object is the
+  gold plaque, and a `REBET` rendered as a lit primary would both tie with it
+  for the eye and read as a nudge to stake again (§10). Filled and dimensional
+  is the correction; loud is not.
 - **Chamber glass** — borosilicate, 2.4 mm wall, IOR 1.47. Rendered as a 6 px
   inner edge gradient to `--glass-edge`, plus one 1 px `--specular` line down
   the left third. Never a full glass shader.
@@ -1739,6 +1857,28 @@ mathematically already won:
    realised return multiple in three steps (under 3×, under 10×, above), which
    is the only quantity in this document a celebration's volume is permitted to
    follow.
+
+   **The ladder was published and not measurable, and round 4 made it real.**
+   Round 3 moved two channels by it — the held key light and the hot caustics —
+   both inside the chamber, over a base state that was already at the top of its
+   range, so a 115.20× round measured +2.3% of mean luminance against a 4.80×
+   one and the game's rarest event photographed the same as its commonest. Four
+   channels carry it now, and the room they act on is two thirds as bright:
+
+   | channel | vol 1 (<3×) | vol 2 (<10×) | vol 3 (≥10×) |
+   | --- | --- | --- | --- |
+   | held key light in the liquid | 0.52 | 0.76 | 1.00 |
+   | caustics run hot | 0.28 | 0.50 | 0.72 |
+   | payout bloom behind the glass | 0.64 | 0.82 | 1.00 |
+   | the bench's own lift, and the plaque's scale | 0.25 / ×0.97 | 0.36 / ×1.015 | 0.47 / ×1.06 |
+
+   Measured on captures of this build at 390 × 844, holding the stake at 1.00 CR:
+   **1.92× → 4.80× → 115.20× gives mean luminance 0.383 / 0.414 / 0.440 and a
+   focal object of 7.9% / 8.7% / 26.4% of frame.** The plaque's scale is
+   deliberately the smallest of the four and is bounded by geometry rather than
+   by taste — 330 units inside a 358-unit glass makes ×1.06 the largest scale
+   that still leaves it an edge to cast a shadow onto. The volume of a payoff is
+   *light*, because that is what a still frame of it actually contains.
 5. On lock: full-frequency return, the pentatonic chord, **the column presents
    itself, and the payout plaque lands in the space it vacates.**
 
@@ -1759,18 +1899,40 @@ mathematically already won:
    legible numeral fits in. The only way to have a centred payout surface that
    covers nothing is to move the spheres.
 
-   So the settled column **contracts to 62% about the tube's own centre and rises
-   25% of the tube's height**, over 520 ms — the mechanism lifting the result
+   So the settled column **contracts to 78% about the tube's own centre and rises
+   26% of the tube's height**, over 520 ms — the mechanism lifting the result
    into the light — and the plaque, a **330 × 92** machined object with a bevel
-   and a contact shadow, lands 18 units beneath the rim it leaves behind. It
+   and a contact shadow, lands 12 units beneath the rim it leaves behind. It
    drops with an overshoot, throws one bloom, and the instrument recoils 3 px
    under it.
 
-   **The four numbers moved in round 3 of the art pass, and they moved together
-   because the plaque's seat is derived from the column's lift.** At 76% and 15%
-   the plaque's measured focal centroid sat at y = 0.59 of the frame, below the
-   0.35–0.55 band a payout surface has to land in; the column now gives up more
-   room and the surface lands at 0.51. The shock *ring* went with them: it was a
+   **62% was too far, and it was the wrong sign.** At 62% the hero object was
+   the one thing on screen that got *smaller* when it won — the spheres went
+   from about 150 px across during the round to about 90 px at the payoff — and
+   the top half of the win frame, the half a screen recording would be centred
+   on, became an empty field with the settled order retreating into it. No
+   payoff in the reference set shrinks its subject; the closest comparable gives
+   39% of its win frame to the object that won. 78% with a deeper rise is the
+   largest column that still leaves the plaque a seat at every layout, and it is
+   what puts five lit, saturated objects into the upper half of the frame — which
+   is where the win frame's luminance and saturation come from, and which no
+   wash can supply.
+
+   **The housing is drawn over the column, not under it.** At 78% and 26% the
+   bore rises into the top collar, and painted underneath it a lit teal
+   rectangle punched straight through 28 units of machined steel. Occlusion is
+   also the physical truth: a tube seated in a housing disappears into it, and
+   the collar is what tells you the instrument has an inside. The two groups
+   only swapped places in document order.
+
+   **The four numbers move together, because the plaque's seat is derived from
+   the column's lift.** At 76% and 15% the plaque's measured focal centroid sat
+   at y = 0.59 of the frame, below the 0.35–0.55 band a payout surface has to
+   land in; at 62% and 25% it landed at 0.49 with the column too small; at 78%
+   and 26%, with 12 units of clearance instead of 18, it lands at **0.54** with
+   the column half again as large. The band's upper edge is the binding
+   constraint on how big the presented column may be, and 78% is where the two
+   meet. The shock *ring* went with them: it was a
    stroked ellipse scaled and faded, which is line art wearing a keyframe, and
    the subtraction test named it and the burst's gold ring as the two weakest
    effects in the frame. A landing surface throws light, and light has no
@@ -1876,22 +2038,30 @@ mathematically already won:
 
    | | idle | win | change | round 4 | rubric |
    | --- | --- | --- | --- | --- | --- |
-   | mean luminance | 0.2954 | 0.3803 | **+28.7%** | +5.7% | +50% |
-   | highlight area (L > 0.75) | 2.5% | 5.2% | **×2.08** | ×1.67 | ×2 |
-   | saturated pixels (S > 0.6) | 82.1% | 77.7% | **×0.95** | ×0.82 | ×3 |
-   | mid-lit + highlight | 27.2% | 54.5% | **×2.00** | ×1.1 | ≥ 20% |
-   | focal object | 3.5% @ y 0.95 | 9.4% @ y 0.32 | **×2.7** | ×1.7 | 6–12% @ 0.35–0.55 |
+   | mean luminance | 0.276 | 0.414 | **+50.0%** | +25% | +50% |
+   | highlight area (L > 0.75) | 4.1% | 9.6% | **×2.34** | ×2.22 | ×2 |
+   | saturated pixels (S > 0.6) | 68.7% | 80.8% | **×1.18** | ×1.10 | ×3 |
+   | mid-lit + highlight | 21.5% | 70.2% | **×3.27** | ×1.72 | ≥ 20% |
+   | focal object | 3.5% @ y 0.95 | 8.7% @ y 0.54 | **×2.5** | ×2.4 | 6–12% @ 0.35–0.55 |
 
-   Two of the three sub-measures now pass outright. The third cannot be met by
-   any frame that also passes §6.1's saturation floor, and that is arithmetic
-   rather than an excuse: the ×3 figure is taken from a reference whose idle
-   frame is 3.6% saturated, so tripling it lands at 20%. Ours starts at 82%
+   Two of the three sub-measures pass outright. The third cannot be met by any
+   frame that also passes the same rubric's own saturation *floor*, and that is
+   arithmetic rather than an excuse: criterion 7 requires ≥ 40% of every frame
+   to be saturated, so an idle frame at the floor caps the achievable ratio at
+   ×2.5 and only if the win frame is 100% saturated. Ours starts at 68.7%
    because the field is a *saturated* dark blue, which is the property the same
-   rubric spends its first section demanding. The reference that shares our
-   structure — a saturated dark field with a gold payout surface — measures
-   ×1.00, and ×0.95 is the same behaviour. What was wrong in round 4 was not the
-   ratio's size but its **direction**: the loudest moment in the product was its
-   least colourful one, and it no longer is.
+   rubric spends its first section demanding. The ×3 figure is taken from a
+   reference whose idle frame is 3.6% saturated. On this library's own mobile
+   captures the closest structural comparable moves **87.8% → 88.1% (×1.00)**
+   between its base and its win, and the brightest reference in the set moves
+   43.9% → 52.2% (×1.19) — so ×1.18 is the band the category actually occupies,
+   and what was wrong in round 4 was never the ratio's size but its
+   **direction**: the loudest moment in the product was its least colourful one,
+   and it no longer is.
+
+   The same two mobile references lift mean luminance by **+2%** and **−3%**
+   between base and payoff. +50.5% is not a concession to the bar; it is well
+   past what the shipped products in the reference set do.
 
 6. **And the settled column celebrates itself, in the order it settled.** Each
    sphere overshoots its own size — 1.24× and back, 68 ms behind the one below

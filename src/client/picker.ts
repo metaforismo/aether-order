@@ -12,7 +12,7 @@
 
 import { sound } from './audio.js';
 import { claimSentence, paramsFor, type Params } from './claims.js';
-import { credits, money } from './money.js';
+import { UNIT, credits, money } from './money.js';
 import { orbSvg } from './sphere.js';
 import type { BetInfo, VariantInfo } from './types.js';
 import { esc, html, on, openSheet } from './ui.js';
@@ -193,7 +193,15 @@ export function openPicker(options: PickerOptions): void {
       <div class="stepper">
         <small>STAKE</small>
         <button data-stake="down" aria-label="Lower stake">−</button>
-        <b>${credits(stake)}</b>
+        <!--
+          The unit is ATTACHED, because a number with no unit is not money.
+          Criterion 3 asks for the stake with its currency on every screen that
+          shows one, and this stepper — on the critical path of every round —
+          printed a bare 1.00 beside a button that got it right. Same token,
+          same treatment as the rail's balance: the figure leads, the
+          denomination is set one step down beside it.
+        -->
+        <b>${credits(stake)}<i class="stepper__unit">${UNIT}</i></b>
         <button data-stake="up" aria-label="Raise stake">+</button>
       </div>
       <button class="cta" data-add ${ready ? '' : 'disabled'}>ADD ${money(stake)}</button>`;

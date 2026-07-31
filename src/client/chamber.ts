@@ -120,8 +120,8 @@ const BURST_MS = 1400;
  * slot, so on a five-sphere win it occluded slot 4 and clipped slot 3 — and it
  * persisted, which left the settled order, the entire record of the round, half
  * covered on the result screen. Every reference payoff either *clears* the hero
- * object (Plinko's win banner sits below the chip row) or *replaces* it (Space
- * XY's centred disc). A bar across the object does neither and reads as a
+ * object (the closest comparable's win banner sits below its payout row) or
+ * *replaces* it (a centred disc). A bar across the object does neither and reads as a
  * component dropped onto a scene.
  *
  * The geometry forbids the easy fix. The tube is `n · pitch + 24` units tall and
@@ -139,9 +139,23 @@ const BURST_MS = 1400;
  * `celebrate` is true, and a losing round therefore does not move at all — which
  * is a second pre-attentive channel separating the two outcomes (§9).
  */
-const LIFT_SCALE = 0.62;
+/*
+ * 0.80, not 0.62 — the presented column is the payoff's other half.
+ *
+ * At 0.62 the hero object SHRANK at the moment it mattered: the five spheres
+ * went from ~150 px across during the round to ~90 px at the payoff, and the
+ * upper half of the win frame — the half a screen recording would be centred on
+ * — became an empty wash with the settled order retreating into it. No payoff in
+ * the reference set makes its subject smaller; the brightest reference in the
+ * set gives 39.9% of its win frame to the object that won. 0.80 with a deeper rise keeps the
+ * plaque's seat clear (the seat is derived from these two numbers) while the
+ * settled column stays a set of readable, saturated objects filling the space
+ * above it — which is where the win frame's luminance and saturation come from
+ * that no wash can supply.
+ */
+const LIFT_SCALE = 0.78;
 /** How far the presented column rises, as a fraction of the tube's height. */
-const LIFT_RISE = 0.25;
+const LIFT_RISE = 0.26;
 /** Half-height of the payout plaque, in viewBox units. */
 const PLATE_HALF = 46;
 /** The plaque's width — inset from the glass, so it reads as an object on the
@@ -388,7 +402,10 @@ export class Chamber {
     const tubeCentre = tubeTop + tubeHeight / 2;
     this.#tubeCentre = tubeCentre;
     const liftedBottom = tubeCentre + (LIFT_SCALE * tubeHeight) / 2 - LIFT_RISE * tubeHeight;
-    const stampY = Math.round(liftedBottom + PLATE_HALF + 18);
+    // 12 units of clearance, not 18. The presented column is 26% larger than it
+    // was, and every unit between its bottom rim and the plaque's top edge is a
+    // unit the plaque's centroid drops toward the bottom of criterion 13's band.
+    const stampY = Math.round(liftedBottom + PLATE_HALF + 12);
 
     this.#root.innerHTML = `
       <svg class="chamber" viewBox="0 0 ${WIDTH} ${height}" preserveAspectRatio="xMidYMid meet" data-beat="idle" role="img" aria-label="Chamber with ${n} spheres and a ${n}-slot tube">
@@ -512,15 +529,6 @@ export class Chamber {
               glassHeight - 6
             }" rx="21" fill="none" stroke="url(#glass-wall)" stroke-width="6"/>
           </g>
-          <g class="cham-top">${this.#collar(glassTop, 'top')}</g>
-          <g class="cham-bottom">
-            ${this.#collar(height - glassTop - COLLAR, 'bottom')}
-            <g class="floor-caustic-at" transform="translate(${CENTRE_X},${
-              height - glassTop - COLLAR - 12
-            })">
-              <ellipse class="floor-caustic" rx="152" ry="30" fill="url(#floor-caustic)"/>
-            </g>
-          </g>
           <g class="column">
             <!--
               The presented column (see LIFT_SCALE). Everything the plaque has to
@@ -586,6 +594,27 @@ export class Chamber {
             </g>
             </g>
             ${this.#stampMarkup(stampY)}
+          </g>
+          <!--
+            THE HOUSING IS DRAWN LAST, over the column rather than under it.
+            The presented column rises into the top collar on a celebrated close
+            (see LIFT_RISE), and drawn underneath it the bore punched a lit teal
+            rectangle straight through 28 units of machined steel — an object
+            passing through the machine that holds it, which is the one thing a
+            frame full of carefully lit material cannot survive. Occlusion is
+            also the physical truth: a tube seated in a housing disappears into
+            it, and the collar is what tells you the instrument has an inside.
+            Nothing else moved; the two groups only swapped places in document
+            order, and at rest the bore's ends stop exactly at the collars.
+          -->
+          <g class="cham-top">${this.#collar(glassTop, 'top')}</g>
+          <g class="cham-bottom">
+            ${this.#collar(height - glassTop - COLLAR, 'bottom')}
+            <g class="floor-caustic-at" transform="translate(${CENTRE_X},${
+              height - glassTop - COLLAR - 12
+            })">
+              <ellipse class="floor-caustic" rx="152" ry="30" fill="url(#floor-caustic)"/>
+            </g>
           </g>
           <!--
             The celebrated close's full-frame lift. One rect, one opacity
@@ -724,12 +753,27 @@ export class Chamber {
         vignette drawn over this, which is the right tool for it — the liquid's
         own darkness never was.
       -->
+      <!--
+        THE ROOM IS GRADED DOWN, and that is this round's one structural change.
+        Round 4's chamber measured mean luminance 0.313 with 67.3% of its pixels
+        saturated in the IDLE frame — the state in which nothing has happened
+        yet — so idle → win could lift luminance only 25% against the rubric's
+        +50% and saturated area only x1.10 against x3, and the 1-in-120 FULL
+        ORDER win came out pixel-indistinguishable from the commonest one. A
+        base state that spends the whole dynamic range leaves the payoff nowhere
+        to go; the fix is not a brighter payoff, it is a dimmer room. Every
+        environment stop below is graded to ~0.70 of its previous value in
+        luminance at unchanged hue and saturation, which is what "a dim
+        instrument" means numerically: still inside the dark-surface band the
+        references occupy (L 0.06-0.35), still saturated, and no longer the
+        brightest thing the product ever shows.
+      -->
       <linearGradient id="chamber-field" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#123a52"/>
-        <stop offset="0.2" stop-color="var(--deep-lit)"/>
-        <stop offset="0.5" stop-color="#0d2740"/>
-        <stop offset="0.76" stop-color="#0f1c3c"/>
-        <stop offset="1" stop-color="var(--abyss-indigo)"/>
+        <stop offset="0" stop-color="#0c2a3b"/>
+        <stop offset="0.2" stop-color="#0b2134"/>
+        <stop offset="0.5" stop-color="#091b2e"/>
+        <stop offset="0.76" stop-color="#0a142d"/>
+        <stop offset="1" stop-color="#181240"/>
       </linearGradient>
       <!--
         The back wall of the room, and it is the surface the whole instrument
@@ -742,11 +786,11 @@ export class Chamber {
         plate.
       -->
       <linearGradient id="backwall" x1="0.1" y1="0" x2="0.9" y2="1">
-        <stop offset="0" stop-color="#11374f"/>
-        <stop offset="0.26" stop-color="#0c2740"/>
-        <stop offset="0.58" stop-color="#0a1e39"/>
-        <stop offset="0.82" stop-color="#101740"/>
-        <stop offset="1" stop-color="#1b1445"/>
+        <stop offset="0" stop-color="#0c2739"/>
+        <stop offset="0.26" stop-color="#081c2e"/>
+        <stop offset="0.58" stop-color="#07162a"/>
+        <stop offset="0.82" stop-color="#0b1030"/>
+        <stop offset="1" stop-color="#140f35"/>
       </linearGradient>
       <!--
         The engine-turned plate behind the tube — this build's answer to the
@@ -757,10 +801,19 @@ export class Chamber {
         because a still texture costs zero animating regions.
       -->
       <linearGradient id="guilloche" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${height}">
-        <stop offset="0" stop-color="#a6e6fb" stop-opacity="0.19"/>
-        <stop offset="0.34" stop-color="#66c0ea" stop-opacity="0.15"/>
-        <stop offset="0.66" stop-color="#6f95e6" stop-opacity="0.14"/>
-        <stop offset="1" stop-color="#b49bf8" stop-opacity="0.12"/>
+        <!--
+          The one environment layer that went UP in this pass, and the trade is
+          the point: the caustics are a third of what they were and the machined
+          plate behind them is a fifth more. A still texture costs zero animating
+          regions and buys the material a "featureless wash" was measured to be
+          missing — which is precisely the reference's own move, a damask
+          filigree in a background plate that never moves. The room is quieter
+          and the surface is denser, at about the same mean luminance.
+        -->
+        <stop offset="0" stop-color="#a6e6fb" stop-opacity="0.22"/>
+        <stop offset="0.34" stop-color="#66c0ea" stop-opacity="0.18"/>
+        <stop offset="0.66" stop-color="#6f95e6" stop-opacity="0.165"/>
+        <stop offset="1" stop-color="#b49bf8" stop-opacity="0.145"/>
       </linearGradient>
       <!--
         The wall's own key: the pool of light the source above throws on the
@@ -781,9 +834,9 @@ export class Chamber {
         their pixels in the dark band: the room is not the object.
       -->
       <radialGradient id="wall-key" cx="0.28" cy="0.08" r="0.72">
-        <stop offset="0" stop-color="#68b8dc" stop-opacity="0.3"/>
-        <stop offset="0.2" stop-color="#3fa9e0" stop-opacity="0.17"/>
-        <stop offset="0.48" stop-color="#2b7fb8" stop-opacity="0.07"/>
+        <stop offset="0" stop-color="#68b8dc" stop-opacity="0.21"/>
+        <stop offset="0.2" stop-color="#3fa9e0" stop-opacity="0.12"/>
+        <stop offset="0.48" stop-color="#2b7fb8" stop-opacity="0.05"/>
         <stop offset="1" stop-color="#1b3a86" stop-opacity="0"/>
       </radialGradient>
       <!--
@@ -792,17 +845,17 @@ export class Chamber {
       -->
       <linearGradient id="bench" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#2f7ea8" stop-opacity="0"/>
-        <stop offset="0.14" stop-color="#3f92bd" stop-opacity="0.42"/>
-        <stop offset="0.4" stop-color="#2d6f9c" stop-opacity="0.5"/>
-        <stop offset="0.78" stop-color="#243f7e" stop-opacity="0.46"/>
-        <stop offset="1" stop-color="var(--abyss-indigo)" stop-opacity="0.6"/>
+        <stop offset="0.14" stop-color="#3f92bd" stop-opacity="0.24"/>
+        <stop offset="0.4" stop-color="#2d6f9c" stop-opacity="0.29"/>
+        <stop offset="0.78" stop-color="#243f7e" stop-opacity="0.32"/>
+        <stop offset="1" stop-color="var(--abyss-indigo)" stop-opacity="0.5"/>
       </linearGradient>
       <!-- The bench's near edge, catching the key along its whole length. -->
       <linearGradient id="bench-lip" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.04"/>
-        <stop offset="0.32" stop-color="var(--key-hot)" stop-opacity="0.34"/>
-        <stop offset="0.68" stop-color="var(--key)" stop-opacity="0.16"/>
-        <stop offset="1" stop-color="var(--key)" stop-opacity="0.03"/>
+        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.03"/>
+        <stop offset="0.32" stop-color="var(--key-hot)" stop-opacity="0.2"/>
+        <stop offset="0.68" stop-color="var(--key)" stop-opacity="0.1"/>
+        <stop offset="1" stop-color="var(--key)" stop-opacity="0.02"/>
       </linearGradient>
       <!--
         The rim light that separates the tube from the wall behind it.
@@ -835,15 +888,23 @@ export class Chamber {
           takes the frame from two adjacent blue bins to the reference's three,
           and it is the same shape the closest reference in the category uses.
         -->
-        <stop offset="0" stop-color="#120d30"/>
-        <stop offset="0.1" stop-color="#111634"/>
-        <stop offset="0.22" stop-color="#0c1e38"/>
-        <stop offset="0.34" stop-color="#0d273e"/>
-        <stop offset="0.5" stop-color="#0f3045"/>
-        <stop offset="0.64" stop-color="#11394e"/>
-        <stop offset="0.78" stop-color="#13455f"/>
-        <stop offset="0.9" stop-color="#15506e"/>
-        <stop offset="1" stop-color="#175b80"/>
+        <!--
+          Graded down with the rest of the room (see #chamber-field). The ramp's
+          SHAPE is unchanged — nine stops travelling indigo to teal — and only
+          its level moved, so the depth read, the hue count and the colour depth
+          this gradient was built for all survive the grade. The top stop was
+          #175b80 at L 0.31, which over 68% opacity made the liquid's own
+          surface brighter than anything the payoff could then add.
+        -->
+        <stop offset="0" stop-color="#0e0a26"/>
+        <stop offset="0.1" stop-color="#0d1129"/>
+        <stop offset="0.22" stop-color="#09172c"/>
+        <stop offset="0.34" stop-color="#0a1e31"/>
+        <stop offset="0.5" stop-color="#0b2435"/>
+        <stop offset="0.64" stop-color="#0d2b3c"/>
+        <stop offset="0.78" stop-color="#0e3448"/>
+        <stop offset="0.9" stop-color="#0f3d54"/>
+        <stop offset="1" stop-color="#114661"/>
       </linearGradient>
       <!-- §6.2: brushed 316 steel, anisotropic highlight running horizontally. -->
       <linearGradient id="collar" x1="0" y1="0" x2="0" y2="1">
@@ -898,10 +959,10 @@ export class Chamber {
         laboratory with the lights off.
       -->
       <radialGradient id="shaft">
-        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.3"/>
-        <stop offset="0.24" stop-color="var(--key)" stop-opacity="0.26"/>
-        <stop offset="0.55" stop-color="var(--key)" stop-opacity="0.14"/>
-        <stop offset="0.8" stop-color="var(--key-deep)" stop-opacity="0.06"/>
+        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.16"/>
+        <stop offset="0.24" stop-color="var(--key)" stop-opacity="0.14"/>
+        <stop offset="0.55" stop-color="var(--key)" stop-opacity="0.075"/>
+        <stop offset="0.8" stop-color="var(--key-deep)" stop-opacity="0.032"/>
         <stop offset="1" stop-color="var(--key-deep)" stop-opacity="0"/>
       </radialGradient>
       <!--
@@ -923,16 +984,30 @@ export class Chamber {
           that are bright and saturated at once are the spheres and the column
           they land in.
         -->
-        <stop offset="0" stop-color="#eef9ff" stop-opacity="0.8"/>
-        <stop offset="0.3" stop-color="#d3edfb" stop-opacity="0.56"/>
-        <stop offset="0.62" stop-color="#a8cfe8" stop-opacity="0.32"/>
-        <stop offset="1" stop-color="#a3aee2" stop-opacity="0.13"/>
+        <!--
+          AND THEY ARE A THIRD OF WHAT THEY WERE, which is the subtraction test
+          applied to the loudest thing in the frame.
+          At 0.80 the cores were near-white ribbons drawn the full width and
+          height of the play area, brighter than any object in it, present in
+          every state and changing in none. A blind ranking read the whole
+          interior as a screensaver on the strength of them, and the measurement
+          agreed: they were most of the 0.313 mean luminance the idle frame had
+          no business carrying. Cut to 0.28 they are what a caustic net at rest
+          actually is — a faint filigree in the liquid, still contributing its
+          colour depth — and the light they can be turned UP to is now the
+          payoff's, not the base state's (see .caustic-hot, which the same
+          filaments carry at up to 1.0 when a round wins).
+        -->
+        <stop offset="0" stop-color="#eef9ff" stop-opacity="0.19"/>
+        <stop offset="0.3" stop-color="#d3edfb" stop-opacity="0.135"/>
+        <stop offset="0.62" stop-color="#a8cfe8" stop-opacity="0.08"/>
+        <stop offset="1" stop-color="#a3aee2" stop-opacity="0.035"/>
       </linearGradient>
       <linearGradient id="caustic-glow" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${height}">
-        <stop offset="0" stop-color="#a8e2f8" stop-opacity="0.19"/>
-        <stop offset="0.34" stop-color="#78bfe4" stop-opacity="0.14"/>
-        <stop offset="0.7" stop-color="#6b95cc" stop-opacity="0.09"/>
-        <stop offset="1" stop-color="#8f97d8" stop-opacity="0.05"/>
+        <stop offset="0" stop-color="#a8e2f8" stop-opacity="0.085"/>
+        <stop offset="0.34" stop-color="#78bfe4" stop-opacity="0.062"/>
+        <stop offset="0.7" stop-color="#6b95cc" stop-opacity="0.04"/>
+        <stop offset="1" stop-color="#8f97d8" stop-opacity="0.022"/>
       </linearGradient>
       <linearGradient id="caustic-line-hot" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${height}">
         <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
@@ -952,8 +1027,8 @@ export class Chamber {
         <stop offset="1" stop-color="#bcdcf2" stop-opacity="0"/>
       </radialGradient>
       <radialGradient id="caustic-node">
-        <stop offset="0" stop-color="#f8fdff" stop-opacity="0.44"/>
-        <stop offset="0.3" stop-color="#dcf0fc" stop-opacity="0.2"/>
+        <stop offset="0" stop-color="#f8fdff" stop-opacity="0.18"/>
+        <stop offset="0.3" stop-color="#dcf0fc" stop-opacity="0.08"/>
         <stop offset="1" stop-color="#b4d6ec" stop-opacity="0"/>
       </radialGradient>
       <!--
@@ -981,14 +1056,24 @@ export class Chamber {
           it. The spheres stay the brightest objects because they are lit, not
           because everything else is dimmed.
         -->
+        <!--
+          Steeper, now that the room is graded. Criterion 6 counts pixels above
+          L 0.35 and the frame was piling most of its material just *under* that
+          line — a uniformly dim room reads as a flat dim room and measures as
+          one. What the references have and a flat grade does not is CONTRAST:
+          the closest comparable holds 75.7% of its pixels in the dark band and
+          still puts 24.1% above 0.35, because its falloff is hard and its
+          objects are lit. So the
+          falloff got harder and the column got brighter, at about the same mean.
+        -->
         <stop offset="0" stop-color="var(--deep)" stop-opacity="0"/>
-        <stop offset="0.4" stop-color="#0a1c34" stop-opacity="0.16"/>
-        <stop offset="0.7" stop-color="#0d1738" stop-opacity="0.44"/>
-        <stop offset="1" stop-color="#150e3a" stop-opacity="0.72"/>
+        <stop offset="0.36" stop-color="#0a1c34" stop-opacity="0.2"/>
+        <stop offset="0.66" stop-color="#0d1738" stop-opacity="0.54"/>
+        <stop offset="1" stop-color="#150e3a" stop-opacity="0.86"/>
       </radialGradient>
       <radialGradient id="floor-caustic">
-        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.42"/>
-        <stop offset="0.42" stop-color="var(--key)" stop-opacity="0.2"/>
+        <stop offset="0" stop-color="var(--key-hot)" stop-opacity="0.25"/>
+        <stop offset="0.42" stop-color="var(--key)" stop-opacity="0.12"/>
         <stop offset="1" stop-color="var(--key)" stop-opacity="0"/>
       </radialGradient>
       <!--
@@ -1015,9 +1100,20 @@ export class Chamber {
           for the measurement alike. At 0.62 it was landing at L 0.42 after the
           bore's own shading, a hundredth under the line.
         -->
-        <stop offset="0" stop-color="#22bfe6" stop-opacity="0.84"/>
-        <stop offset="0.6" stop-color="#34d4f0" stop-opacity="0.76"/>
-        <stop offset="1" stop-color="#6ee2f6" stop-opacity="0.5"/>
+        <!--
+          And it is turned UP with the room turned down, which is the same
+          decision seen from the other side. Grading the environment to 0.70 of
+          its level without touching the column would have graded the hero
+          object with it; the charge level is the one surface in the frame whose
+          brightness IS the state, so it keeps its own. At 0.94 it lands at
+          L 0.50 / S 0.55 through the cylinder shading, which puts it inside
+          focal.mjs's mask — the in-round frame's brightest, most saturated
+          region is now the column the round is filling, and its size is how far
+          the round has got.
+        -->
+        <stop offset="0" stop-color="#22bfe6" stop-opacity="0.94"/>
+        <stop offset="0.6" stop-color="#34d4f0" stop-opacity="0.9"/>
+        <stop offset="1" stop-color="#6ee2f6" stop-opacity="0.66"/>
       </linearGradient>
       <!--
         The EMPTY bore, and it is deliberately dark.
@@ -1242,8 +1338,9 @@ export class Chamber {
         Criterion 8 is a floor of 2,500 distinct quantised colours, and it is not
         a colour preference: it is how flat fill is detected. Ours measured 1,514
         at cold start against a reference band of 2,956–7,444, because two thirds
-        of the chamber was an unbroken vertical ramp. Plinko solves the same
-        problem with a damask filigree in its background plate.
+        of the chamber was an unbroken vertical ramp. The closest reference in
+        the category solves the same problem with a damask filigree in its
+        background plate.
 
         The first attempt at this was a fine speckle, and it did nothing —
         measured 1,602 against 1,599 before it. The reason is worth writing down:
@@ -1261,14 +1358,31 @@ export class Chamber {
       -->
       ${(() => {
         const next = stream(0x2545f491);
+        /*
+         * SEVEN tints instead of five, at roughly twice the alpha — and this is
+         * criterion 8's arithmetic rather than a taste change.
+         *
+         * A gradient varies in one dimension and therefore quantises to about
+         * thirty distinct 5-bit triples however many stops it carries; the
+         * frame's noise tile varies in two but at a frequency every measurement
+         * in the rubric averages away when it downsamples. What survives, and
+         * what actually widens a *count of distinct triples*, is large soft
+         * two-dimensional variation in hue as well as value — which is exactly
+         * what clouding in a dense liquid is. At 5–11% these lobes were below
+         * the quantiser over a dark field and contributed almost nothing; the
+         * two hues added are the room's own indigo and its mid-teal, so the
+         * field still reads as one liquid.
+         */
         return Array.from({ length: 34 }, (_unused, index) => {
-          const tint = ['#1F6E9E', '#2E9FD8', '#123651', '#1a5c85', '#7FA6C4'][index % 5];
+          const tint = ['#1F6E9E', '#2E9FD8', '#123651', '#1a5c85', '#7FA6C4', '#2b2a6e', '#3f8fa8'][
+            index % 7
+          ];
           return `<radialGradient id="mottle-${index}">
             <stop offset="0" stop-color="${tint}" stop-opacity="${(
-              0.05 +
-              next() * 0.06
+              0.09 +
+              next() * 0.1
             ).toFixed(3)}"/>
-            <stop offset="0.55" stop-color="${tint}" stop-opacity="${(0.02 + next() * 0.03).toFixed(
+            <stop offset="0.55" stop-color="${tint}" stop-opacity="${(0.04 + next() * 0.05).toFixed(
               3,
             )}"/>
             <stop offset="1" stop-color="${tint}" stop-opacity="0"/>
@@ -1353,11 +1467,20 @@ export class Chamber {
         where there was none, which is also where a light *from the plaque*
         would land.
       -->
+      <!--
+        The held key, and every stop is BRIGHTER AND MORE SATURATED than it was.
+        This is the one payoff light that raises luminance and saturation
+        together — a saturated cyan at S 0.82 laid over a cool field mixes
+        toward more colour, where the near-white caustics beside it raise
+        luminance and cost saturation. With the room graded down it is doing the
+        work the whole grade was for: idle to win now has 0.13 of luminance to
+        travel where it had 0.08, and it travels it in colour.
+      -->
       <linearGradient id="won-lift" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0" stop-color="#1c6c9e" stop-opacity="0.86"/>
-        <stop offset="0.42" stop-color="#1f7cb0" stop-opacity="0.82"/>
-        <stop offset="0.78" stop-color="#1f7cb0" stop-opacity="0.66"/>
-        <stop offset="1" stop-color="#2489c0" stop-opacity="0.42"/>
+        <stop offset="0" stop-color="#1f7fb8" stop-opacity="0.9"/>
+        <stop offset="0.42" stop-color="#2293d0" stop-opacity="0.86"/>
+        <stop offset="0.78" stop-color="#2293d0" stop-opacity="0.72"/>
+        <stop offset="1" stop-color="#29a8e6" stop-opacity="0.5"/>
       </linearGradient>
 `;
   }
@@ -1556,12 +1679,23 @@ export class Chamber {
       d += ` T${last[0].toFixed(0)} ${last[1].toFixed(0)}`;
       const glow = hot ? 'caustic-glow-hot' : 'caustic-glow';
       const core = hot ? 'caustic-line-hot' : 'caustic-line';
+      /*
+       * The HALO is 4-9 units wide, not 7-16.
+       *
+       * At sixteen units a "halo" is a ribbon: the wide pass, not the core, was
+       * what a blind judge called drifting white swirls, and it is the thing the
+       * subtraction test removed to make the frame better. A caustic's halo is
+       * the small penumbra around a focused line — narrow it and the same
+       * geometry reads as a net of light in the liquid instead of as fog over
+       * the whole play area, at the same filament count and the same colour
+       * depth.
+       */
       return `<path d="${d}" fill="none" stroke="url(#${glow})" stroke-width="${(
-        7 +
-        next() * 9
+        4 +
+        next() * 5
       ).toFixed(1)}" stroke-linecap="round"/><path d="${d}" fill="none" stroke="url(#${core})" stroke-width="${(
-        1.1 +
-        next() * 1.1
+        1 +
+        next()
       ).toFixed(2)}" stroke-linecap="round"/>`;
     };
     /*
@@ -1654,8 +1788,8 @@ export class Chamber {
    *
    * Criterion 8 of the rubric is a floor of 2,500 distinct quantised colours,
    * which is not a colour-preference: it is how you detect flat fill. The
-   * references run 2,956 (Plinko) to 7,444 (Balloon Mania) because nothing in
-   * them is inert — Plinko's "empty" background carries a whole damask filigree.
+   * references run 2,956 to 7,444 because nothing in them is inert — the
+   * closest comparable's "empty" background carries a whole damask filigree.
    * Ours measured 2,086 at cold start and 2,208 armed, and the shortfall traced
    * to two places, both of them the same defect: the upper and lower thirds of
    * the chamber were unbroken mid-brine.
@@ -2836,8 +2970,23 @@ export class Chamber {
      * without exception, and a payout that overhangs its own plate is the one
      * place in the product where that would be least forgivable.
      */
+    /*
+     * The thresholds are the plate's arithmetic, and they were inverting the
+     * ladder.
+     *
+     * `> 6 -> long` stepped `+114.20` — the game's rarest and largest payout —
+     * down to 36 px while the routine `+3.80` kept 44 px, so the 1-in-120 round
+     * printed its number SMALLER than the common one. The bound the rule exists
+     * to enforce is a width: the plaque's inner width is `PLATE_WIDTH - 44` =
+     * 286 units, a bold tabular figure advances at most ~0.62 em, and the unit
+     * costs ~34 units at its fixed 16 px step. So `n` glyphs fit at step `s`
+     * while `0.62·n·s + 34 <= 286`, which puts the break at 9 glyphs for the
+     * 44 px step and 11 for the 36 px one. `+114.20` is seven and keeps the
+     * full step; SEVEN's four-digit payouts still step down, which is the case
+     * the rule was written for.
+     */
     this.#stamp.dataset.len =
-      face.amount.length > 8 ? 'xl' : face.amount.length > 6 ? 'long' : 'normal';
+      face.amount.length >= 11 ? 'xl' : face.amount.length >= 9 ? 'long' : 'normal';
     // querySelectorAll, not querySelector: the figure is set twice — the struck
     // pass and the ink pass (see `#stampMarkup`) — and writing only the first
     // would leave the plaque reading a hot-gold number with no ink on it.

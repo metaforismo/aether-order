@@ -487,6 +487,36 @@ function render(): void {
   if (!session) return;
   app().dataset.mode = state.mode;
   app().dataset.place = state.place;
+  /*
+   * The bench catches the instrument's light, and it only catches it when there
+   * is extra light to catch.
+   *
+   * The result deck is a third of the win frame and it was sitting at the same
+   * luminance it sits at while the player is deciding, which is a third of the
+   * frame telling the player nothing happened. A bench under an instrument that
+   * has just ignited is lit by it; the lift is cool, because the light doing it
+   * is the chamber's cool key and a warm overlay would cost the frame the
+   * saturation §9 spends its whole budget building.
+   *
+   * It is gated on `presentation.celebrate` — the same single comparison the
+   * chamber, the plaque and the chord are gated on (§10) — so a losing round and
+   * a net-losing partial return are byte-identical to a plain result screen, and
+   * nothing here can dress a loss as a win.
+   */
+  const celebrating = state.mode === 'result' && state.round?.presentation?.celebrate === true;
+  app().dataset.won = celebrating ? 'yes' : 'no';
+  /*
+   * And the bench is on the same volume ladder the instrument is — one number,
+   * `Chamber.volumeOf`, read off the server's own realised return multiple and
+   * off nothing else. §9's three-step ladder was published and not measurable:
+   * a 115.20x round and a 4.80x round differed by 2.3% of mean luminance because
+   * every channel that carried the ladder was inside the chamber and the deck —
+   * a third of the frame — held still. It moves now, in the same three steps.
+   */
+  app().style.setProperty(
+    '--win-vol',
+    String(celebrating ? Chamber.volumeOf(state.round?.presentation?.stampMultipleDecimal ?? '') : 2),
+  );
 
   (app().querySelector('[data-rail]') as HTMLElement).innerHTML = railMarkup();
 
@@ -619,6 +649,56 @@ function tierTabs(): string {
         `<button class="tab" role="tab" data-tier="${tier}" aria-selected="${
           state.tier === tier
         }"><b>${tier}</b></button>`,
+    )
+    .join('')}</div>`;
+}
+
+/**
+ * The payout ramp — the whole ladder, on screen at once, cool to hot.
+ *
+ * The chips print a price and the tabs switch which three you can see, so the
+ * scale the game is actually played on — 1.92× through 115.20× — was split
+ * across three tabs with one tier visible at a time. Measured against the
+ * reference bar that is criterion 11, a comprehension-core criterion: every
+ * reference in the category prints its entire ramp simultaneously and colour-
+ * codes it by band, because "the player learns the payout scale by looking,
+ * never by reading". Ours could only be learned by tapping.
+ *
+ * So the ramp is one row of the real multipliers, in ascending order, each in
+ * its own tier's accent. It is **information, not a control**: tapping it would
+ * put a seventh, eighth and ninth 44 px target on the deck for something the
+ * tabs already do, and §11's separation floor is not free. It is derived from
+ * the catalogue rather than typed, so a variant that changes a price changes the
+ * ramp, and SEVEN's own ladder appears the moment SEVEN is selected.
+ *
+ * It is never gold and never a fill: §6.1's accents are "a hairline, a numeral
+ * and a rail", and this is a numeral over a rail on a machined plate.
+ */
+function payoutRamp(): string {
+  const info = variant();
+  const seen = new Set<string>();
+  const rungs: { tier: string; label: string; value: number }[] = [];
+  for (const bet of info.bets) {
+    if (seen.has(bet.multiplierDecimal)) continue;
+    seen.add(bet.multiplierDecimal);
+    rungs.push({
+      tier: bet.tier,
+      label: bet.multiplierDecimal,
+      value: Number.parseFloat(bet.multiplierDecimal),
+    });
+  }
+  rungs.sort((a, b) => a.value - b.value);
+  if (rungs.length < 2) return '';
+  const first = rungs[0]!.label;
+  const last = rungs[rungs.length - 1]!.label;
+  return `<div class="ramp" role="img" aria-label="Payout scale: ${esc(first)} to ${esc(
+    last,
+  )}, lowest to highest">${rungs
+    .map(
+      (rung) =>
+        `<span class="ramp__rung" data-tier="${esc(rung.tier)}" data-here="${
+          rung.tier === state.tier
+        }">${esc(rung.label)}</span>`,
     )
     .join('')}</div>`;
 }
@@ -790,6 +870,7 @@ function buildDeck(): string {
     <p class="premise">They settle in a random order. Bet on the order.</p>
     ${tierTabs()}
     <div class="rail-block">
+      ${payoutRamp()}
       ${chipRail()}
       <!--
         §1 item 5, and it is one clause now rather than two sentences. The
